@@ -1,0 +1,35 @@
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Install Android SDK (API 37, falls back to 36)
+        run: |
+          # The GitHub runner already has the Android SDK (ANDROID_HOME) with sdkmanager.
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKM" ]; then SDKM="$(ls -d $ANDROID_HOME/cmdline-tools/*/bin/sdkmanager | head -n1)"; fi
+          yes | "$SDKM" --licenses >/dev/null || true
+          if "$SDKM" "platforms;android-37.0" "build-tools;37.0.0"; then
+            echo "SDKV=37" >> "$GITHUB_ENV"
+          else
+            "$SDKM" "platforms;android-36" "build-tools;36.0.0"
+            echo "SDKV=36" >> "$GITHUB_ENV"
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Build APK
+        run: gradle :app:assembleDebug -Pdesktop.sdk=$SDKV --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DesktopLauncher
+          path: app/build/outputs/apk/debug/*.apk
