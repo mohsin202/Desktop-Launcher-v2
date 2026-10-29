@@ -134,6 +134,7 @@ class TrashActivity : Activity() {
     }
 
     private fun build() {
+        actionBar?.hide()
         window.setDecorFitsSystemWindows(false)
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
