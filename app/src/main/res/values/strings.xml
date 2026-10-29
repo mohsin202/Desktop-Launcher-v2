@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">Desktop Launcher</string>
     <string name="accessibility_description">Shows the Desktop Launcher taskbar over all apps and provides the Back, Home and Recents buttons.</string>
+    <string name="trash_name">Trash</string>
 </resources>
