@@ -42,7 +42,8 @@ class Result(
     val icon: Drawable? = null,
     val file: File? = null,
     val action: () -> Unit = {},
-    val keepOpen: Boolean = false
+    val keepOpen: Boolean = false,
+    val custom: (() -> View)? = null
 )
 
 /**
@@ -68,6 +69,9 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
     private val themed = Prefs.bool(c, Prefs.K_THEMED, false)
     private val dots = Prefs.bool(c, Prefs.K_DOTS, true)
     private var menu: PopupMenuX? = null
+    private var searchMode = false
+    private var moreApps = false
+    private var dlFiles: List<Downloads.Entry> = emptyList()
 
     private val gridAdapter = object : BaseAdapter() {
         override fun getCount() = apps.size
@@ -87,9 +91,10 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         override fun getItem(p: Int) = results[p]
         override fun getItemId(p: Int) = p.toLong()
         override fun areAllItemsEnabled() = false
-        override fun isEnabled(p: Int) = !results[p].header
+        override fun isEnabled(p: Int) = !results[p].header && results[p].custom == null
         override fun getView(p: Int, cv: View?, parent: ViewGroup?): View {
             val r = results[p]
+            r.custom?.let { return it() }
             val row = LinearLayout(c)
             row.orientation = LinearLayout.HORIZONTAL
             row.gravity = Gravity.CENTER_VERTICAL
@@ -186,10 +191,10 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         list.adapter = listAdapter
         list.divider = null
         list.visibility = GONE
-        list.setOnItemClickListener { _, _, p, _ -> results[p].let { if (!it.header) { it.action(); if (!it.keepOpen) onClose() } } }
+        list.setOnItemClickListener { _, _, p, _ -> results[p].let { if (!it.header && it.custom == null) { remember(); it.action(); if (!it.keepOpen) onClose() } } }
         list.setOnItemLongClickListener { _, v, p, _ ->
             val r = results.getOrNull(p) ?: return@setOnItemLongClickListener false
-            if (r.header) return@setOnItemLongClickListener true
+            if (r.header || r.custom != null) return@setOnItemLongClickListener true
             val loc = IntArray(2); v.getLocationOnScreen(loc)
             val items = ArrayList<MenuItem>()
             items += MenuItem("Open") { r.action(); onClose() }
@@ -206,13 +211,16 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         }
         panel.addView(list, LinearLayout.LayoutParams(MATCH, 0, 1f).also { it.topMargin = c.dp(6) })
 
+        search.setOnTouchListener { _, ev -> if (ev.actionMasked == android.view.MotionEvent.ACTION_UP) enterSearch(); false }
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, d: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, d: Int) {}
             override fun afterTextChanged(s: Editable?) { runSearch(s?.toString() ?: "") }
         })
         search.setOnEditorActionListener { _, _, _ ->
-            results.firstOrNull { !it.header }?.let { it.action(); onClose() }
+            remember()
+            if (activeQuery.isNotEmpty() && apps.isNotEmpty()) launch(apps[0])
+            else results.firstOrNull { !it.header && it.custom == null }?.let { it.action(); onClose() }
             true
         }
         loadShortcuts()
@@ -238,6 +246,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
     }
 
     fun focusSearch() {
+        enterSearch()
         search.requestFocus()
         val imm = c.getSystemService(InputMethodManager::class.java)
         search.post { imm?.showSoftInput(search, InputMethodManager.SHOW_IMPLICIT) }
@@ -274,7 +283,9 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
                 val imm = c.getSystemService(InputMethodManager::class.java)
                 imm?.hideSoftInputFromWindow(search.windowToken, 0)
                 search.clearFocus()
-            } else onClose()
+            } else if (moreApps) { moreApps = false; render() }
+            else if (searchMode) { searchMode = false; search.setText(""); runSearch("") }
+            else onClose()
             return true
         }
         return super.dispatchKeyEvent(e)
@@ -323,33 +334,222 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         }
     }
 
+    private fun enterSearch() {
+        if (searchMode) return
+        searchMode = true
+        runSearch(search.text?.toString() ?: "")
+    }
+
+    private fun render() {
+        val showList = (searchMode || activeQuery.isNotEmpty()) && !moreApps
+        list.visibility = if (showList) VISIBLE else GONE
+        grid.visibility = if (showList || apps.isEmpty()) GONE else VISIBLE
+    }
+
+    private fun remember() {
+        val q = activeQuery.replace("|", " ").trim()
+        if (q.isEmpty()) return
+        Prefs.setList(c, Prefs.K_RECENT, (listOf(q) + Prefs.list(c, Prefs.K_RECENT).filter { !it.equals(q, true) }).take(8), false)
+    }
+
+    private fun refreshHome() {
+        if (searchMode && activeQuery.isEmpty()) { results = homeResults(); listAdapter.notifyDataSetChanged() }
+    }
+
     private fun runSearch(q: String) {
         val query = q.trim()
         if (query != activeQuery) {
             activeQuery = query
             showAllFiles = false
+            moreApps = false
         }
+        if (query.isNotEmpty()) searchMode = true
         val my = ++gen
+        apps = if (query.isEmpty()) allApps else allApps.filter { it.label.contains(query, ignoreCase = true) }
+        gridAdapter.notifyDataSetChanged()
+        render()
+        if (!searchMode && query.isEmpty()) return
         if (query.isEmpty()) {
-            apps = allApps
-            gridAdapter.notifyDataSetChanged()
-            list.visibility = GONE
-            grid.visibility = VISIBLE
+            results = homeResults()
+            listAdapter.notifyDataSetChanged()
+            bg.execute {
+                val d = Downloads.recent(c)
+                main.post { if (my == gen) { dlFiles = d; refreshHome() } }
+            }
             return
         }
-        apps = allApps.filter { it.label.contains(query, ignoreCase = true) }
-        gridAdapter.notifyDataSetChanged()
-        grid.visibility = if (apps.isEmpty()) GONE else VISIBLE
-        list.visibility = VISIBLE
         bg.execute {
             val r = buildResults(query)
             main.post { if (my == gen) { results = r; listAdapter.notifyDataSetChanged() } }
         }
     }
 
+    private fun homeResults(): List<Result> {
+        val out = ArrayList<Result>()
+        if (dlFiles.isNotEmpty()) out += Result(false, "", custom = { downloadsCard() })
+        val rec = Prefs.list(c, Prefs.K_RECENT)
+        if (rec.isNotEmpty()) {
+            out += Result(true, "Recent")
+            for (q in rec.take(4)) out += Result(false, q, custom = { recentRow(q) })
+        }
+        if (apps.isNotEmpty()) { out += Result(true, "Apps"); out += Result(false, "", custom = { appsBlock() }) }
+        return out
+    }
+
+    private fun recentRow(q: String): View {
+        val row = LinearLayout(c)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER_VERTICAL
+        row.setPadding(c.dp(12), c.dp(10), c.dp(12), c.dp(10))
+        val ic = TextView(c); ic.text = "\u21BA"; ic.textSize = 18f; ic.alpha = 0.6f; ic.setTextColor(Colors.text(c))
+        row.addView(ic, LinearLayout.LayoutParams(c.dp(28), WRAP))
+        val t = TextView(c); t.text = q; t.textSize = 15f; t.maxLines = 1
+        t.ellipsize = android.text.TextUtils.TruncateAt.END; t.setTextColor(Colors.text(c))
+        row.addView(t, LinearLayout.LayoutParams(0, WRAP, 1f).also { it.marginStart = c.dp(10) })
+        row.setOnClickListener { search.setText(q); search.setSelection(q.length) }
+        row.setOnLongClickListener {
+            Prefs.setList(c, Prefs.K_RECENT, Prefs.list(c, Prefs.K_RECENT).filter { it != q }, false)
+            refreshHome(); true
+        }
+        return row
+    }
+
+    /** Apps in two rows of four, plus a "More apps" link when there are more. */
+    private fun appsBlock(): View {
+        val col = LinearLayout(c)
+        col.orientation = LinearLayout.VERTICAL
+        val shown = apps.take(8)
+        for (r in 0 until 2) {
+            if (r * 4 >= shown.size) break
+            val row = LinearLayout(c)
+            row.orientation = LinearLayout.HORIZONTAL
+            for (i in 0 until 4) {
+                val idx = r * 4 + i
+                if (idx < shown.size) {
+                    val a = shown[idx]
+                    val cell = AppCell(c)
+                    cell.bind(a)
+                    cell.setOnClickListener { remember(); launch(a) }
+                    cell.setSecondaryClick { x, y -> showAppMenu(a, x, y) }
+                    cell.setOnLongClickListener { v ->
+                        val loc = IntArray(2); v.getLocationOnScreen(loc)
+                        showAppMenu(a, loc[0] + v.width / 2, loc[1] + v.height / 2); true
+                    }
+                    row.addView(cell, LinearLayout.LayoutParams(0, WRAP, 1f))
+                } else row.addView(View(c), LinearLayout.LayoutParams(0, 1, 1f))
+            }
+            col.addView(row, LinearLayout.LayoutParams(MATCH, WRAP))
+        }
+        if (apps.size > 8) {
+            val more = TextView(c)
+            more.text = UiText.text(c, "More apps")
+            more.textSize = 14f
+            more.gravity = Gravity.CENTER
+            more.setTextColor(Colors.accent(c))
+            more.setPadding(0, c.dp(10), 0, c.dp(10))
+            more.setOnClickListener { moreApps = true; render() }
+            col.addView(more, LinearLayout.LayoutParams(MATCH, WRAP))
+        }
+        return col
+    }
+
+    private fun downloadsCard(): View {
+        val files = dlFiles.take(5)
+        val card = LinearLayout(c)
+        card.orientation = LinearLayout.VERTICAL
+        card.background = Colors.rounded(Colors.surfaceHigh(c), c.dp(24).toFloat())
+        card.setPadding(c.dp(14), c.dp(8), c.dp(14), c.dp(4))
+        UiText.applyDirection(card, c)
+
+        val head = LinearLayout(c)
+        head.orientation = LinearLayout.HORIZONTAL
+        head.gravity = Gravity.CENTER_VERTICAL
+        val title = TextView(c)
+        title.text = UiText.text(c, "Files downloaded today")
+        title.textSize = 16f
+        title.setTypeface(title.typeface, android.graphics.Typeface.BOLD)
+        title.setTextColor(Colors.text(c))
+        head.addView(title, LinearLayout.LayoutParams(0, WRAP, 1f))
+        val x = TextView(c)
+        x.text = "\u2715"
+        x.textSize = 18f
+        x.gravity = Gravity.CENTER
+        x.setTextColor(Colors.text(c))
+        x.setOnClickListener { Downloads.dismiss(c); dlFiles = emptyList(); refreshHome() }
+        head.addView(x, LinearLayout.LayoutParams(c.dp(40), c.dp(40)))
+        card.addView(head, LinearLayout.LayoutParams(MATCH, WRAP))
+
+        val pill = TextView(c)
+        pill.text = UiText.text(c, "Create shortcuts for all files")
+        pill.textSize = 14f
+        pill.gravity = Gravity.CENTER
+        pill.setTextColor(Colors.iconFg(c))
+        pill.background = Colors.rounded(Colors.iconBg(c), c.dp(20).toFloat())
+        pill.setPadding(c.dp(16), c.dp(8), c.dp(16), c.dp(8))
+        pill.setOnClickListener {
+            var ok = 0
+            for (e in dlFiles) if (Downloads.createShortcut(c, e.file)) ok++
+            c.toast(UiText.text(c, if (ok > 0) "Shortcuts created on Desktop" else "Could not create shortcut"))
+            if (ok > 0) { dlFiles = emptyList(); refreshHome() }
+        }
+        card.addView(pill, LinearLayout.LayoutParams(WRAP, WRAP).also { it.topMargin = c.dp(4); it.bottomMargin = c.dp(6) })
+
+        val ext = android.os.Environment.getExternalStorageDirectory().absolutePath
+        for (e in files) {
+            val f = e.file
+            val row = LinearLayout(c)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            row.setPadding(0, c.dp(8), 0, c.dp(8))
+            val iv = android.widget.ImageView(c)
+            iv.setImageDrawable(Icons.file(f))
+            row.addView(iv, LinearLayout.LayoutParams(c.dp(36), c.dp(36)).also { it.marginEnd = c.dp(12) })
+            val col = LinearLayout(c)
+            col.orientation = LinearLayout.VERTICAL
+            val n = TextView(c); n.text = f.name; n.textSize = 15f; n.maxLines = 1
+            n.ellipsize = android.text.TextUtils.TruncateAt.END; n.setTextColor(Colors.text(c))
+            col.addView(n)
+            val dir = (f.parent ?: "").removePrefix(ext).trimStart('/')
+            val s = TextView(c); s.text = dir + " \u00B7 " + Downloads.ago(c, e.time); s.textSize = 12f; s.alpha = 0.6f
+            s.maxLines = 1; s.ellipsize = android.text.TextUtils.TruncateAt.END; s.setTextColor(Colors.text(c))
+            col.addView(s)
+            row.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
+            row.setOnClickListener { Files.open(c, f); onClose() }
+            row.setOnLongClickListener { v ->
+                val loc = IntArray(2); v.getLocationOnScreen(loc)
+                PopupMenuX(c, this).show(loc[0], loc[1] + v.height, listOf(
+                    MenuItem("Open") { Files.open(c, f); onClose() },
+                    MenuItem("Create shortcut on Desktop") {
+                        if (Downloads.createShortcut(c, f)) {
+                            c.toast(UiText.text(c, "Shortcut created on Desktop"))
+                            dlFiles = dlFiles.filter { it.file != f }; refreshHome()
+                        } else c.toast(UiText.text(c, "Could not create shortcut"))
+                    }
+                ))
+                true
+            }
+            card.addView(row, LinearLayout.LayoutParams(MATCH, WRAP))
+        }
+
+        val all = TextView(c)
+        all.text = UiText.text(c, "All downloads")
+        all.textSize = 14f
+        all.gravity = Gravity.CENTER
+        all.setTextColor(Colors.accent(c))
+        all.setPadding(0, c.dp(10), 0, c.dp(10))
+        all.setOnClickListener { Launch.start(c, Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS)); onClose() }
+        card.addView(all, LinearLayout.LayoutParams(MATCH, WRAP))
+
+        val wrap = FrameLayout(c)
+        wrap.setPadding(0, c.dp(4), 0, c.dp(8))
+        wrap.addView(card, FrameLayout.LayoutParams(MATCH, WRAP))
+        return wrap
+    }
+
     private fun buildResults(q: String): List<Result> {
         val ql = q.lowercase()
         val out = ArrayList<Result>()
+        if (apps.isNotEmpty()) { out += Result(true, "Apps"); out += Result(false, "", custom = { appsBlock() }) }
 
         val setHits = SETTINGS.filter { it.first.lowercase().contains(ql) }
         if (setHits.isNotEmpty()) {
