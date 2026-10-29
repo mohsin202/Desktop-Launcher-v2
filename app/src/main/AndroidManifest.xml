@@ -36,6 +36,7 @@
             android:name=".SettingsActivity"
             android:exported="true"
             android:label="Desktop Launcher Settings"
+            android:taskAffinity="com.android.desktoplauncher.settings"
             android:theme="@style/Theme.Desktop.Settings">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -48,6 +49,7 @@
             android:exported="true"
             android:icon="@mipmap/ic_trash"
             android:label="@string/trash_name"
+            android:taskAffinity="com.android.desktoplauncher.trash"
             android:theme="@style/Theme.Desktop.Settings">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
