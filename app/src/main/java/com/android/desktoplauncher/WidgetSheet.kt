@@ -12,6 +12,9 @@ import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.VelocityTracker
+import android.view.ViewConfiguration
 import android.view.View
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -52,6 +55,12 @@ class WidgetSheet(
     private var selectedApp: String? = null
     private var selectedItem: WidgetItem? = null
     private var query = ""
+    private val scrolls = ArrayList<ScrollView>()
+    private var downY = 0f
+    private var dragging = false
+    private var startAtTop = false
+    private var vt: VelocityTracker? = null
+    private val slop = ViewConfiguration.get(c).scaledTouchSlop
 
     init {
         val own = c.packageName
@@ -131,6 +140,7 @@ class WidgetSheet(
 
     private fun render() {
         content.removeAllViews()
+        scrolls.clear()
         val visible = groups.entries.map { it.key to matches(it.value) }.filter { it.second.isNotEmpty() }
         if (visible.isEmpty()) {
             val t = TextView(c)
@@ -170,6 +180,7 @@ class WidgetSheet(
         val sv = ScrollView(c)
         sv.isVerticalScrollBarEnabled = false
         sv.addView(col, LayoutParams(MATCH, WRAP))
+        scrolls += sv
         content.addView(sv, LayoutParams(MATCH, MATCH))
     }
 
@@ -192,6 +203,7 @@ class WidgetSheet(
         val lsv = ScrollView(c)
         lsv.isVerticalScrollBarEnabled = false
         lsv.addView(left, LayoutParams(MATCH, WRAP))
+        scrolls += lsv
         row.addView(lsv, LinearLayout.LayoutParams(0, MATCH, 0.42f).also { it.marginEnd = c.dp(10) })
 
         val right = LinearLayout(c)
@@ -202,6 +214,7 @@ class WidgetSheet(
         val rsv = ScrollView(c)
         rsv.isVerticalScrollBarEnabled = false
         rsv.addView(right, LayoutParams(MATCH, WRAP))
+        scrolls += rsv
         val rightBox = FrameLayout(c)
         rightBox.background = Colors.rounded(card(), c.dp(24).toFloat())
         rightBox.addView(rsv, LayoutParams(MATCH, MATCH))
@@ -295,6 +308,49 @@ class WidgetSheet(
     }
 
     fun restoreAfterDrag() { visibility = VISIBLE }
+
+    /** True when the list under the finger is already scrolled to its first item (or the touch is on the header). */
+    private fun atTop(ev: MotionEvent): Boolean {
+        val loc = IntArray(2)
+        for (sv in scrolls) {
+            sv.getLocationOnScreen(loc)
+            if (ev.rawX >= loc[0] && ev.rawX <= loc[0] + sv.width && ev.rawY >= loc[1] && ev.rawY <= loc[1] + sv.height) {
+                return !sv.canScrollVertically(-1)
+            }
+        }
+        return true
+    }
+
+    // Swipe down while the list is already at its top: the sheet follows the finger and closes.
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downY = ev.rawY; dragging = false; startAtTop = atTop(ev)
+                vt?.recycle(); vt = VelocityTracker.obtain(); vt?.addMovement(ev)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                vt?.addMovement(ev)
+                if (startAtTop && !dragging && ev.rawY - downY > slop * 2) { dragging = true; return true }
+            }
+        }
+        return false
+    }
+
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        if (!dragging) return super.onTouchEvent(ev)
+        vt?.addMovement(ev)
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_MOVE -> sheet.translationY = maxOf(0f, ev.rawY - downY)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                vt?.computeCurrentVelocity(1000)
+                val vy = vt?.yVelocity ?: 0f
+                dragging = false
+                if (ev.actionMasked == MotionEvent.ACTION_UP && (sheet.translationY > c.dp(110) || vy > 1200f)) onClose()
+                else sheet.animate().translationY(0f).setDuration(180).start()
+            }
+        }
+        return true
+    }
 }
 
 /** Small chevron: points down when collapsed, up when expanded. */

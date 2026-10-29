@@ -180,7 +180,7 @@ class LauncherActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.action == ACTION_TOGGLE_DRAWER) toggleDrawer()
-        else { closeDrawer(); TaskbarService.instance?.closeDrawer(); desktop.clearSelection() }
+        else { closeWidgetSheet(); closeDrawer(); TaskbarService.instance?.closeDrawer(); desktop.clearSelection() }
     }
 
     override fun onConfigurationChanged(c: Configuration) {

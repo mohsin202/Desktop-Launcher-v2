@@ -118,6 +118,18 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                 ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
                 ?.forEach { list += Entry.FileE(it) }
         } catch (_: Exception) {}
+        // The Trash app icon is placed on the desktop once.
+        if (!Prefs.bool(c, "trashSeeded", false)) {
+            val tr = AppRepo.apps(c).firstOrNull { it.comp.className.endsWith("TrashActivity") }
+            if (tr != null) {
+                Prefs.setBool(c, "trashSeeded", true)
+                val flat = tr.comp.flattenToString()
+                if (flat !in Prefs.list(c, Prefs.K_DESKAPPS)) {
+                    Prefs.setList(c, Prefs.K_DESKAPPS, Prefs.list(c, Prefs.K_DESKAPPS) + flat, fire = false)
+                    list.add(0, Entry.AppE(tr))
+                }
+            }
+        }
         for (e in list) {
             val v = makeItem(e)
             addView(v)
@@ -421,6 +433,11 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         val row = ((cy - paddingTop) / gCh).toInt().coerceIn(0, gRows - 1)
         val old = cells[e.key] ?: return
         if (blockedByWidget(col, row)) { requestLayout(); return }
+        // Dropping a file on the Trash icon moves it to the trash straight away.
+        val target = cells.entries.firstOrNull { it.key != e.key && it.value[0] == col && it.value[1] == row }
+        if (e is Entry.FileE && target != null && items.any { it.first.key == target.key && isTrashEntry(it.first) }) {
+            requestLayout(); trashDropped(e.file); return
+        }
         val updates = HashMap<String, IntArray>()
         updates[e.key] = intArrayOf(col, row)
         // If another icon sits there it takes the old cell (swap).
@@ -629,11 +646,55 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             }.setNegativeButton("Cancel", null).show()
     }
 
+    private fun isTrashEntry(e: Entry) = e is Entry.AppE && e.info.comp.className.endsWith("TrashActivity")
+
+    /** Delete dialog: file name, "Move to trash" tick (on by default) and a Delete button. */
     private fun confirmDelete(f: File) {
-        AlertDialog.Builder(act).setTitle("Delete").setMessage("Delete “${f.name}” permanently?")
-            .setPositiveButton("Delete") { _, _ ->
-                Thread { f.deleteRecursively(); post { reload() } }.start()
-            }.setNegativeButton("Cancel", null).show()
+        val box = LinearLayout(act)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(d(24), d(22), d(24), d(20))
+        box.background = Colors.rounded(Colors.surfaceSolid(act), d(28).toFloat())
+        UiText.applyDirection(box, act)
+        val name = TextView(act)
+        name.text = f.name
+        name.textSize = 20f
+        name.gravity = Gravity.CENTER
+        name.maxLines = 2
+        name.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+        name.setTextColor(Colors.text(act))
+        box.addView(name, LinearLayout.LayoutParams(MATCH, WRAP))
+        val cb = android.widget.CheckBox(act)
+        cb.text = UiText.text(act, "Move to trash")
+        cb.isChecked = true
+        cb.textSize = 17f
+        cb.setTextColor(Colors.text(act))
+        box.addView(cb, LinearLayout.LayoutParams(WRAP, WRAP).also { it.gravity = Gravity.CENTER_HORIZONTAL; it.topMargin = d(10) })
+        val btn = TextView(act)
+        btn.text = UiText.text(act, "Delete")
+        btn.textSize = 17f
+        btn.gravity = Gravity.CENTER
+        btn.setTextColor(Colors.iconFg(act))
+        btn.background = Colors.rounded(Colors.iconBg(act), d(28).toFloat())
+        box.addView(btn, LinearLayout.LayoutParams(MATCH, d(52)).also { it.topMargin = d(14) })
+        val dlg = AlertDialog.Builder(act).setView(box).create()
+        dlg.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
+        btn.setOnClickListener {
+            dlg.dismiss()
+            val toTrash = cb.isChecked
+            Thread {
+                if (toTrash) TrashStore.trash(context, f) else f.deleteRecursively()
+                post { reload() }
+            }.start()
+        }
+        dlg.show()
+    }
+
+    /** A file was dragged onto the Trash icon: no question asked. */
+    private fun trashDropped(f: File) {
+        Thread {
+            val ok = TrashStore.trash(context, f)
+            post { reload(); context.toast(UiText.text(context, if (ok) "Moved to trash" else "Could not move to trash")) }
+        }.start()
     }
 
     private fun paste() {
