@@ -39,6 +39,19 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         setOnLongClickListener { desktopMenu(lastX, lastY); true }
         setSecondaryClick { x, y -> desktopMenu(x, y) }
         setOnDragListener { _, event ->
+            val ls = event.localState
+            if (ls is WidgetDrag) {
+                return@setOnDragListener when (event.action) {
+                    android.view.DragEvent.ACTION_DROP -> {
+                        val loc = IntArray(2); getLocationOnScreen(loc)
+                        act.onWidgetDragEnded(true)
+                        ls.item.add((loc[0] + event.x).toInt(), (loc[1] + event.y).toInt())
+                        true
+                    }
+                    android.view.DragEvent.ACTION_DRAG_ENDED -> { if (!event.result) act.onWidgetDragEnded(false); true }
+                    else -> true
+                }
+            }
             when (event.action) {
                 android.view.DragEvent.ACTION_DRAG_STARTED -> event.clipDescription != null
                 android.view.DragEvent.ACTION_DROP -> {
@@ -262,7 +275,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         getLocationOnScreen(loc)
         val col = Math.floor(((screenX - loc[0] - originX()).toDouble() / gCw)).toInt().coerceIn(0, maxOf(0, gCols - box.sx))
         val row = Math.floor(((screenY - loc[1] - originY()).toDouble() / gCh)).toInt().coerceIn(0, maxOf(0, gRows - box.sy))
-        if (canPlace(box, col, row, box.sx, box.sy)) { box.col = col; box.row = row }
+        if (screenX >= 0 && screenY >= 0 && canPlace(box, col, row, box.sx, box.sy)) { box.col = col; box.row = row }
         else {
             val f = findFree(box, widgets, box.sx, box.sy)
             if (f == null) {

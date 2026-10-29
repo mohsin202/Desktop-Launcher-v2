@@ -191,7 +191,7 @@ class LauncherActivity : Activity() {
     }
 
     @Deprecated("Deprecated in Java")
-    override fun onBackPressed() { if (drawer != null) closeDrawer() }
+    override fun onBackPressed() { if (sheet != null) closeWidgetSheet() else if (drawer != null) closeDrawer() }
 
     fun toggleDrawer() {
         val svc = TaskbarService.instance
@@ -215,8 +215,10 @@ class LauncherActivity : Activity() {
 
     // ------------------------------------------------------------ widgets
 
+    private var sheet: WidgetSheet? = null
+
     fun pickWidget(x: Int, y: Int) {
-        pendX = x; pendY = y
+        closeWidgetSheet()
         val pm = packageManager
         val providers = try { awm.installedProviders.sortedBy { it.loadLabel(pm).toString().lowercase() } }
                   catch (_: Exception) { emptyList() }
@@ -224,168 +226,38 @@ class LauncherActivity : Activity() {
         val ownName = try { pm.getApplicationLabel(applicationInfo).toString() } catch (_: Exception) { "Desktop Launcher" }
         val ownIcon = try { pm.getApplicationIcon(packageName) } catch (_: Exception) { pm.defaultActivityIcon }
         // Built-in launcher widgets come first, then the widgets of installed apps.
-        val all = ArrayList<PickItem>()
+        val all = ArrayList<WidgetItem>()
         for (d in InternalWidgets.all) {
-            all += PickItem(UiText.text(this, d.title), ownName, ownIcon, d.minWdp, d.minHdp,
-                { InternalWidgets.preview(this, d.type) }) { desktop.addInternal(d.type, pendX, pendY) }
+            all += WidgetItem(UiText.text(this, d.title), packageName, ownName, ownIcon, d.minWdp, d.minHdp,
+                { InternalWidgets.preview(this, d.type) }) { px, py -> desktop.addInternal(d.type, px, py) }
         }
         for (info in providers) {
-            all += PickItem(try { info.loadLabel(pm).toString() } catch (_: Exception) { info.provider.className },
+            all += WidgetItem(try { info.loadLabel(pm).toString() } catch (_: Exception) { info.provider.className },
+                info.provider.packageName,
                 try { pm.getApplicationLabel(pm.getApplicationInfo(info.provider.packageName, 0)).toString() } catch (_: Exception) { info.provider.packageName },
                 try { pm.getApplicationIcon(info.provider.packageName) } catch (_: Exception) { pm.defaultActivityIcon },
                 (maxOf(info.minWidth, 1) / dens).toInt(), (maxOf(info.minHeight, 1) / dens).toInt(),
-                { try { info.loadPreviewImage(this, resources.displayMetrics.densityDpi) } catch (_: Exception) { null } }) { startAdd(info) }
-        }
-
-        var selected = all.first()
-        val dialog = Dialog(this)
-        val outer = FrameLayout(this).apply {
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-            setBackgroundColor(Color.TRANSPARENT)
-        }
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = Colors.rounded(Colors.surfaceSolid(this@LauncherActivity), dp(30).toFloat())
-            setPadding(dp(18), dp(18), dp(18), dp(12))
-        }
-        outer.addView(panel, FrameLayout.LayoutParams(MATCH, MATCH))
-
-        val search = EditText(this).apply {
-            hint = UiText.text(this@LauncherActivity, "Search")
-            setSingleLine(true)
-            inputType = InputType.TYPE_CLASS_TEXT
-            textSize = 16f
-            setTextColor(Colors.text(this@LauncherActivity))
-            setHintTextColor(Colors.text(this@LauncherActivity) and 0x88FFFFFF.toInt())
-            background = Colors.rounded(Colors.surfaceHigh(this@LauncherActivity), dp(28).toFloat())
-            setPadding(dp(20), dp(8), dp(20), dp(8))
-        }
-        panel.addView(search, LinearLayout.LayoutParams(MATCH, dp(52)))
-
-        val selectedTitle = TextView(this).apply {
-            textSize = 20f
-            gravity = Gravity.CENTER
-            setTextColor(Colors.text(this@LauncherActivity))
-            setPadding(dp(4), dp(12), dp(4), dp(2))
-        }
-        panel.addView(selectedTitle, LinearLayout.LayoutParams(MATCH, WRAP))
-        val selectedApp = TextView(this).apply {
-            textSize = 13f
-            gravity = Gravity.CENTER
-            alpha = 0.72f
-            setTextColor(Colors.text(this@LauncherActivity))
-        }
-        panel.addView(selectedApp, LinearLayout.LayoutParams(MATCH, WRAP))
-        val preview = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER; setPadding(dp(12), dp(8), dp(12), dp(8)) }
-        panel.addView(preview, LinearLayout.LayoutParams(MATCH, dp(150)))
-        val sizeLabel = TextView(this).apply {
-            gravity = Gravity.CENTER
-            textSize = 13f
-            alpha = 0.7f
-            setTextColor(Colors.text(this@LauncherActivity))
-            setPadding(0, 0, 0, dp(8))
-        }
-        panel.addView(sizeLabel, LinearLayout.LayoutParams(MATCH, WRAP))
-        val include = Button(this).apply {
-            text = UiText.text(this@LauncherActivity, "Include")
-            isAllCaps = false
-            background = Colors.rounded(Colors.taskbar(this@LauncherActivity), dp(30).toFloat())
-            setTextColor(Colors.text(this@LauncherActivity))
-        }
-        panel.addView(include, LinearLayout.LayoutParams(WRAP, dp(48)).also { it.gravity = Gravity.CENTER; it.bottomMargin = dp(10) })
-        val divider = android.view.View(this).apply { setBackgroundColor(Colors.text(this@LauncherActivity) and 0x22000000) }
-        panel.addView(divider, LinearLayout.LayoutParams(MATCH, dp(1)))
-        val scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false }
-        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        scroll.addView(rows, FrameLayout.LayoutParams(MATCH, WRAP))
-        panel.addView(scroll, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        val cancel = TextView(this).apply {
-            text = UiText.text(this@LauncherActivity, "Cancel")
-            textSize = 15f
-            setTextColor(Colors.accent(this@LauncherActivity))
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            setPadding(dp(8), dp(10), dp(8), dp(4))
-            setOnClickListener { dialog.dismiss() }
-        }
-        panel.addView(cancel, LinearLayout.LayoutParams(MATCH, dp(42)))
-
-        fun refreshSelected() {
-            selectedTitle.text = selected.label
-            selectedApp.text = selected.appName
-            // Size in home screen grid cells (widgets always snap to the grid).
-            val sp = desktop.spansFor(selected.minWdp, selected.minHdp)
-            sizeLabel.text = "${sp[0]} × ${sp[1]}"
-            preview.setImageDrawable(selected.preview() ?: selected.icon)
-        }
-
-        fun renderRows(query: String) {
-            rows.removeAllViews()
-            val filtered = all.filter { info ->
-                info.label.contains(query, true) || info.appName.contains(query, true)
-            }
-            for (info in filtered) {
-                val row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(8), dp(8), dp(8), dp(8))
-                    background = if (info == selected) Colors.rounded(Colors.surfaceHigh(this@LauncherActivity), dp(14).toFloat()) else ColorDrawable(Color.TRANSPARENT)
-                    isClickable = true
-                    isFocusable = true
-                }
-                val icon = ImageView(this).apply {
-                    scaleType = ImageView.ScaleType.FIT_CENTER
-                    setImageDrawable(info.icon)
-                }
-                row.addView(icon, LinearLayout.LayoutParams(dp(42), dp(42)).also { it.marginEnd = dp(12) })
-                val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-                val title = TextView(this).apply {
-                    text = info.label
-                    textSize = 16f
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    setTextColor(Colors.text(this@LauncherActivity))
-                }
-                val subtitle = TextView(this).apply {
-                    text = info.appName
-                    textSize = 12f
-                    alpha = 0.7f
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    setTextColor(Colors.text(this@LauncherActivity))
-                }
-                labels.addView(title); labels.addView(subtitle)
-                row.addView(labels, LinearLayout.LayoutParams(0, WRAP, 1f))
-                row.setOnClickListener { selected = info; refreshSelected(); renderRows(search.text?.toString() ?: "") }
-                rows.addView(row, LinearLayout.LayoutParams(MATCH, WRAP).also { it.bottomMargin = dp(3) })
-            }
-            if (filtered.isEmpty()) {
-                rows.addView(TextView(this).apply {
-                    text = UiText.text(this@LauncherActivity, "No widgets found")
-                    setTextColor(Colors.text(this@LauncherActivity)); setPadding(dp(12), dp(18), dp(12), dp(18))
-                })
+                { try { info.loadPreviewImage(this, resources.displayMetrics.densityDpi) } catch (_: Exception) { null } }) { px, py ->
+                pendX = px; pendY = py
+                startAdd(info)
             }
         }
-
-        include.setOnClickListener { dialog.dismiss(); selected.add() }
-        search.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderRows(s?.toString() ?: "") }
-            override fun afterTextChanged(s: Editable?) {}
-        })
-        refreshSelected()
-        renderRows("")
-        UiText.applyDirection(panel, this)
-        dialog.setContentView(outer)
-        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        dialog.show()
-        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        dialog.window?.setLayout(android.view.WindowManager.LayoutParams.MATCH_PARENT, android.view.WindowManager.LayoutParams.MATCH_PARENT)
+        val bottom = if (!Modes.tablet(this) && barOn()) padBottom + dockH + dp(16)
+            else if (Modes.tablet(this) && barOn() && TaskbarService.instance != null) maxOf(padBottom, dp(Prefs.tbDp(this))) else padBottom
+        val sh = WidgetSheet(this, all, padTop, bottom, { w, h -> desktop.spansFor(w, h) }) { closeWidgetSheet() }
+        root.addView(sh, FrameLayout.LayoutParams(MATCH, MATCH))
+        sheet = sh
     }
 
-    private class PickItem(
-        val label: String, val appName: String, val icon: android.graphics.drawable.Drawable?,
-        val minWdp: Int, val minHdp: Int, val preview: () -> android.graphics.drawable.Drawable?, val add: () -> Unit
-    )
+    fun closeWidgetSheet() {
+        sheet?.let { root.removeView(it) }
+        sheet = null
+    }
+
+    /** The desktop reports the end of a widget drag: bring the sheet back if nothing was dropped. */
+    fun onWidgetDragEnded(dropped: Boolean) {
+        if (dropped) closeWidgetSheet() else sheet?.restoreAfterDrag()
+    }
 
     /** Search bar widget: opens the app drawer with the search field focused. */
     fun openSearchFromWidget() {
