@@ -72,6 +72,8 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
     private var searchMode = false
     private var moreApps = false
     private var dlFiles: List<Downloads.Entry> = emptyList()
+    private var dlExpanded = false
+    private var dlApps: List<AppInfo> = emptyList()
 
     private val gridAdapter = object : BaseAdapter() {
         override fun getCount() = apps.size
@@ -374,7 +376,8 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
             listAdapter.notifyDataSetChanged()
             bg.execute {
                 val d = Downloads.recent(c)
-                main.post { if (my == gen) { dlFiles = d; refreshHome() } }
+                val na = Downloads.newApps(c, allApps)
+                main.post { if (my == gen) { dlFiles = d; dlApps = na; refreshHome() } }
             }
             return
         }
@@ -386,7 +389,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
 
     private fun homeResults(): List<Result> {
         val out = ArrayList<Result>()
-        if (dlFiles.isNotEmpty()) out += Result(false, "", custom = { downloadsCard() })
+        if (dlFiles.isNotEmpty() || dlApps.isNotEmpty()) out += Result(false, "", custom = { downloadsCard() })
         val rec = Prefs.list(c, Prefs.K_RECENT)
         if (rec.isNotEmpty()) {
             out += Result(true, "Recent")
@@ -454,7 +457,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
     }
 
     private fun downloadsCard(): View {
-        val files = dlFiles.take(5)
+        val files = if (dlExpanded) dlFiles else dlFiles.take(5)
         val card = LinearLayout(c)
         card.orientation = LinearLayout.VERTICAL
         card.background = Colors.rounded(Colors.surfaceHigh(c), c.dp(24).toFloat())
@@ -465,7 +468,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         head.orientation = LinearLayout.HORIZONTAL
         head.gravity = Gravity.CENTER_VERTICAL
         val title = TextView(c)
-        title.text = UiText.text(c, "Files downloaded today")
+        title.text = UiText.text(c, if (dlFiles.isNotEmpty()) "Files downloaded today" else "Apps installed today")
         title.textSize = 16f
         title.setTypeface(title.typeface, android.graphics.Typeface.BOLD)
         title.setTextColor(Colors.text(c))
@@ -475,7 +478,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         x.textSize = 18f
         x.gravity = Gravity.CENTER
         x.setTextColor(Colors.text(c))
-        x.setOnClickListener { Downloads.dismiss(c); dlFiles = emptyList(); refreshHome() }
+        x.setOnClickListener { Downloads.dismiss(c); dlFiles = emptyList(); dlApps = emptyList(); refreshHome() }
         head.addView(x, LinearLayout.LayoutParams(c.dp(40), c.dp(40)))
         card.addView(head, LinearLayout.LayoutParams(MATCH, WRAP))
 
@@ -492,7 +495,15 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
             c.toast(UiText.text(c, if (ok > 0) "Shortcuts created on Desktop" else "Could not create shortcut"))
             if (ok > 0) { dlFiles = emptyList(); refreshHome() }
         }
-        card.addView(pill, LinearLayout.LayoutParams(WRAP, WRAP).also { it.topMargin = c.dp(4); it.bottomMargin = c.dp(6) })
+        if (dlFiles.isNotEmpty()) card.addView(pill, LinearLayout.LayoutParams(WRAP, WRAP).also { it.topMargin = c.dp(4); it.bottomMargin = c.dp(6) })
+
+        // Files and today's new apps share one scroll area that is as tall as five file rows.
+        val inner = LinearLayout(c)
+        inner.orientation = LinearLayout.VERTICAL
+        val scroll = CappedScroll(c, if (dlExpanded) Int.MAX_VALUE else c.dp(52) * 5)
+        scroll.isVerticalScrollBarEnabled = false
+        scroll.addView(inner, ViewGroup.LayoutParams(MATCH, WRAP))
+        card.addView(scroll, LinearLayout.LayoutParams(MATCH, WRAP))
 
         val ext = android.os.Environment.getExternalStorageDirectory().absolutePath
         for (e in files) {
@@ -510,9 +521,15 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
             n.ellipsize = android.text.TextUtils.TruncateAt.END; n.setTextColor(Colors.text(c))
             col.addView(n)
             val dir = (f.parent ?: "").removePrefix(ext).trimStart('/')
-            val s = TextView(c); s.text = dir + " \u00B7 " + Downloads.ago(c, e.time); s.textSize = 12f; s.alpha = 0.6f
-            s.maxLines = 1; s.ellipsize = android.text.TextUtils.TruncateAt.END; s.setTextColor(Colors.text(c))
-            col.addView(s)
+            val sub = LinearLayout(c)
+            sub.orientation = LinearLayout.HORIZONTAL
+            val s = TextView(c); s.text = dir; s.textSize = 12f; s.alpha = 0.6f
+            s.maxLines = 1; s.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE; s.setTextColor(Colors.text(c))
+            sub.addView(s, LinearLayout.LayoutParams(0, WRAP, 1f))
+            val tm = TextView(c); tm.text = " \u2022 " + Downloads.ago(c, e.time); tm.textSize = 12f; tm.alpha = 0.6f
+            tm.maxLines = 1; tm.setTextColor(Colors.text(c))
+            sub.addView(tm, LinearLayout.LayoutParams(WRAP, WRAP))
+            col.addView(sub, LinearLayout.LayoutParams(MATCH, WRAP))
             row.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
             row.setOnClickListener { Files.open(c, f); onClose() }
             row.setOnLongClickListener { v ->
@@ -528,17 +545,50 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
                 ))
                 true
             }
-            card.addView(row, LinearLayout.LayoutParams(MATCH, WRAP))
+            inner.addView(row, LinearLayout.LayoutParams(MATCH, WRAP))
         }
 
-        val all = TextView(c)
-        all.text = UiText.text(c, "All downloads")
-        all.textSize = 14f
-        all.gravity = Gravity.CENTER
-        all.setTextColor(Colors.accent(c))
-        all.setPadding(0, c.dp(10), 0, c.dp(10))
-        all.setOnClickListener { Launch.start(c, Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS)); onClose() }
-        card.addView(all, LinearLayout.LayoutParams(MATCH, WRAP))
+        if (dlApps.isNotEmpty()) {
+            if (dlFiles.isNotEmpty()) {
+                val h = TextView(c)
+                h.text = UiText.text(c, "Apps installed today")
+                h.textSize = 12f
+                h.setTextColor(Colors.accent(c))
+                h.setPadding(0, c.dp(10), 0, c.dp(2))
+                inner.addView(h)
+            }
+            val shown = if (dlExpanded) dlApps else dlApps.take(8)
+            for (r in 0 until (shown.size + 3) / 4) {
+                val row = LinearLayout(c)
+                row.orientation = LinearLayout.HORIZONTAL
+                for (i in 0 until 4) {
+                    val idx = r * 4 + i
+                    if (idx < shown.size) {
+                        val a = shown[idx]
+                        val cell = AppCell(c)
+                        cell.bind(a)
+                        cell.setOnClickListener { launch(a) }
+                        cell.setOnLongClickListener { v ->
+                            val loc = IntArray(2); v.getLocationOnScreen(loc)
+                            showAppMenu(a, loc[0] + v.width / 2, loc[1] + v.height / 2); true
+                        }
+                        row.addView(cell, LinearLayout.LayoutParams(0, WRAP, 1f))
+                    } else row.addView(View(c), LinearLayout.LayoutParams(0, 1, 1f))
+                }
+                inner.addView(row, LinearLayout.LayoutParams(MATCH, WRAP))
+            }
+        }
+
+        if (dlFiles.size > 5 || dlApps.size > 8) {
+            val all = TextView(c)
+            all.text = UiText.text(c, if (dlExpanded) "Show less" else "All downloads")
+            all.textSize = 14f
+            all.gravity = Gravity.CENTER
+            all.setTextColor(Colors.accent(c))
+            all.setPadding(0, c.dp(10), 0, c.dp(10))
+            all.setOnClickListener { dlExpanded = !dlExpanded; refreshHome() }
+            card.addView(all, LinearLayout.LayoutParams(MATCH, WRAP))
+        } else card.setPadding(c.dp(14), c.dp(8), c.dp(14), c.dp(8))
 
         val wrap = FrameLayout(c)
         wrap.setPadding(0, c.dp(4), 0, c.dp(8))
@@ -663,6 +713,25 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         val maps = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(q)))
         if (has(maps)) out += "Search “$q” in Maps" to { maps }
         return out
+    }
+
+    /** ScrollView limited to a maximum height; it keeps touches from the outer list while it can still scroll. */
+    private class CappedScroll(ctx: Context, private val maxH: Int) : android.widget.ScrollView(ctx) {
+        private var downY = 0f
+        override fun onMeasure(w: Int, h: Int) {
+            super.onMeasure(w, if (maxH == Int.MAX_VALUE) h else MeasureSpec.makeMeasureSpec(maxH, MeasureSpec.AT_MOST))
+        }
+        override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+            when (ev.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> { downY = ev.y; parent?.requestDisallowInterceptTouchEvent(canScrollVertically(1) || canScrollVertically(-1)) }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val dy = ev.y - downY
+                    val can = if (dy > 0) canScrollVertically(-1) else canScrollVertically(1)
+                    parent?.requestDisallowInterceptTouchEvent(can)
+                }
+            }
+            return super.dispatchTouchEvent(ev)
+        }
     }
 
     private inner class AppCell(ctx: Context) : LinearLayout(ctx) {

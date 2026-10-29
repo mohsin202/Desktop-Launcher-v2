@@ -12,6 +12,23 @@ object Downloads {
 
     class Entry(val file: File, val time: Long)
 
+    /** Local midnight: the card shows only today's items. */
+    fun todayStart(): Long = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    /** Launcher apps first installed today (Play Store, APK files, anything), newest first. */
+    fun newApps(c: Context, all: List<AppInfo>): List<AppInfo> {
+        val cutoff = maxOf(todayStart(), Prefs.getLong(c, Prefs.K_DL_DISMISSED, 0L))
+        return all.mapNotNull {
+            try {
+                val t = c.packageManager.getPackageInfo(it.pkg, 0).firstInstallTime
+                if (t > cutoff && it.pkg != c.packageName) it to t else null
+            } catch (_: Exception) { null }
+        }.sortedByDescending { it.second }.map { it.first }.distinctBy { it.pkg }
+    }
+
     fun dismiss(c: Context) = Prefs.setLong(c, Prefs.K_DL_DISMISSED, System.currentTimeMillis())
 
     /** Targets of the .desktoplink shortcuts that already exist on the Desktop. */
@@ -28,7 +45,7 @@ object Downloads {
     /** Newest first. Hidden: older than 24h, older than the last ✕, or already having a desktop shortcut. */
     fun recent(c: Context): List<Entry> {
         val now = System.currentTimeMillis()
-        val cutoff = maxOf(now - WINDOW_MS, Prefs.getLong(c, Prefs.K_DL_DISMISSED, 0L))
+        val cutoff = maxOf(todayStart(), Prefs.getLong(c, Prefs.K_DL_DISMISSED, 0L))
         val found = LinkedHashMap<String, Entry>()
         try {
             c.contentResolver.query(
@@ -59,7 +76,7 @@ object Downloads {
             f.isFile && !rel.split('/').any { seg -> seg.startsWith(".") } &&
                 !rel.startsWith("/Android/") && !(desk.isNotEmpty() && f.absolutePath.startsWith("$desk/")) && f.extension.lowercase() !in SKIP_EXT &&
                 it.time > cutoff && f.absolutePath !in shortcuts
-        }.sortedByDescending { it.time }.take(20)
+        }.sortedByDescending { it.time }.take(200)
     }
 
     fun createShortcut(c: Context, f: File): Boolean = try {
