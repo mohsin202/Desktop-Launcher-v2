@@ -534,7 +534,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                 label = e.info.label
             }
             is Entry.FileE -> {
-                ic.setImageDrawable(Icons.file(e.file))
+                Thumbs.bind(ic, e.file, sz)
                 label = e.file.name
                 if (Clip.cut && Clip.files.contains(e.file)) ic.alpha = 0.45f
             }

@@ -111,7 +111,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
                 row.setPadding(c.dp(12), c.dp(8), c.dp(12), c.dp(8))
                 if (r.icon != null) {
                     val iv = android.widget.ImageView(c)
-                    iv.setImageDrawable(r.icon)
+                    if (r.file != null) Thumbs.bind(iv, r.file, c.dp(36)) else iv.setImageDrawable(r.icon)
                     row.addView(iv, LinearLayout.LayoutParams(c.dp(36), c.dp(36)).also { it.rightMargin = c.dp(12) })
                 }
                 val col = LinearLayout(c)
@@ -513,7 +513,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
             row.gravity = Gravity.CENTER_VERTICAL
             row.setPadding(0, c.dp(8), 0, c.dp(8))
             val iv = android.widget.ImageView(c)
-            iv.setImageDrawable(Icons.file(f))
+            Thumbs.bind(iv, f, c.dp(36))
             row.addView(iv, LinearLayout.LayoutParams(c.dp(36), c.dp(36)).also { it.marginEnd = c.dp(12) })
             val col = LinearLayout(c)
             col.orientation = LinearLayout.VERTICAL
