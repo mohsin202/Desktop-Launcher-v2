@@ -43,6 +43,18 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".TrashActivity"
+            android:exported="true"
+            android:icon="@mipmap/ic_trash"
+            android:label="@string/trash_name"
+            android:theme="@style/Theme.Desktop.Settings">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".TaskbarService"
             android:exported="true"
