@@ -117,8 +117,23 @@ class TrashActivity : Activity() {
     private val pool = Executors.newFixedThreadPool(2)
     private var loading = true
 
+    /** If anything goes wrong while building the screen, show the error instead of silently closing. */
+    private fun showError(e: Throwable) {
+        val tv = TextView(this)
+        tv.text = "Trash error:\n" + android.util.Log.getStackTraceString(e)
+        tv.textSize = 12f
+        tv.setPadding(dp(16), dp(48), dp(16), dp(16))
+        val sv = ScrollView(this)
+        sv.addView(tv)
+        setContentView(sv)
+    }
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        try { build() } catch (e: Throwable) { android.util.Log.e("DesktopTrash", "build failed", e); showError(e) }
+    }
+
+    private fun build() {
         window.setDecorFitsSystemWindows(false)
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
@@ -156,7 +171,7 @@ class TrashActivity : Activity() {
         updateButtons()
     }
 
-    override fun onResume() { super.onResume(); load() }
+    override fun onResume() { super.onResume(); if (::listBox.isInitialized) try { load() } catch (e: Throwable) { showError(e) } }
     override fun onDestroy() { pool.shutdownNow(); super.onDestroy() }
 
     private fun cardColor(): Int {
@@ -188,12 +203,14 @@ class TrashActivity : Activity() {
         loading = true
         render()
         Thread {
-            val l = try { TrashStore.list(this) } catch (_: Exception) { emptyList() }
+            val l = try { TrashStore.list(this) } catch (_: Throwable) { emptyList() }
             runOnUiThread {
-                items = l
-                selected.retainAll(l.map { it.file.absolutePath }.toSet())
-                loading = false
-                render()
+                try {
+                    items = l
+                    selected.retainAll(l.map { it.file.absolutePath }.toSet())
+                    loading = false
+                    render()
+                } catch (e: Throwable) { showError(e) }
             }
         }.start()
     }
