@@ -35,6 +35,7 @@ object Prefs {
     const val K_DRAWER_IME = "drawerIme"
     const val K_LANGUAGE = "uiLanguage" // 0 English, 1 Urdu
     const val K_DIRECTION = "uiDirection" // 0 system, 1 LTR, 2 RTL
+    const val K_FOLDERS = "folders" // desktop folders (see FolderStore)
     const val K_RECENT = "recentSearches" // last searches, "|" separated
     const val K_DL_DISMISSED = "dlDismissed" // time (ms) when the "downloaded today" card was closed
 

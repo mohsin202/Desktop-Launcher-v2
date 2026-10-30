@@ -180,7 +180,7 @@ class LauncherActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.action == ACTION_TOGGLE_DRAWER) toggleDrawer()
-        else { closeWidgetSheet(); closeDrawer(); TaskbarService.instance?.closeDrawer(); desktop.clearSelection() }
+        else { closeWidgetSheet(); closeDrawer(); TaskbarService.instance?.closeDrawer(); desktop.clearSelection(); desktop.closeFolder() }
     }
 
     override fun onConfigurationChanged(c: Configuration) {
@@ -191,7 +191,7 @@ class LauncherActivity : Activity() {
     }
 
     @Deprecated("Deprecated in Java")
-    override fun onBackPressed() { if (sheet != null) closeWidgetSheet() else if (drawer != null) closeDrawer() }
+    override fun onBackPressed() { if (sheet != null) closeWidgetSheet() else if (drawer != null) closeDrawer() else desktop.closeFolder() }
 
     fun toggleDrawer() {
         val svc = TaskbarService.instance

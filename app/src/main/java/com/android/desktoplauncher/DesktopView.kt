@@ -21,6 +21,10 @@ sealed class Entry {
     abstract val key: String
     class AppE(val info: AppInfo) : Entry() { override val key = "app:" + info.comp.flattenToString() }
     class FileE(val file: File) : Entry() { override val key = "file:" + file.absolutePath }
+    class FolderE(val id: String, var name: String, val members: MutableList<String>, var sx: Int, var sy: Int) : Entry() {
+        override val key = "folder:$id"
+        var resolved: List<Entry> = emptyList()
+    }
 }
 
 /** The "Desktop": shows the contents of the Desktop folder, app shortcuts and widgets. */
@@ -28,6 +32,9 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     private val items = ArrayList<Pair<Entry, View>>()
     private val widgets = ArrayList<WidgetBox>()
     private var selectedKey: String? = null
+    private var editFolder: String? = null
+    private var openFolderId: String? = null
+    private var folderPanel: View? = null
     private var lastX = 0
     private var lastY = 0
 
@@ -96,6 +103,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
 
     private fun refreshSelection() {
         for ((e, v) in items) {
+            if (e is Entry.FolderE) continue
             v.background = if (e.key == selectedKey) Colors.rounded(0x55FFFFFF, d(8).toFloat()) else null
         }
     }
@@ -105,16 +113,19 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
 
     fun reload() {
         val c = context
-        removeAllViews(); items.clear(); widgets.clear()
+        removeAllViews(); items.clear(); widgets.clear(); folderPanel = null
         val hidden = Prefs.list(c, Prefs.K_HIDDEN).toSet()
+        val folderData = FolderStore.load(c)
+        val inFolder = folderData.flatMap { it.members }.toHashSet()
         val list = ArrayList<Entry>()
         for (s in Prefs.list(c, Prefs.K_DESKAPPS)) {
+            if ("app:$s" in inFolder) continue
             val cn = ComponentName.unflattenFromString(s) ?: continue
             AppRepo.find(c, cn)?.let { list += Entry.AppE(it) }
         }
         try {
             Files.root(c).listFiles()
-                ?.filter { !it.name.startsWith(".") && it.absolutePath !in hidden }
+                ?.filter { !it.name.startsWith(".") && it.absolutePath !in hidden && "file:${it.absolutePath}" !in inFolder }
                 ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
                 ?.forEach { list += Entry.FileE(it) }
         } catch (_: Exception) {}
@@ -130,13 +141,31 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                 }
             }
         }
+        // Folders: members that no longer exist are dropped, empty folders disappear.
+        var folderChanged = false
+        for (fd in folderData) {
+            val res = ArrayList<Entry>()
+            for (m in fd.members.toList()) {
+                val ent: Entry? = if (m.startsWith("app:")) {
+                    ComponentName.unflattenFromString(m.removePrefix("app:"))?.let { cn -> AppRepo.find(c, cn)?.let { Entry.AppE(it) } }
+                } else if (m.startsWith("file:")) File(m.removePrefix("file:")).takeIf { it.exists() }?.let { Entry.FileE(it) } else null
+                if (ent != null) res += ent else { fd.members.remove(m); folderChanged = true }
+            }
+            if (res.isEmpty()) { folderChanged = true; continue }
+            list += Entry.FolderE(fd.id, fd.name, fd.members, fd.sx, fd.sy).also { it.resolved = res }
+        }
+        if (folderChanged) FolderStore.save(c, folderData.filter { it.members.isNotEmpty() })
         for (e in list) {
             val v = makeItem(e)
             addView(v)
             items += e to v
         }
+        refreshFolderEdit()
         loadWidgets()
         refreshSelection()
+        openFolderId?.let { id ->
+            if (items.any { (it.first as? Entry.FolderE)?.id == id }) showFolder(id) else openFolderId = null
+        }
         requestLayout()
     }
 
@@ -324,7 +353,10 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     }
 
     /** Leaves resize mode on every widget (tap on empty desktop). */
-    fun endWidgetEdit(except: WidgetBox? = null) { for (w in widgets) if (w !== except) w.endEdit() }
+    fun endWidgetEdit(except: WidgetBox? = null) {
+        for (w in widgets) if (w !== except) w.endEdit()
+        if (editFolder != null) { editFolder = null; refreshFolderEdit() }
+    }
 
     private fun cell(): Pair<Int, Int> {
         val s = d(Prefs.iconDp(context))
@@ -381,7 +413,12 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         val h = MeasureSpec.getSize(hSpec)
         setMeasuredDimension(w, h)
         computeGrid(w, h)
-        for ((_, v) in items) v.measure(MeasureSpec.makeMeasureSpec(gCw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(gCh, MeasureSpec.EXACTLY))
+        for ((e, v) in items) {
+            val fx = if (e is Entry.FolderE) e.sx else 1
+            val fy = if (e is Entry.FolderE) e.sy else 1
+            v.measure(MeasureSpec.makeMeasureSpec(gCw * fx, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(gCh * fy, MeasureSpec.EXACTLY))
+        }
+        folderPanel?.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
         for (b in widgets) b.measure(MeasureSpec.makeMeasureSpec(maxOf(1, b.sx) * gCw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(maxOf(1, b.sy) * gCh, MeasureSpec.EXACTLY))
     }
 
@@ -392,8 +429,24 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         placeWidgets()
         val occ = HashSet<Int>()
         val stored = storedPos()
+        // 0) folders keep their cells (1x1 up to 3x3); if the span no longer fits it falls back to 1x1
+        for ((e, _) in items) {
+            if (e !is Entry.FolderE) continue
+            val p = stored[e.key] ?: run { e.sx = 1; e.sy = 1; null } ?: continue
+            fun fits(sx: Int, sy: Int): Boolean {
+                if (p[0] < 0 || p[1] < 0 || p[0] + sx > gCols || p[1] + sy > gRows) return false
+                for (cc in p[0] until p[0] + sx) for (rr in p[1] until p[1] + sy) if (blockedByWidget(cc, rr) || (cc * 10000 + rr) in occ) return false
+                return true
+            }
+            if (!fits(e.sx, e.sy)) { e.sx = 1; e.sy = 1 }
+            if (fits(e.sx, e.sy)) {
+                for (cc in p[0] until p[0] + e.sx) for (rr in p[1] until p[1] + e.sy) occ.add(cc * 10000 + rr)
+                cells[e.key] = p
+            }
+        }
         // 1) icons the user placed freely
         for ((e, _) in items) {
+            if (cells.containsKey(e.key)) continue
             val p = stored[e.key] ?: continue
             if (p[0] in 0 until gCols && p[1] in 0 until gRows && !blockedByWidget(p[0], p[1]) && occ.add(p[0] * 10000 + p[1])) cells[e.key] = p
         }
@@ -414,8 +467,11 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             val c = cells[e.key] ?: continue
             val left = paddingLeft + d(8) + c[0] * gCw
             val top = paddingTop + c[1] * gCh
-            v.layout(left, top, left + gCw, top + gCh)
+            val fx = if (e is Entry.FolderE) e.sx else 1
+            val fy = if (e is Entry.FolderE) e.sy else 1
+            v.layout(left, top, left + gCw * fx, top + gCh * fy)
         }
+        folderPanel?.layout(0, 0, r - l, b - t)
         for (box in widgets) {
             val left = originX() + box.col * gCw
             val top = originY() + box.row * gCh
@@ -424,28 +480,184 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         }
     }
 
+    private fun spanOf(e: Entry) = if (e is Entry.FolderE) intArrayOf(e.sx, e.sy) else intArrayOf(1, 1)
+
+    /** The item that covers this grid cell (folders cover several cells). */
+    private fun itemAtCell(col: Int, row: Int, exclude: Entry): Entry? {
+        for ((e, _) in items) {
+            if (e === exclude) continue
+            val c = cells[e.key] ?: continue
+            val sp = spanOf(e)
+            if (col >= c[0] && col < c[0] + sp[0] && row >= c[1] && row < c[1] + sp[1]) return e
+        }
+        return null
+    }
+
+    private fun folderRectFree(f: Entry.FolderE, col: Int, row: Int, sx: Int, sy: Int): Boolean {
+        if (col < 0 || row < 0 || col + sx > gCols || row + sy > gRows) return false
+        for (cc in col until col + sx) for (rr in row until row + sy) {
+            if (blockedByWidget(cc, rr)) return false
+            val o = itemAtCell(cc, rr, f)
+            if (o is Entry.FolderE) return false
+        }
+        return true
+    }
+
     /** Called when an icon is dropped after dragging. */
     private fun dropItem(e: Entry, v: View, dx: Float, dy: Float) {
         v.translationX = 0f; v.translationY = 0f; v.elevation = 0f
+        val old = cells[e.key] ?: return
+        if (e is Entry.FolderE) {
+            val col = Math.round((v.left + dx - paddingLeft - d(8)) / gCw).coerceIn(0, maxOf(0, gCols - e.sx))
+            val row = Math.round((v.top + dy - paddingTop) / gCh).coerceIn(0, maxOf(0, gRows - e.sy))
+            if (folderRectFree(e, col, row, e.sx, e.sy)) savePos(mapOf(e.key to intArrayOf(col, row)))
+            requestLayout(); return
+        }
         val cx = v.left + v.width / 2f + dx
         val cy = v.top + v.height / 2f + dy
         val col = ((cx - paddingLeft - d(8)) / gCw).toInt().coerceIn(0, gCols - 1)
         val row = ((cy - paddingTop) / gCh).toInt().coerceIn(0, gRows - 1)
-        val old = cells[e.key] ?: return
         if (blockedByWidget(col, row)) { requestLayout(); return }
-        // Dropping a file on the Trash icon moves it to the trash straight away.
-        val target = cells.entries.firstOrNull { it.key != e.key && it.value[0] == col && it.value[1] == row }
-        if (e is Entry.FileE && target != null && items.any { it.first.key == target.key && isTrashEntry(it.first) }) {
-            requestLayout(); trashDropped(e.file); return
+        val target = itemAtCell(col, row, e)
+        if (target != null) {
+            // Dropping a file on the Trash icon moves it to the trash straight away.
+            if (e is Entry.FileE && isTrashEntry(target)) { requestLayout(); trashDropped(e.file); return }
+            if (target is Entry.FolderE) { addToFolder(target, e); return }
+            createFolder(target, e); return
         }
-        val updates = HashMap<String, IntArray>()
-        updates[e.key] = intArrayOf(col, row)
-        // If another icon sits there it takes the old cell (swap).
-        cells.entries.firstOrNull { it.key != e.key && it.value[0] == col && it.value[1] == row }?.let {
-            updates[it.key] = intArrayOf(old[0], old[1])
-        }
-        savePos(updates)
+        savePos(mapOf(e.key to intArrayOf(col, row)))
         requestLayout()
+    }
+
+    private fun createFolder(target: Entry, dragged: Entry) {
+        val c = context
+        val id = System.currentTimeMillis().toString(36)
+        val list = FolderStore.load(c)
+        list += FolderData(id, "Folder", 1, 1, mutableListOf(target.key, dragged.key))
+        FolderStore.save(c, list)
+        cells[target.key]?.let { savePos(mapOf("folder:$id" to intArrayOf(it[0], it[1]))) }
+        reload()
+    }
+
+    private fun addToFolder(f: Entry.FolderE, e: Entry) {
+        FolderStore.update(context, f.id) { if (e.key !in it.members) it.members += e.key }
+        reload()
+    }
+
+    private fun refreshFolderEdit() {
+        for ((e, v) in items) if (e is Entry.FolderE && v is FolderView) v.editing = (e.id == editFolder)
+    }
+
+    // ------------------------------------------------------------ folder window
+
+    fun closeFolder(): Boolean {
+        val p = folderPanel ?: return false
+        removeView(p)
+        folderPanel = null
+        openFolderId = null
+        return true
+    }
+
+    private fun showFolder(id: String) {
+        val f = items.firstOrNull { (it.first as? Entry.FolderE)?.id == id }?.first as? Entry.FolderE ?: return
+        folderPanel?.let { removeView(it) }
+        openFolderId = id
+        val c = context
+        val ov = FrameLayout(c)
+        ov.setBackgroundColor(0x40000000)
+        ov.isClickable = true
+        ov.setOnClickListener { closeFolder() }
+
+        val card = LinearLayout(c)
+        card.orientation = LinearLayout.VERTICAL
+        card.background = Colors.rounded(Colors.surface(c), d(32).toFloat())
+        card.setPadding(d(14), d(14), d(14), d(18))
+        card.isClickable = true
+        UiText.applyDirection(card, c)
+
+        val title = TextView(c)
+        title.text = UiText.text(c, f.name)
+        title.textSize = 28f
+        title.gravity = Gravity.CENTER
+        title.maxLines = 1
+        title.ellipsize = android.text.TextUtils.TruncateAt.END
+        title.setTextColor(Colors.text(c))
+        title.setOnLongClickListener { renameFolder(f); true }
+        card.addView(title, LinearLayout.LayoutParams(MATCH, WRAP).also { it.bottomMargin = d(10) })
+
+        val rowH = d(112)
+        val grid = android.widget.GridView(c)
+        grid.numColumns = 3
+        grid.selector = android.graphics.drawable.ColorDrawable(0)
+        grid.verticalSpacing = 0
+        grid.adapter = object : android.widget.BaseAdapter() {
+            override fun getCount() = f.resolved.size
+            override fun getItem(p: Int) = f.resolved[p]
+            override fun getItemId(p: Int) = p.toLong()
+            override fun getView(p: Int, cv: View?, parent: ViewGroup?): View {
+                val en = f.resolved[p]
+                val cell = LinearLayout(c)
+                cell.orientation = LinearLayout.VERTICAL
+                cell.gravity = Gravity.CENTER_HORIZONTAL
+                cell.setPadding(d(4), d(8), d(4), d(4))
+                val iv = android.widget.ImageView(c)
+                val label: String
+                if (en is Entry.AppE) { iv.setImageDrawable(Icons.app(c, en.info.comp, false)); label = en.info.label }
+                else if (en is Entry.FileE) { Thumbs.bind(iv, en.file, d(56)); label = en.file.name } else label = ""
+                cell.addView(iv, LinearLayout.LayoutParams(d(56), d(56)))
+                val t = TextView(c)
+                t.text = label
+                t.textSize = 12f
+                t.maxLines = 2
+                t.gravity = Gravity.CENTER
+                t.ellipsize = android.text.TextUtils.TruncateAt.END
+                t.setTextColor(Colors.text(c))
+                cell.addView(t, LinearLayout.LayoutParams(MATCH, WRAP).also { it.topMargin = d(4) })
+                return cell
+            }
+        }
+        grid.setOnItemClickListener { _, _, p, _ -> val en = f.resolved[p]; closeFolder(); open(en) }
+        grid.setOnItemLongClickListener { _, v, p, _ ->
+            val en = f.resolved[p]
+            val loc = IntArray(2); v.getLocationOnScreen(loc)
+            PopupMenuX(c, this).show(loc[0] + v.width / 2, loc[1] + v.height / 2, listOf(
+                MenuItem("Open") { closeFolder(); open(en) },
+                MenuItem("Remove from folder") { removeFromFolder(f, en) }
+            ))
+            true
+        }
+        val rows = ((f.resolved.size + 2) / 3).coerceIn(1, 3)
+        card.addView(grid, LinearLayout.LayoutParams(MATCH, rows * rowH))
+
+        val w = if (width > 0) width else resources.displayMetrics.widthPixels
+        val cw = minOf(d(340), w - d(32))
+        ov.addView(card, FrameLayout.LayoutParams(cw, WRAP, Gravity.CENTER))
+        addView(ov, LayoutParams(MATCH, MATCH))
+        folderPanel = ov
+        requestLayout()
+    }
+
+    private fun renameFolder(f: Entry.FolderE) {
+        val et = EditText(act)
+        et.setText(f.name)
+        et.selectAll()
+        AlertDialog.Builder(act).setTitle("Rename").setView(et)
+            .setPositiveButton("Rename") { _, _ ->
+                val name = et.text.toString().trim().replace("|", " ")
+                if (name.isNotBlank()) { FolderStore.update(context, f.id) { it.name = name }; reload() }
+            }.setNegativeButton("Cancel", null).show()
+    }
+
+    private fun removeFromFolder(f: Entry.FolderE, en: Entry) {
+        FolderStore.update(context, f.id) { it.members.remove(en.key) }
+        reload()
+    }
+
+    private fun ungroup(f: Entry.FolderE) {
+        val c = context
+        FolderStore.save(c, FolderStore.load(c).filter { it.id != f.id })
+        if (openFolderId == f.id) closeFolder()
+        reload()
     }
 
     private inner class ItemTouch(val e: Entry, val v: View) : View.OnTouchListener {
@@ -454,6 +666,9 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         private var y0 = 0f
         private var moved = false
         private var secondary = false
+        private var fResize = false
+        private var sSx = 1
+        private var sSy = 1
         private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
         private val longPress = Runnable {
             if (state == 1) {
@@ -469,7 +684,12 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     secondary = (ev.buttonState and MotionEvent.BUTTON_SECONDARY) != 0
-                    if (secondary) { itemMenu(e, ev.rawX.toInt(), ev.rawY.toInt()); return true }
+                    if (secondary) { itemMenu(e, ev.rawX.toInt(), ev.rawY.toInt(), true); return true }
+                    if (e is Entry.FolderE && editFolder == e.id && v is FolderView && v.inHandle(ev.x, ev.y)) {
+                        fResize = true; x0 = ev.rawX; y0 = ev.rawY; sSx = e.sx; sSy = e.sy
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                        return true
+                    }
                     x0 = ev.rawX; y0 = ev.rawY; moved = false; state = 1
                     lastX = ev.rawX.toInt(); lastY = ev.rawY.toInt()
                     if (!mouse) v.postDelayed(longPress, android.view.ViewConfiguration.getLongPressTimeout().toLong())
@@ -477,6 +697,16 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    if (fResize && e is Entry.FolderE) {
+                        val cc = cells[e.key] ?: return true
+                        val nsx = Math.round((sSx * gCw + (ev.rawX - x0)) / gCw.toFloat()).coerceIn(1, minOf(3, gCols - cc[0]))
+                        val nsy = Math.round((sSy * gCh + (ev.rawY - y0)) / gCh.toFloat()).coerceIn(1, minOf(3, gRows - cc[1]))
+                        if ((nsx != e.sx || nsy != e.sy) && folderRectFree(e, cc[0], cc[1], nsx, nsy)) {
+                            e.sx = nsx; e.sy = nsy
+                            requestLayout()
+                        }
+                        return true
+                    }
                     if (secondary) return true
                     val dx = ev.rawX - x0
                     val dy = ev.rawY - y0
@@ -493,6 +723,11 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                 }
                 MotionEvent.ACTION_UP -> {
                     v.removeCallbacks(longPress)
+                    if (fResize && e is Entry.FolderE) {
+                        fResize = false
+                        FolderStore.update(context, e.id) { it.sx = e.sx; it.sy = e.sy }
+                        return true
+                    }
                     if (secondary) { secondary = false; return true }
                     val dx = ev.rawX - x0
                     val dy = ev.rawY - y0
@@ -509,6 +744,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     v.removeCallbacks(longPress)
+                    if (fResize && e is Entry.FolderE) { fResize = false; FolderStore.update(context, e.id) { it.sx = e.sx; it.sy = e.sy } }
                     state = 0; secondary = false
                     v.translationX = 0f; v.translationY = 0f; v.elevation = 0f
                     return true
@@ -520,6 +756,11 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
 
     private fun makeItem(e: Entry): View {
         val c = context
+        if (e is Entry.FolderE) {
+            val fv = FolderView(c, e)
+            fv.setOnTouchListener(ItemTouch(e, fv))
+            return fv
+        }
         val v = LinearLayout(c)
         v.orientation = LinearLayout.VERTICAL
         v.gravity = Gravity.CENTER_HORIZONTAL
@@ -538,6 +779,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                 label = e.file.name
                 if (Clip.cut && Clip.files.contains(e.file)) ic.alpha = 0.45f
             }
+            is Entry.FolderE -> label = e.name
         }
         v.addView(ic, LinearLayout.LayoutParams(sz, sz))
         val t = TextView(c)
@@ -557,6 +799,14 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         when (e) {
             is Entry.AppE -> Launch.app(context, e.info.comp)
             is Entry.FileE -> openFile(e.file)
+            is Entry.FolderE -> {
+                val v = items.firstOrNull { it.first === e }?.second as? FolderView ?: return
+                if (editFolder != null) { editFolder = null; refreshFolderEdit() }
+                val loc = IntArray(2); v.getLocationOnScreen(loc)
+                val key = v.hit(lastX - loc[0], lastY - loc[1])
+                val member = key?.let { k -> e.resolved.firstOrNull { it.key == k } }
+                if (member != null) open(member) else showFolder(e.id)
+            }
         }
     }
 
@@ -600,8 +850,18 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         ))
     }
 
-    private fun itemMenu(e: Entry, x: Int, y: Int) {
+    private fun itemMenu(e: Entry, x: Int, y: Int, forceMenu: Boolean = false) {
         val c = context
+        if (e is Entry.FolderE) {
+            // Long press: outline with the resize handle; long press again (or right click): menu.
+            if (editFolder != e.id && !forceMenu) { editFolder = e.id; refreshFolderEdit(); return }
+            PopupMenuX(c, this).show(x, y, listOf(
+                MenuItem("Open") { showFolder(e.id) },
+                MenuItem("Rename") { renameFolder(e) },
+                MenuItem("Ungroup") { ungroup(e) }
+            ))
+            return
+        }
         selectedKey = e.key
         refreshSelection()
         val m = PopupMenuX(c, this)
@@ -627,6 +887,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                 },
                 MenuItem("Delete") { confirmDelete(e.file) }
             ))
+            is Entry.FolderE -> {}
         }
     }
 
