@@ -497,44 +497,70 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         trashAt = now
         val c = context
         val base = trashBase ?: return
-        val sz = d(Prefs.iconDp(c))
         Thread {
             val last = try { TrashStore.list(c).sortedByDescending { it.expiry }.take(3) } catch (_: Exception) { emptyList() }
             val sig = last.joinToString("|") { it.file.absolutePath }
             if (sig == trashSig && trashBmp != null) return@Thread
-            val bmp = if (last.isEmpty()) null else try {
-                val out = android.graphics.Bitmap.createBitmap(sz, sz, android.graphics.Bitmap.Config.ARGB_8888)
-                val cv = android.graphics.Canvas(out)
-                val bd = base.constantState?.newDrawable()?.mutate() ?: base
-                bd.setBounds(0, 0, sz, sz)
-                bd.draw(cv)
-                val ts = (sz * 0.36f).toInt()
-                // oldest first so the newest ends up on top, in the middle
-                val order = last.reversed()
-                val spots = when (order.size) {
-                    1 -> listOf(floatArrayOf(0.5f, 0.38f, 0f))
-                    2 -> listOf(floatArrayOf(0.34f, 0.40f, -12f), floatArrayOf(0.54f, 0.36f, 6f))
-                    else -> listOf(floatArrayOf(0.30f, 0.42f, -14f), floatArrayOf(0.70f, 0.42f, 14f), floatArrayOf(0.5f, 0.34f, 0f))
-                }
-                val border = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE }
-                for ((i, it) in order.withIndex()) {
-                    val t = Thumbs.tile(it.file, it.name, ts)
-                    val sp = spots[i]
-                    cv.save()
-                    cv.rotate(sp[2], sz * sp[0], sz * sp[1])
-                    val b = ts * 0.06f
-                    cv.drawRoundRect(sz * sp[0] - ts / 2f - b, sz * sp[1] - ts / 2f - b, sz * sp[0] + ts / 2f + b, sz * sp[1] + ts / 2f + b, ts * 0.2f, ts * 0.2f, border)
-                    cv.drawBitmap(t, sz * sp[0] - ts / 2f, sz * sp[1] - ts / 2f, null)
-                    cv.restore()
-                }
-                out
-            } catch (_: Throwable) { null }
+            val bmp = if (last.isEmpty()) null else try { composeTrash(last) } catch (_: Throwable) { null }
             post {
                 trashSig = sig
                 trashBmp = bmp
-                if (trashIv === iv) iv.setImageDrawable(if (bmp != null) android.graphics.drawable.BitmapDrawable(resources, bmp) else base)
+                if (trashIv === iv) iv.setImageDrawable(if (bmp != null) trashDrawable(bmp) else base)
             }
         }.start()
+    }
+
+    private fun trashDrawable(fg: android.graphics.Bitmap): android.graphics.drawable.Drawable =
+        android.graphics.drawable.AdaptiveIconDrawable(
+            android.graphics.drawable.ColorDrawable(context.getColor(resources.getIdentifier("trash_bg", "color", context.packageName))),
+            android.graphics.drawable.BitmapDrawable(resources, fg)
+        )
+
+    /**
+     * Foreground of the trash icon: the bin picture, the last trashed items tossed in at odd angles,
+     * then the front glass of the bin drawn over them (semi transparent) so they look like they are inside.
+     */
+    private fun composeTrash(last: List<TrashStore.Item>): android.graphics.Bitmap {
+        val bin = android.graphics.BitmapFactory.decodeResource(resources, resources.getIdentifier("ic_trash_fg", "drawable", context.packageName))
+        val n = bin.width // 432
+        val k = n / 432f
+        val out = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
+        val cv = android.graphics.Canvas(out)
+        cv.drawBitmap(bin, 0f, 0f, null)
+        val order = last.reversed() // newest drawn last = on top
+        val spots = when (order.size) {
+            1 -> listOf(floatArrayOf(215f, 160f, -12f))
+            2 -> listOf(floatArrayOf(176f, 168f, -24f), floatArrayOf(254f, 160f, 17f))
+            else -> listOf(floatArrayOf(158f, 178f, -30f), floatArrayOf(268f, 172f, 26f), floatArrayOf(213f, 152f, 9f))
+        }
+        val ts = (100 * k).toInt()
+        val border = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE }
+        cv.save()
+        cv.clipRect(104 * k, 0f, 328 * k, 340 * k) // stay inside the bin sides
+        for ((i, it) in order.withIndex()) {
+            val t = Thumbs.tile(it.file, it.name, ts)
+            val sp = spots[i]
+            val cx = sp[0] * k; val cy = sp[1] * k
+            cv.save()
+            cv.rotate(sp[2], cx, cy)
+            val b = ts * 0.05f
+            cv.drawRoundRect(cx - ts / 2f - b, cy - ts / 2f - b, cx + ts / 2f + b, cy + ts / 2f + b, ts * 0.18f, ts * 0.18f, border)
+            cv.drawBitmap(t, cx - ts / 2f, cy - ts / 2f, null)
+            cv.restore()
+        }
+        cv.restore()
+        // front glass: the bin's front panels again, see-through, over the items
+        val front = android.graphics.Path().apply {
+            moveTo(100f * k, 118f * k); lineTo(228f * k, 160f * k); lineTo(332f * k, 128f * k)
+            lineTo(304f * k, 322f * k); lineTo(232f * k, 349f * k); lineTo(122f * k, 308f * k); close()
+        }
+        cv.save()
+        cv.clipPath(front)
+        val glass = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
+        glass.alpha = 125
+        cv.drawBitmap(bin, 0f, 0f, glass)
+        cv.restore()
+        return out
     }
 
     private fun spanOf(e: Entry) = if (e is Entry.FolderE) intArrayOf(e.sx, e.sy) else intArrayOf(1, 1)
@@ -828,7 +854,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         when (e) {
             is Entry.AppE -> {
                 ic.setImageDrawable(Icons.app(c, e.info.comp, false))
-                if (isTrashEntry(e)) { trashIv = ic; trashBase = ic.drawable; trashBmp?.let { ic.setImageDrawable(android.graphics.drawable.BitmapDrawable(resources, it)) } }
+                if (isTrashEntry(e)) { trashIv = ic; trashBase = ic.drawable; trashBmp?.let { ic.setImageDrawable(trashDrawable(it)) } }
                 ic.dot = Prefs.bool(c, Prefs.K_DOTS, true) && NotifState.has(e.info.pkg)
                 label = e.info.label
             }
