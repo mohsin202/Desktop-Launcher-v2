@@ -33,6 +33,11 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     private val widgets = ArrayList<WidgetBox>()
     private var selectedKey: String? = null
     private var editFolder: String? = null
+    private var trashIv: BadgedIcon? = null
+    private var trashBase: android.graphics.drawable.Drawable? = null
+    private var trashSig = ""
+    private var trashBmp: android.graphics.Bitmap? = null
+    private var trashAt = 0L
     private var openFolderId: String? = null
     private var folderPanel: View? = null
     private var lastX = 0
@@ -113,7 +118,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
 
     fun reload() {
         val c = context
-        removeAllViews(); items.clear(); widgets.clear(); folderPanel = null
+        removeAllViews(); items.clear(); widgets.clear(); folderPanel = null; trashIv = null
         val hidden = Prefs.list(c, Prefs.K_HIDDEN).toSet()
         val folderData = FolderStore.load(c)
         val inFolder = folderData.flatMap { it.members }.toHashSet()
@@ -161,6 +166,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             items += e to v
         }
         refreshFolderEdit()
+        refreshTrashIcon()
         loadWidgets()
         refreshSelection()
         openFolderId?.let { id ->
@@ -480,6 +486,57 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         }
     }
 
+    /**
+     * Trash icon: empty bin when the trash is empty, otherwise the last 1-3 trashed items sit inside the bin.
+     * Safe to call often; the scan runs in the background (at most every few seconds unless forced).
+     */
+    fun refreshTrashIcon(force: Boolean = false) {
+        val iv = trashIv ?: return
+        val now = System.currentTimeMillis()
+        if (!force && now - trashAt < 3000) return
+        trashAt = now
+        val c = context
+        val base = trashBase ?: return
+        val sz = d(Prefs.iconDp(c))
+        Thread {
+            val last = try { TrashStore.list(c).sortedByDescending { it.expiry }.take(3) } catch (_: Exception) { emptyList() }
+            val sig = last.joinToString("|") { it.file.absolutePath }
+            if (sig == trashSig && trashBmp != null) return@Thread
+            val bmp = if (last.isEmpty()) null else try {
+                val out = android.graphics.Bitmap.createBitmap(sz, sz, android.graphics.Bitmap.Config.ARGB_8888)
+                val cv = android.graphics.Canvas(out)
+                val bd = base.constantState?.newDrawable()?.mutate() ?: base
+                bd.setBounds(0, 0, sz, sz)
+                bd.draw(cv)
+                val ts = (sz * 0.36f).toInt()
+                // oldest first so the newest ends up on top, in the middle
+                val order = last.reversed()
+                val spots = when (order.size) {
+                    1 -> listOf(floatArrayOf(0.5f, 0.38f, 0f))
+                    2 -> listOf(floatArrayOf(0.34f, 0.40f, -12f), floatArrayOf(0.54f, 0.36f, 6f))
+                    else -> listOf(floatArrayOf(0.30f, 0.42f, -14f), floatArrayOf(0.70f, 0.42f, 14f), floatArrayOf(0.5f, 0.34f, 0f))
+                }
+                val border = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE }
+                for ((i, it) in order.withIndex()) {
+                    val t = Thumbs.tile(it.file, it.name, ts)
+                    val sp = spots[i]
+                    cv.save()
+                    cv.rotate(sp[2], sz * sp[0], sz * sp[1])
+                    val b = ts * 0.06f
+                    cv.drawRoundRect(sz * sp[0] - ts / 2f - b, sz * sp[1] - ts / 2f - b, sz * sp[0] + ts / 2f + b, sz * sp[1] + ts / 2f + b, ts * 0.2f, ts * 0.2f, border)
+                    cv.drawBitmap(t, sz * sp[0] - ts / 2f, sz * sp[1] - ts / 2f, null)
+                    cv.restore()
+                }
+                out
+            } catch (_: Throwable) { null }
+            post {
+                trashSig = sig
+                trashBmp = bmp
+                if (trashIv === iv) iv.setImageDrawable(if (bmp != null) android.graphics.drawable.BitmapDrawable(resources, bmp) else base)
+            }
+        }.start()
+    }
+
     private fun spanOf(e: Entry) = if (e is Entry.FolderE) intArrayOf(e.sx, e.sy) else intArrayOf(1, 1)
 
     /** The item that covers this grid cell (folders cover several cells). */
@@ -771,6 +828,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         when (e) {
             is Entry.AppE -> {
                 ic.setImageDrawable(Icons.app(c, e.info.comp, false))
+                if (isTrashEntry(e)) { trashIv = ic; trashBase = ic.drawable; trashBmp?.let { ic.setImageDrawable(android.graphics.drawable.BitmapDrawable(resources, it)) } }
                 ic.dot = Prefs.bool(c, Prefs.K_DOTS, true) && NotifState.has(e.info.pkg)
                 label = e.info.label
             }
@@ -944,7 +1002,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             val toTrash = cb.isChecked
             Thread {
                 if (toTrash) TrashStore.trash(context, f) else f.deleteRecursively()
-                post { reload() }
+                post { trashAt = 0L; reload() }
             }.start()
         }
         dlg.show()
@@ -954,7 +1012,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     private fun trashDropped(f: File) {
         Thread {
             val ok = TrashStore.trash(context, f)
-            post { reload(); context.toast(UiText.text(context, if (ok) "Moved to trash" else "Could not move to trash")) }
+            post { trashAt = 0L; reload(); context.toast(UiText.text(context, if (ok) "Moved to trash" else "Could not move to trash")) }
         }.start()
     }
 

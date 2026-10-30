@@ -135,4 +135,33 @@ object Thumbs {
         cv.drawRoundRect(r, s * 0.05f, s * 0.05f, pp)
         return out
     }
+
+    /** Synchronous small tile (picture/video thumbnail or file icon) for composing icons. Call off the main thread. */
+    fun tile(file: File, name: String, px: Int): Bitmap {
+        val ext = name.substringAfterLast('.', "").lowercase()
+        val src = try {
+            if (file.isDirectory) null
+            else if (ext in IMG) ThumbnailUtils.createImageThumbnail(file, Size(px, px), null)
+            else if (ext in VID) ThumbnailUtils.createVideoThumbnail(file, Size(px, px), null)
+            else null
+        } catch (_: Throwable) { null }
+        val out = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
+        val cv = Canvas(out)
+        if (src != null) {
+            val scale = maxOf(px / src.width.toFloat(), px / src.height.toFloat())
+            val m = Matrix()
+            m.setScale(scale, scale)
+            m.postTranslate((px - src.width * scale) / 2f, (px - src.height * scale) / 2f)
+            val shader = BitmapShader(src, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            shader.setLocalMatrix(m)
+            val p = Paint(Paint.ANTI_ALIAS_FLAG)
+            p.shader = shader
+            cv.drawRoundRect(RectF(0f, 0f, px.toFloat(), px.toFloat()), px * 0.16f, px * 0.16f, p)
+        } else {
+            val d = if (file.isDirectory) FolderIcon() else FileIcon(ext, 0xFF1E88E5.toInt())
+            d.setBounds(0, 0, px, px)
+            d.draw(cv)
+        }
+        return out
+    }
 }

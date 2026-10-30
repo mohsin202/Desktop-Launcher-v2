@@ -156,6 +156,7 @@ class LauncherActivity : Activity() {
         super.onResume()
         applyMode()
         updateBanner()
+        desktop.refreshTrashIcon(true)
     }
 
     private fun updateBanner() {
