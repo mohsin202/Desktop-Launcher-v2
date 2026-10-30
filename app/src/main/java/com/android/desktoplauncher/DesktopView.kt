@@ -542,22 +542,25 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             moveTo(110f * k, 126f * k); lineTo(200f * k, 94f * k); lineTo(323f * k, 133f * k)
             lineTo(298f * k, 316f * k); lineTo(232f * k, 340f * k); lineTo(129f * k, 303f * k); close()
         }
-        cv.save()
-        cv.clipPath(inside)
+        val itemsBmp = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
+        val ic = android.graphics.Canvas(itemsBmp)
+        ic.save()
+        ic.clipPath(inside)
         for ((i, it) in order.withIndex()) {
             val t = Thumbs.tile(it.file, it.name, ts)
             val sp = spots[i]
             val cx = sp[0] * k; val cy = sp[1] * k
-            cv.save()
-            cv.rotate(sp[2], cx, cy)
+            ic.save()
+            ic.rotate(sp[2], cx, cy)
             val b = ts * 0.05f
             val h = ts / 2f + b
-            cv.drawRoundRect(cx - h + 4 * k, cy - h + 6 * k, cx + h + 4 * k, cy + h + 6 * k, ts * 0.18f, ts * 0.18f, shadow)
-            cv.drawRoundRect(cx - h, cy - h, cx + h, cy + h, ts * 0.18f, ts * 0.18f, border)
-            cv.drawBitmap(t, cx - ts / 2f, cy - ts / 2f, null)
-            cv.restore()
+            ic.drawRoundRect(cx - h + 4 * k, cy - h + 6 * k, cx + h + 4 * k, cy + h + 6 * k, ts * 0.18f, ts * 0.18f, shadow)
+            ic.drawRoundRect(cx - h, cy - h, cx + h, cy + h, ts * 0.18f, ts * 0.18f, border)
+            ic.drawBitmap(t, cx - ts / 2f, cy - ts / 2f, null)
+            ic.restore()
         }
-        cv.restore()
+        ic.restore()
+        cv.drawBitmap(itemsBmp, 0f, 0f, null)
         // front glass: the bin's front panels again, see-through, over the items
         val front = android.graphics.Path().apply {
             moveTo(100f * k, 118f * k); lineTo(228f * k, 160f * k); lineTo(332f * k, 128f * k)
@@ -566,9 +569,21 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         cv.save()
         cv.clipPath(front)
         val glass = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
-        glass.alpha = 105
+        glass.alpha = 95
         cv.drawBitmap(bin, 0f, 0f, glass)
+        // bring the items' colours back a little so thumbnails stay readable behind the glass
+        val boost = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG).apply { alpha = 85 }
+        cv.drawBitmap(itemsBmp, 0f, 0f, boost)
         cv.restore()
+        // The blue recycle sign is printed on the front glass, so it stays fully bright over the items.
+        val px = IntArray(n * n)
+        bin.getPixels(px, 0, n, 0, 0, n, n)
+        for (i in px.indices) {
+            val c = px[i]
+            if (android.graphics.Color.alpha(c) == 0 || android.graphics.Color.blue(c) <= android.graphics.Color.red(c) + 50) px[i] = 0
+        }
+        val logo = android.graphics.Bitmap.createBitmap(px, n, n, android.graphics.Bitmap.Config.ARGB_8888)
+        cv.drawBitmap(logo, 0f, 0f, null)
         return out
     }
 

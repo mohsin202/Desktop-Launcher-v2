@@ -139,12 +139,7 @@ object Thumbs {
     /** Synchronous small tile (picture/video thumbnail or file icon) for composing icons. Call off the main thread. */
     fun tile(file: File, name: String, px: Int): Bitmap {
         val ext = name.substringAfterLast('.', "").lowercase()
-        val src = try {
-            if (file.isDirectory) null
-            else if (ext in IMG) ThumbnailUtils.createImageThumbnail(file, Size(px, px), null)
-            else if (ext in VID) ThumbnailUtils.createVideoThumbnail(file, Size(px, px), null)
-            else null
-        } catch (_: Throwable) { null }
+        val src: Bitmap? = if (file.isDirectory) null else if (ext in IMG) imageOf(file, px) else if (ext in VID) videoOf(file, px) else null
         val out = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
         val cv = Canvas(out)
         if (src != null) {
@@ -163,5 +158,24 @@ object Thumbs {
             d.draw(cv)
         }
         return out
+    }
+
+    private fun imageOf(f: File, px: Int): Bitmap? {
+        try { return ThumbnailUtils.createImageThumbnail(f, Size(px, px), null) } catch (_: Throwable) {}
+        return try {
+            val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(f.absolutePath, o)
+            var ss = 1
+            while (o.outWidth / (ss * 2) >= px && o.outHeight / (ss * 2) >= px) ss *= 2
+            android.graphics.BitmapFactory.decodeFile(f.absolutePath, android.graphics.BitmapFactory.Options().apply { inSampleSize = ss })
+        } catch (_: Throwable) { null }
+    }
+
+    private fun videoOf(f: File, px: Int): Bitmap? {
+        try { return ThumbnailUtils.createVideoThumbnail(f, Size(px, px), null) } catch (_: Throwable) {}
+        return try {
+            val r = android.media.MediaMetadataRetriever()
+            try { r.setDataSource(f.absolutePath); r.getFrameAtTime(0) } finally { r.release() }
+        } catch (_: Throwable) { null }
     }
 }
