@@ -38,9 +38,8 @@ object Thumbs {
         return try { f.readLines().getOrNull(1)?.let { File(it) } ?: f } catch (_: Exception) { f }
     }
 
-    private fun adaptive(res: Resources, bmp: Bitmap, video: Boolean, bg: Int): Drawable =
-        if (video) AdaptiveIconDrawable(ColorDrawable(bg), BitmapDrawable(res, bmp))
-        else AdaptiveIconDrawable(BitmapDrawable(res, bmp), ColorDrawable(Color.TRANSPARENT))
+    private fun adaptive(res: Resources, bmp: Bitmap, bg: Int): Drawable =
+        AdaptiveIconDrawable(ColorDrawable(bg), BitmapDrawable(res, bmp))
 
     /** Shows the normal file icon right away, then swaps in a thumbnail when the file is a picture or video. */
     fun bind(iv: ImageView, f: File, px: Int) {
@@ -55,7 +54,7 @@ object Thumbs {
         val ext = f.extension.lowercase()
         if (ext != "desktoplink" && ext !in IMG && ext !in VID) return
         val res = iv.resources
-        cache.get(key)?.let { iv.setImageDrawable(adaptive(res, it, ext in VID, bgC)); return }
+        cache.get(key)?.let { iv.setImageDrawable(adaptive(res, it, bgC)); return }
         val layer = (px * 1.5f).toInt().coerceAtLeast(2)
         ex.execute {
             val t = target(f)
@@ -68,22 +67,33 @@ object Thumbs {
             } catch (_: Throwable) { null }
             if (bmp != null) {
                 val vid = te in VID
-                val out = if (vid) filmFrame(bmp, layer, px, bgC, fgC) else cropSquare(bmp, layer)
+                val out = if (vid) filmFrame(bmp, layer, px, bgC, fgC) else photoFrame(bmp, layer, px)
                 cache.put(key, out)
-                main.post { if (iv.tag == key) iv.setImageDrawable(adaptive(res, out, vid, bgC)) }
+                main.post { if (iv.tag == key) iv.setImageDrawable(adaptive(res, out, bgC)) }
             } else if (t != f) {
                 main.post { if (iv.tag == key) iv.setImageDrawable(Icons.file(t)) }
             }
         }
     }
 
-    private fun cropSquare(src: Bitmap, side: Int): Bitmap {
-        val out = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
-        val scale = maxOf(side / src.width.toFloat(), side / src.height.toFloat())
+    /** Photo: the whole picture (not cropped) inside the coloured icon frame. */
+    private fun photoFrame(src: Bitmap, layer: Int, px: Int): Bitmap {
+        val out = Bitmap.createBitmap(layer, layer, Bitmap.Config.ARGB_8888)
+        val box = px * 0.74f
+        val scale = minOf(box / src.width, box / src.height)
+        val w = src.width * scale
+        val h = src.height * scale
+        val l = (layer - w) / 2f
+        val t = (layer - h) / 2f
         val m = Matrix()
         m.setScale(scale, scale)
-        m.postTranslate((side - src.width * scale) / 2f, (side - src.height * scale) / 2f)
-        Canvas(out).drawBitmap(src, m, Paint(Paint.FILTER_BITMAP_FLAG))
+        m.postTranslate(l, t)
+        val shader = BitmapShader(src, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+        shader.setLocalMatrix(m)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        p.shader = shader
+        val r = box * 0.06f
+        Canvas(out).drawRoundRect(RectF(l, t, l + w, t + h), r, r, p)
         return out
     }
 
