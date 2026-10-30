@@ -528,15 +528,22 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         val cv = android.graphics.Canvas(out)
         cv.drawBitmap(bin, 0f, 0f, null)
         val order = last.reversed() // newest drawn last = on top
+        // Items lie piled on the floor of the bin, each one differently turned (the first one upside down).
         val spots = when (order.size) {
-            1 -> listOf(floatArrayOf(215f, 160f, -12f))
-            2 -> listOf(floatArrayOf(176f, 168f, -24f), floatArrayOf(254f, 160f, 17f))
-            else -> listOf(floatArrayOf(158f, 178f, -30f), floatArrayOf(268f, 172f, 26f), floatArrayOf(213f, 152f, 9f))
+            1 -> listOf(floatArrayOf(212f, 262f, -14f))
+            2 -> listOf(floatArrayOf(186f, 272f, 168f), floatArrayOf(246f, 252f, -22f))
+            else -> listOf(floatArrayOf(178f, 274f, 168f), floatArrayOf(252f, 266f, -38f), floatArrayOf(212f, 238f, 14f))
         }
-        val ts = (100 * k).toInt()
+        val ts = (84 * k).toInt()
         val border = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE }
+        val shadow = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0x40000000 }
+        val inside = android.graphics.Path().apply {
+            // the bin's inner outline, a little inset so nothing pokes out of the glass
+            moveTo(110f * k, 126f * k); lineTo(200f * k, 94f * k); lineTo(323f * k, 133f * k)
+            lineTo(298f * k, 316f * k); lineTo(232f * k, 340f * k); lineTo(129f * k, 303f * k); close()
+        }
         cv.save()
-        cv.clipRect(104 * k, 0f, 328 * k, 340 * k) // stay inside the bin sides
+        cv.clipPath(inside)
         for ((i, it) in order.withIndex()) {
             val t = Thumbs.tile(it.file, it.name, ts)
             val sp = spots[i]
@@ -544,7 +551,9 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             cv.save()
             cv.rotate(sp[2], cx, cy)
             val b = ts * 0.05f
-            cv.drawRoundRect(cx - ts / 2f - b, cy - ts / 2f - b, cx + ts / 2f + b, cy + ts / 2f + b, ts * 0.18f, ts * 0.18f, border)
+            val h = ts / 2f + b
+            cv.drawRoundRect(cx - h + 4 * k, cy - h + 6 * k, cx + h + 4 * k, cy + h + 6 * k, ts * 0.18f, ts * 0.18f, shadow)
+            cv.drawRoundRect(cx - h, cy - h, cx + h, cy + h, ts * 0.18f, ts * 0.18f, border)
             cv.drawBitmap(t, cx - ts / 2f, cy - ts / 2f, null)
             cv.restore()
         }
@@ -557,7 +566,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         cv.save()
         cv.clipPath(front)
         val glass = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
-        glass.alpha = 125
+        glass.alpha = 105
         cv.drawBitmap(bin, 0f, 0f, glass)
         cv.restore()
         return out
