@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Glass trash bin with recycle sign, drawn as vectors (same art as TrashArt.kt, without items). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="432" android:viewportHeight="432">
+    <path android:fillColor="#96D5DBE3" android:pathData="M100.0,118.0 L200.0,84.0 L214.0,270.0 L124.0,300.0 Z"/>
+    <path android:fillColor="#96C3CBD5" android:pathData="M200.0,84.0 L332.0,128.0 L304.0,308.0 L214.0,270.0 Z"/>
+    <path android:fillColor="#BEAEB6C1" android:pathData="M124.0,300.0 L214.0,270.0 L304.0,308.0 L230.0,342.0 Z"/>
+    <path android:strokeColor="#EBFFFFFF" android:strokeWidth="3" android:strokeLineJoin="round" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M100.0,118.0 L200.0,84.0 L332.0,128.0"/>
+    <path android:fillColor="#88F2F5F9" android:pathData="M100.0,118.0 L228.0,160.0 L230.0,342.0 L124.0,300.0 Z"/>
+    <path android:fillColor="#99D3DAE3" android:pathData="M228.0,160.0 L332.0,128.0 L304.0,308.0 L230.0,342.0 Z"/>
+    <path android:fillColor="#FFB5BBC4" android:pathData="M124.0,300.0 L230.0,342.0 L230.0,353.0 L124.0,311.0 Z"/>
+    <path android:fillColor="#FF8A919B" android:pathData="M230.0,342.0 L304.0,308.0 L304.0,319.0 L230.0,353.0 Z"/>
+    <path android:fillColor="#46FFFFFF" android:pathData="M112.0,150.0 L132.0,156.0 L150.0,296.0 L136.0,290.0 Z"/>
+    <path android:strokeColor="#F5FFFFFF" android:strokeWidth="3.5" android:strokeLineJoin="round" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M100.0,118.0 L228.0,160.0 L332.0,128.0"/>
+    <path android:strokeColor="#AAFFFFFF" android:strokeWidth="2.5" android:strokeLineJoin="round" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M100.0,118.0 L124.0,300.0"/>
+    <path android:strokeColor="#AAFFFFFF" android:strokeWidth="2.5" android:strokeLineJoin="round" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M228.0,160.0 L230.0,342.0"/>
+    <path android:strokeColor="#AAFFFFFF" android:strokeWidth="2.5" android:strokeLineJoin="round" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M332.0,128.0 L304.0,308.0"/>
+    <path android:strokeColor="#96FFFFFF" android:strokeWidth="2.5" android:strokeLineJoin="round" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M124.0,300.0 L230.0,342.0 L304.0,308.0"/>
+    <path android:strokeColor="#FF1479DA" android:strokeWidth="14" android:strokeLineJoin="round" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M176.6,189.7 L179.5,191.2 L182.4,192.9 L185.1,194.9 L187.8,197.1 L190.3,199.5 L192.7,202.1 L195.0,204.9 L197.0,207.9 L198.8,211.0 L200.5,214.1 L201.9,217.4 L203.0,220.7 L203.9,224.0 L204.6,227.4 L205.0,230.7 L205.1,233.9"/>
+    <path android:fillColor="#FF1479DA" android:pathData="M205.1,255.9 L220.8,238.6 L189.5,229.2 Z"/>
+    <path android:strokeColor="#FF1479DA" android:strokeWidth="14" android:strokeLineJoin="round" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M198.1,254.0 L196.2,255.9 L194.1,257.5 L191.8,258.8 L189.3,259.9 L186.7,260.7 L184.0,261.2 L181.2,261.3 L178.3,261.2 L175.4,260.8 L172.4,260.1 L169.5,259.1 L166.5,257.9 L163.6,256.3 L160.8,254.5 L158.1,252.5 L155.4,250.2"/>
+    <path android:fillColor="#FF1479DA" android:pathData="M137.9,234.0 L147.6,262.6 L163.3,237.8 Z"/>
+    <path android:strokeColor="#FF1479DA" android:strokeWidth="14" android:strokeLineJoin="round" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M141.3,228.3 L140.3,224.9 L139.6,221.6 L139.1,218.3 L138.9,215.0 L138.9,211.8 L139.3,208.7 L139.8,205.7 L140.7,202.9 L141.8,200.2 L143.1,197.7 L144.7,195.5 L146.4,193.4 L148.4,191.6 L150.6,190.1 L152.9,188.8 L155.4,187.9"/>
+    <path android:fillColor="#FF1479DA" android:pathData="M173.0,182.1 L147.6,170.8 L163.3,204.9 Z"/>
+</vector>
