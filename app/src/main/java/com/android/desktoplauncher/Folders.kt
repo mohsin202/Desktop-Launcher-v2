@@ -50,6 +50,9 @@ object FolderStore {
 class FolderView(ctx: Context, val folder: Entry.FolderE) : ViewGroup(ctx) {
     var editing = false
         set(v) { field = v; invalidate() }
+    /** Pointer over it, keyboard focus or its menu is open: stronger outline. */
+    var emphasized = false
+        set(v) { field = v; invalidate() }
 
     private class Slot(val r: Rect, val entry: Entry, val hit: String?)
 
@@ -165,8 +168,8 @@ class FolderView(ctx: Context, val folder: Entry.FolderE) : ViewGroup(ctx) {
         fill.color = (Colors.surfaceHigh(context) and 0x00FFFFFF) or 0xB4000000.toInt()
         canvas.drawRoundRect(rc, r, r, fill)
         stroke.color = Colors.accent(context)
-        stroke.alpha = if (editing) 255 else 110
-        stroke.strokeWidth = context.dp(if (editing) 3 else 1).toFloat()
+        stroke.alpha = if (editing || emphasized) 255 else 110
+        stroke.strokeWidth = context.dp(if (editing) 3 else if (emphasized) 2 else 1).toFloat()
         canvas.drawRoundRect(rc, r, r, stroke)
         if (editing) {
             handle.color = Colors.accent(context)

@@ -26,6 +26,8 @@ class MenuItem(
 /** Context menu with sub menus, drawn as popup windows (works inside overlay windows too). */
 class PopupMenuX(private val ctx: Context, private val anchor: View) {
     private val stack = ArrayList<PopupWindow>()
+    /** Called when the whole menu has closed (item chosen, tapped outside, back). */
+    var onClosed: (() -> Unit)? = null
 
     fun show(x: Int, y: Int, items: List<MenuItem>, above: Boolean = false) =
         level(x, y, items, 0, above, null)
@@ -34,6 +36,7 @@ class PopupMenuX(private val ctx: Context, private val anchor: View) {
 
     private fun closeFrom(n: Int) {
         while (stack.size > n) stack.removeAt(stack.size - 1).dismiss()
+        if (n == 0) onClosed?.invoke()
     }
 
     private fun level(x: Int, y: Int, items: List<MenuItem>, lvl: Int, above: Boolean, flipX: Int?) {
