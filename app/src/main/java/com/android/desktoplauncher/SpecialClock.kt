@@ -68,84 +68,77 @@ private fun lineParts(is24: Boolean, cal: Calendar): IntArray {
 }
 
 /**
- * Digit shapes of the special clock: outlines of the chosen condensed numerals (see ClockGlyphData).
- * When the box is made taller or wider, only the inner parts of a digit stretch (the gap between the stems, the straight
- * part of a stem); stems, bars and round ends keep their thickness. So the digits look as if they were designed
- * in that width / height, not as if a picture was pulled.
+ * Digit shapes of the special clock: rounded-rectangle numerals made of straight lines and quarter circles, drawn with ONE
+ * stroke thickness everywhere. When the box gets taller or wider only the straight parts get longer; the corners stay true
+ * circles of the same radius, so the outer and inner outlines always run parallel and the digit never looks pulled.
+ * A very narrow digit turns its corners into half circles (square -> round), exactly like a real rounded typeface.
  */
 object ClockGlyphs {
-    class Glyph(val w: Float, val h: Float, val polys: List<FloatArray>, val xs: IntArray, val ys: IntArray) {
-        val lx = (0 until xs.size / 2).sumOf { xs[2 * it + 1] - xs[2 * it] }.toFloat()
-        val ly = (0 until ys.size / 2).sumOf { ys[2 * it + 1] - ys[2 * it] }.toFloat()
+    /** Width of a digit cell relative to a normal digit ("1" is narrower). */
+    fun factor(ch: Char) = if (ch == '1') 0.55f else 1f
+
+    private fun Path.arc(cx: Float, cy: Float, r: Float, start: Float, sweep: Float = 90f) {
+        arcTo(RectF(cx - r, cy - r, cx + r, cy + r), start, sweep)
     }
 
-    private val glyphs: Map<Char, Glyph> by lazy {
-        ClockGlyphData.all.mapValues { (_, r) ->
-            Glyph(r.w.toFloat(), r.h.toFloat(), r.polys.map { s ->
-                val pts = s.split(" ")
-                val a = FloatArray(pts.size * 2)
-                for ((i, pt) in pts.withIndex()) {
-                    val c = pt.indexOf(',')
-                    a[2 * i] = pt.substring(0, c).toFloat(); a[2 * i + 1] = pt.substring(c + 1).toFloat()
-                }
-                a
-            }, r.xs, r.ys)
-        }
+    private fun Path.box(x0: Float, y0: Float, x1: Float, y1: Float, r: Float) {
+        addRoundRect(RectF(x0, y0, x1, y1), r, r, Path.Direction.CW)
     }
 
-    fun glyph(ch: Char): Glyph = glyphs[ch] ?: glyphs['0']!!
-
-    /** Width of a digit cell relative to the "0". */
-    fun factor(ch: Char) = glyph(ch).w / 242f
-
-    /** Piecewise linear map: natural length [nat], stretchable intervals [iv] (pairs), rigid scale [gs], target length [t]. */
-    private class Map1(nat: Float, iv: IntArray, gs: Float, t: Float) {
-        private val a = ArrayList<Float>()      // segment starts (natural)
-        private val b = ArrayList<Float>()      // segment ends (natural)
-        private val k = ArrayList<Float>()      // scale of the segment
-        private val o = ArrayList<Float>()      // output at segment start
-        init {
-            var stretch = 0f
-            for (i in 0 until iv.size / 2) stretch += iv[2 * i + 1] - iv[2 * i]
-            val s = if (stretch > 0f) (t - (nat - stretch) * gs) / stretch else gs
-            var p = 0f; var out = 0f
-            fun add(from: Float, to: Float, sc: Float) { a += from; b += to; k += sc; o += out; out += (to - from) * sc }
-            for (i in 0 until iv.size / 2) {
-                val s0 = iv[2 * i].toFloat(); val s1 = iv[2 * i + 1].toFloat()
-                if (s0 > p) add(p, s0, gs)
-                add(s0, s1, s); p = s1
+    /** Centre line of digit [ch] in a w x h box (origin top-left) for a stroke of thickness [s]. */
+    fun build(ch: Char, w: Float, h: Float, s: Float): Path {
+        val p = Path()
+        // Corner radius of the centre line: 1.6 x stroke for a normal digit. A taller (narrower) digit gets rounder corners,
+        // up to half circles; a wider digit gets squarer corners.
+        val aspect = h / maxOf(w, 1f)
+        val nat = 1.25f
+        val base = 1.6f * s
+        val rc = if (aspect >= nat) {
+            val t = minOf(1f, (aspect - nat) / 1.2f)
+            base + (maxOf(w / 2, base) - base) * t
+        } else base * maxOf(0.4f, aspect / nat)
+        when (ch) {
+            '0' -> p.box(0f, 0f, w, h, minOf(rc, w / 2, h / 2))
+            '1' -> { p.moveTo(0f, minOf(h * .16f, w * .9f)); p.lineTo(w, 0f); p.lineTo(w, h) }
+            '2' -> {
+                val r = minOf(rc, w / 2, h / 4); val ym = h * .5f
+                p.moveTo(0f, r); p.arc(r, r, r, 180f); p.lineTo(w - r, 0f); p.arc(w - r, r, r, 270f)
+                p.lineTo(w, ym - r); p.arc(w - r, ym - r, r, 0f); p.lineTo(r, ym); p.arc(r, ym + r, r, 270f, -90f)
+                p.lineTo(0f, h); p.lineTo(w, h)
             }
-            if (p < nat) add(p, nat, gs)
-        }
-        fun at(v: Float): Float {
-            for (i in a.indices) if (v <= b[i] || i == a.size - 1) return o[i] + (v - a[i]) * k[i]
-            return v
-        }
-    }
-
-    /**
-     * Outline of digit [ch] fitted into a [w] x [h] cell. [gs] = scale of the parts that keep their thickness
-     * (1 unit of the 540-tall design = gs pixels), reduced automatically if the cell is too small for it.
-     */
-    fun build(ch: Char, w: Float, h: Float, gs0: Float): Path {
-        val g = glyph(ch)
-        val gs = minOf(gs0, w / (g.w - 0.7f * g.lx), h / (g.h - 0.7f * g.ly))
-        val mx = Map1(g.w, g.xs, gs, w)
-        val my = Map1(g.h, g.ys, gs, h)
-        val path = Path()
-        path.fillType = Path.FillType.EVEN_ODD
-        for (poly in g.polys) {
-            for (i in 0 until poly.size / 2) {
-                val x = mx.at(poly[2 * i]); val y = my.at(poly[2 * i + 1])
-                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            '3' -> {
+                val r = minOf(rc, w / 2, h / 4); val ym = h * .5f
+                p.moveTo(0f, r); p.arc(r, r, r, 180f); p.lineTo(w - r, 0f); p.arc(w - r, r, r, 270f)
+                p.lineTo(w, ym - r); p.arc(w - r, ym - r, r, 0f); p.lineTo(w * .4f, ym)
+                p.moveTo(w - r, ym); p.arc(w - r, ym + r, r, 270f); p.lineTo(w, h - r); p.arc(w - r, h - r, r, 0f)
+                p.lineTo(r, h); p.arc(r, h - r, r, 90f)
             }
-            path.close()
+            '4' -> {
+                val r = minOf(rc, w / 2, h / 4); val ym = h * .62f
+                p.moveTo(0f, 0f); p.lineTo(0f, ym - r); p.arc(r, ym - r, r, 180f, -90f); p.lineTo(w, ym)
+                p.moveTo(.72f * w, 0f); p.lineTo(.72f * w, h)
+            }
+            '5' -> {
+                val r = minOf(rc, w / 2, h / 4); val yb = h * .45f
+                p.moveTo(w, 0f); p.lineTo(0f, 0f); p.lineTo(0f, yb); p.lineTo(w - r, yb)
+                p.arc(w - r, yb + r, r, 270f); p.lineTo(w, h - r); p.arc(w - r, h - r, r, 0f)
+                p.lineTo(r, h); p.arc(r, h - r, r, 90f)
+            }
+            '6', '9' -> {
+                val r = minOf(rc, w / 2, h * .28f); val lh = h * .55f
+                p.box(0f, 0f, w, lh, minOf(r, lh / 2))
+                p.moveTo(w, lh * .5f); p.lineTo(w, h - r); p.arc(w - r, h - r, r, 0f)
+                p.lineTo(r, h); p.arc(r, h - r, r, 90f)
+                if (ch == '6') { val m = Matrix(); m.postRotate(180f, w / 2, h / 2); p.transform(m) }
+            }
+            '7' -> { p.moveTo(0f, 0f); p.lineTo(w, 0f); p.lineTo(w * .32f, h) }
+            '8' -> {
+                p.box(0f, 0f, w, h * .48f, minOf(rc, w / 2, h * .24f))
+                p.box(0f, h * .48f, w, h, minOf(rc, w / 2, h * .26f))
+            }
         }
-        return path
+        return p
     }
-
-    /** Stem thickness of the design, in design units. */
-    const val STEM = 57f
 }
 
 /**
@@ -156,6 +149,9 @@ class SpecialClockView(ctx: Context, cfg: ClockCfg) : View(ctx) {
     var cfg: ClockCfg = cfg
         private set
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeCap = Paint.Cap.SQUARE; strokeJoin = Paint.Join.MITER; strokeMiter = 3f
+    }
     private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeJoin = Paint.Join.ROUND }
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
@@ -198,7 +194,7 @@ class SpecialClockView(ctx: Context, cfg: ClockCfg) : View(ctx) {
     private class Item(val ch: Char, val kind: Int) { fun f() = if (ch == ':') 0.3f else ClockGlyphs.factor(ch) }
 
     private fun units(line: List<Item>, nominal: Boolean) =
-        line.sumOf { (if (nominal) (if (it.ch == ':') 0.3f else 1f) else it.f()).toDouble() }.toFloat() + 0.14f * (line.size - 1)
+        line.sumOf { (if (nominal) (if (it.ch == ':') 0.3f else 1f) else it.f()).toDouble() }.toFloat() + 0.16f * (line.size - 1)
 
     override fun onDraw(canvas: Canvas) {
         val pad = context.dp(4).toFloat()
@@ -216,22 +212,23 @@ class SpecialClockView(ctx: Context, cfg: ClockCfg) : View(ctx) {
         stack += digits(two(v[0]), 0); stack += digits(two(v[1]), 2)
         if (cfg.seconds) stack += digits(two(v[2]), 4)
 
-        // choose the layout whose digits are closest to natural proportions (width : height = 242 : 540)
+        // choose the layout whose digits are closest to natural proportions (width : height = 0.8)
         fun score(lines: List<List<Item>>): Float {
             val n = lines.size
             val ch = ah / (n + 0.2f * (n - 1))
             val cw = aw / lines.maxOf { units(it, true) }
-            return Math.abs(Math.log((cw / ch / 0.45f).toDouble())).toFloat()
+            return Math.abs(Math.log((cw / ch / 0.8f).toDouble())).toFloat()
         }
         val lines: List<List<Item>> = if (score(listOf(row)) <= score(stack)) listOf(row) else stack
         val n = lines.size
         val ch = ah / (n + 0.2f * (n - 1))
         val vgap = ch * 0.2f
         val cw = aw / lines.maxOf { units(it, false) }
-        // weight slider: 500 = the design's own thickness
-        val m = 0.6f + 0.8f * (cfg.weight.coerceIn(100, 900) - 100) / 800f
-        val g0 = minOf(cw / 242f, ch / 540f) * m
-        edge.strokeWidth = maxOf(context.dp(1).toFloat(), g0 * 3f)
+        // one stroke thickness for every part of every digit; the weight slider changes it
+        val k = 0.10f + 0.20f * (cfg.weight.coerceIn(100, 900) - 100) / 800f
+        val sw = minOf(k * minOf(cw, ch * 0.8f), cw * 0.3f).coerceAtLeast(context.dp(1).toFloat())
+        stroke.strokeWidth = sw
+        edge.strokeWidth = maxOf(context.dp(1).toFloat(), sw * 0.05f)
 
         var y = pad
         for (line in lines) {
@@ -239,30 +236,36 @@ class SpecialClockView(ctx: Context, cfg: ClockCfg) : View(ctx) {
             for (it in line) {
                 val w = it.f() * cw
                 if (it.ch == ':') {
-                    for (yy in floatArrayOf(0.33f, 0.67f)) dot(canvas, x + w / 2f, y + yy * ch, ClockGlyphs.STEM * g0 * 0.55f, it.kind, y, ch)
+                    for (yy in floatArrayOf(0.33f, 0.67f)) dot(canvas, x + w / 2f, y + yy * ch, sw * 0.6f, it.kind, y, ch)
                 } else {
-                    val p = ClockGlyphs.build(it.ch, w, ch, g0)
-                    p.offset(x, y)
+                    canvas.save()
+                    canvas.clipRect(x, y, x + w, y + ch)
+                    val p = ClockGlyphs.build(it.ch, maxOf(1f, w - sw), maxOf(1f, ch - sw), sw)
+                    p.offset(x + sw / 2f, y + sw / 2f)
                     paintPath(canvas, p, it.kind, y, ch)
+                    canvas.restore()
                 }
-                x += w + 0.14f * cw
+                x += w + 0.16f * cw
             }
             y += ch + vgap
         }
     }
 
     private fun paintPath(canvas: Canvas, p: Path, kind: Int, top: Float, h: Float) {
-        fill.style = Paint.Style.FILL
         if (cfg.style == 2) {
+            val out = Path()
+            stroke.color = 0xFFFFFFFF.toInt()
+            stroke.getFillPath(p, out)
+            try { out.op(out, Path.Op.UNION) } catch (_: Throwable) {}
+            fill.style = Paint.Style.FILL
             fill.shader = LinearGradient(0f, top, 0f, top + h, 0xB0FFFFFF.toInt(), 0x30FFFFFF, Shader.TileMode.CLAMP)
-            canvas.drawPath(p, fill)
+            canvas.drawPath(out, fill)
             fill.shader = null
             edge.color = 0xE6FFFFFF.toInt()
-            canvas.drawPath(p, edge)
+            canvas.drawPath(out, edge)
         } else {
-            fill.shader = null
-            fill.color = colorOf(kind)
-            canvas.drawPath(p, fill)
+            stroke.color = colorOf(kind)
+            canvas.drawPath(p, stroke)
         }
     }
 
