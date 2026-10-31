@@ -31,8 +31,11 @@ sealed class Entry {
 class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     private val items = ArrayList<Pair<Entry, View>>()
     private val widgets = ArrayList<WidgetBox>()
+    private val frees = ArrayList<FreeBox>()
     private var selectedKey: String? = null
     private var editFolder: String? = null
+    // icon emphasis: 1 = pointer over it, 2 = keyboard focus, 4 = its menu is open
+    private val emph = HashMap<View, Int>()
     private var trashIv: BadgedIcon? = null
     private var trashBase: android.graphics.drawable.Drawable? = null
     private var trashSig = ""
@@ -47,7 +50,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         UiText.applyDirection(this, act)
         isClickable = true
         isLongClickable = true
-        setOnClickListener { clearSelection(); endWidgetEdit(); act.closeDrawer() }
+        setOnClickListener { emptyTap() }
         setOnLongClickListener { desktopMenu(lastX, lastY); true }
         setSecondaryClick { x, y -> desktopMenu(x, y) }
         setOnDragListener { _, event ->
@@ -106,6 +109,9 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
 
     fun clearSelection() { selectedKey = null; refreshSelection() }
 
+    /** Tap on empty desktop (also used by the free clock, which sits behind the icons). */
+    fun emptyTap() { clearSelection(); endWidgetEdit(); act.closeDrawer() }
+
     private fun refreshSelection() {
         for ((e, v) in items) {
             if (e is Entry.FolderE) continue
@@ -118,7 +124,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
 
     fun reload() {
         val c = context
-        removeAllViews(); items.clear(); widgets.clear(); folderPanel = null; trashIv = null
+        removeAllViews(); items.clear(); widgets.clear(); frees.clear(); folderPanel = null; trashIv = null; emph.clear()
         val hidden = Prefs.list(c, Prefs.K_HIDDEN).toSet()
         val folderData = FolderStore.load(c)
         val inFolder = folderData.flatMap { it.members }.toHashSet()
@@ -168,6 +174,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         refreshFolderEdit()
         refreshTrashIcon()
         loadWidgets()
+        loadFree()
         refreshSelection()
         openFolderId?.let { id ->
             if (items.any { (it.first as? Entry.FolderE)?.id == id }) showFolder(id) else openFolderId = null
@@ -308,10 +315,102 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
 
     fun addInternal(type: String, screenX: Int, screenY: Int) {
         val def = InternalWidgets.def(type) ?: return
-        val id = InternalWidgets.nextId(widgets.map { it.wid } + Prefs.list(context, Prefs.K_LWIDGETS).mapNotNull { it.substringBefore(":").toIntOrNull() })
+        val id = InternalWidgets.nextId(allWidgetIds())
+        if (type == InternalWidgets.CLOCK_SPECIAL) { addFree(id, screenX, screenY); return }
         Prefs.setList(context, Prefs.K_LWIDGETS, Prefs.list(context, Prefs.K_LWIDGETS) + "$id:$type", fire = false)
         val box = WidgetBox(act, id, InternalWidgets.create(act, type) { act.openSearchFromWidget() }, null, def.minWdp, def.minHdp, this)
         insertNew(box, screenX, screenY)
+    }
+
+    private fun allWidgetIds(): List<Int> = widgets.map { it.wid } + frees.map { it.wid } +
+        Prefs.list(context, Prefs.K_LWIDGETS).mapNotNull { it.substringBefore(":").toIntOrNull() } +
+        Prefs.list(context, Prefs.K_FREE).mapNotNull { it.substringBefore(",").toIntOrNull() }
+
+    // ------------------------------------------------------------ special (free-form) clock
+
+    private operator fun IntArray.component4() = this[3]
+
+    private fun freeRect(f: FreeBox, w: Int, h: Int): IntArray {
+        val l = (f.fx * w).toInt(); val t = (f.fy * h).toInt()
+        return intArrayOf(l, t, l + maxOf(8, (f.fw * w).toInt()), t + maxOf(8, (f.fh * h).toInt()))
+    }
+
+    private fun makeFree(id: Int): FreeBox = FreeBox(act, id, SpecialClockView(act, ClockCfg.load(act, id)), this)
+
+    private fun loadFree() {
+        for (s in Prefs.list(context, Prefs.K_FREE)) {
+            val p = s.split(",")
+            if (p.size != 5) continue
+            val id = p[0].toIntOrNull() ?: continue
+            val f = makeFree(id)
+            f.fx = (p[1].toIntOrNull() ?: 0) / 10000f; f.fy = (p[2].toIntOrNull() ?: 0) / 10000f
+            f.fw = (p[3].toIntOrNull() ?: 8000) / 10000f; f.fh = (p[4].toIntOrNull() ?: 3000) / 10000f
+            addView(f, 0)                 // behind the icons
+            frees += f
+        }
+    }
+
+    fun freeSave() {
+        Prefs.setList(context, Prefs.K_FREE, frees.map { "${it.wid},${(it.fx * 10000).toInt()},${(it.fy * 10000).toInt()},${(it.fw * 10000).toInt()},${(it.fh * 10000).toInt()}" }, fire = false)
+    }
+
+    private fun addFree(id: Int, screenX: Int, screenY: Int) {
+        val w = width.coerceAtLeast(1); val h = height.coerceAtLeast(1)
+        val f = makeFree(id)
+        val bw = minOf(w * 0.86f, d(340).toFloat())
+        val bh = bw / 2.4f
+        f.fw = bw / w; f.fh = bh / h
+        if (screenX >= 0 && screenY >= 0) {
+            val loc = IntArray(2); getLocationOnScreen(loc)
+            f.fx = ((screenX - loc[0] - bw / 2f) / w).coerceIn(0f, maxOf(0f, 1f - f.fw))
+            f.fy = ((screenY - loc[1] - bh / 2f) / h).coerceIn(0f, maxOf(0f, 1f - f.fh))
+        } else { f.fx = (1f - f.fw) / 2f; f.fy = 0.12f }
+        addView(f, 0)
+        frees += f
+        freeSave()
+        endWidgetEdit(f)
+        f.startEdit()          // show the resize frame right away
+        requestLayout()
+    }
+
+    fun freeMenu(box: FreeBox, x: Int, y: Int) {
+        val m = PopupMenuX(context, this)
+        m.show(x, y, listOf(
+            MenuItem("Edit") { editFree(box) },
+            MenuItem("Remove") { removeFree(box) }
+        ))
+    }
+
+    fun removeFree(box: FreeBox) {
+        removeView(box)
+        frees.remove(box)
+        Prefs.setStr(context, ClockCfg.key(box.wid), null, fire = false)
+        freeSave()
+        requestLayout()
+    }
+
+    private fun editFree(box: FreeBox) {
+        val w = width.coerceAtLeast(1); val h = height.coerceAtLeast(1)
+        // picture of the desktop without the clock (at most ~600 px wide)
+        val sc = minOf(1f, 600f / w)
+        var bmp: android.graphics.Bitmap? = null
+        try {
+            bmp = android.graphics.Bitmap.createBitmap((w * sc).toInt().coerceAtLeast(1), (h * sc).toInt().coerceAtLeast(1), android.graphics.Bitmap.Config.ARGB_8888)
+            val cv = android.graphics.Canvas(bmp)
+            cv.scale(sc, sc)
+            val saved = frees.map { it to it.visibility }
+            for (f in frees) f.visibility = View.INVISIBLE
+            val fp = folderPanel; fp?.visibility = View.INVISIBLE
+            draw(cv)
+            for ((f, vis) in saved) f.visibility = vis
+            fp?.visibility = View.VISIBLE
+        } catch (_: Throwable) { bmp = null }
+        val st = WidgetEditState
+        st.snapshot = bmp; st.dw = w; st.dh = h
+        st.fx = box.fx; st.fy = box.fy; st.fw = box.fw; st.fh = box.fh
+        endWidgetEdit()
+        try { act.startActivity(android.content.Intent(act, WidgetEditActivity::class.java).putExtra("wid", box.wid)) }
+        catch (e: Exception) { context.toast("Cannot open") }
     }
 
     private fun insertNew(box: WidgetBox, screenX: Int, screenY: Int) {
@@ -359,8 +458,9 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     }
 
     /** Leaves resize mode on every widget (tap on empty desktop). */
-    fun endWidgetEdit(except: WidgetBox? = null) {
+    fun endWidgetEdit(except: View? = null) {
         for (w in widgets) if (w !== except) w.endEdit()
+        for (f in frees) if (f !== except) f.endEdit()
         if (editFolder != null) { editFolder = null; refreshFolderEdit() }
     }
 
@@ -426,6 +526,10 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         }
         folderPanel?.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
         for (b in widgets) b.measure(MeasureSpec.makeMeasureSpec(maxOf(1, b.sx) * gCw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(maxOf(1, b.sy) * gCh, MeasureSpec.EXACTLY))
+        for (f in frees) {
+            val (fl, ft, fr, fb) = freeRect(f, w, h)
+            f.measure(MeasureSpec.makeMeasureSpec(fr - fl, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(fb - ft, MeasureSpec.EXACTLY))
+        }
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
@@ -482,6 +586,10 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             v.layout(left, top, left + gCw * fx, top + gCh * fy)
         }
         folderPanel?.layout(0, 0, r - l, b - t)
+        for (f in frees) {
+            val (fl, ft, fr, fb) = freeRect(f, r - l, b - t)
+            f.layout(fl, ft, fr, fb)
+        }
         for (box in widgets) {
             val left = originX() + box.col * gCw
             val top = originY() + box.row * gCh
@@ -524,6 +632,48 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     private fun composeTrash(last: List<TrashStore.Item>): android.graphics.Bitmap {
         val tiles = last.reversed().map { Thumbs.tile(it.file, it.name, TrashArt.TILE) } // oldest first
         return TrashArt.render(tiles, 432)
+    }
+
+    private fun setEmph(v: View?, flag: Int, on: Boolean) {
+        if (v == null) return
+        val f = (emph[v] ?: 0).let { if (on) it or flag else it and flag.inv() }
+        emph[v] = f
+        val active = f != 0
+        v.animate().scaleX(if (active) 1.1f else 1f).scaleY(if (active) 1.1f else 1f).setDuration(120).start()
+        if (v is FolderView) v.emphasized = active
+        else v.foreground = if (active) Colors.rounded(0x00000000, d(14).toFloat()).also {
+            (it as android.graphics.drawable.GradientDrawable).setStroke(d(2), Colors.accent(context))
+        } else null
+    }
+
+    private fun viewOf(e: Entry): View? = items.firstOrNull { it.first === e }?.second
+
+    /** Pointer hover, keyboard focus (Tab / arrow keys) and Enter / menu key for a desktop icon. */
+    private fun wireEmphasis(v: View, e: Entry) {
+        v.isFocusable = true
+        v.defaultFocusHighlightEnabled = false
+        v.setOnHoverListener { _, ev ->
+            if (ev.actionMasked == MotionEvent.ACTION_HOVER_ENTER) setEmph(v, 1, true)
+            else if (ev.actionMasked == MotionEvent.ACTION_HOVER_EXIT) setEmph(v, 1, false)
+            false
+        }
+        v.setOnFocusChangeListener { _, has -> setEmph(v, 2, has) }
+        v.setOnKeyListener { _, code, ev ->
+            if (ev.action != android.view.KeyEvent.ACTION_UP) return@setOnKeyListener code == android.view.KeyEvent.KEYCODE_ENTER || code == android.view.KeyEvent.KEYCODE_DPAD_CENTER || code == android.view.KeyEvent.KEYCODE_MENU
+            when (code) {
+                android.view.KeyEvent.KEYCODE_ENTER, android.view.KeyEvent.KEYCODE_NUMPAD_ENTER, android.view.KeyEvent.KEYCODE_DPAD_CENTER -> {
+                    clearSelection()
+                    if (e is Entry.FolderE) showFolder(e.id) else open(e)
+                    true
+                }
+                android.view.KeyEvent.KEYCODE_MENU -> {
+                    val loc = IntArray(2); v.getLocationOnScreen(loc)
+                    itemMenu(e, loc[0] + v.width / 2, loc[1] + v.height / 2, true)
+                    true
+                }
+                else -> false
+            }
+        }
     }
 
     private fun spanOf(e: Entry) = if (e is Entry.FolderE) intArrayOf(e.sx, e.sy) else intArrayOf(1, 1)
@@ -805,6 +955,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         if (e is Entry.FolderE) {
             val fv = FolderView(c, e)
             fv.setOnTouchListener(ItemTouch(e, fv))
+            wireEmphasis(fv, e)
             return fv
         }
         val v = LinearLayout(c)
@@ -839,6 +990,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         t.ellipsize = android.text.TextUtils.TruncateAt.END
         v.addView(t, LinearLayout.LayoutParams(MATCH, WRAP))
         v.setOnTouchListener(ItemTouch(e, v))
+        wireEmphasis(v, e)
         return v
     }
 
@@ -902,7 +1054,9 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         if (e is Entry.FolderE) {
             // Long press: outline with the resize handle; long press again (or right click): menu.
             if (editFolder != e.id && !forceMenu) { editFolder = e.id; refreshFolderEdit(); return }
-            PopupMenuX(c, this).show(x, y, listOf(
+            val fview = viewOf(e)
+            setEmph(fview, 4, true)
+            PopupMenuX(c, this).also { it.onClosed = { setEmph(fview, 4, false) } }.show(x, y, listOf(
                 MenuItem("Open") { showFolder(e.id) },
                 MenuItem("Rename") { renameFolder(e) },
                 MenuItem("Ungroup") { ungroup(e) }
@@ -911,7 +1065,11 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         }
         selectedKey = e.key
         refreshSelection()
+        // the icon the menu belongs to stays raised and outlined while the menu is open
+        val iview = viewOf(e)
+        setEmph(iview, 4, true)
         val m = PopupMenuX(c, this)
+        m.onClosed = { setEmph(iview, 4, false) }
         when (e) {
             is Entry.AppE -> m.show(x, y, listOf(
                 MenuItem("Open") { open(e) },

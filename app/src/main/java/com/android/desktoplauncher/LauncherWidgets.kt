@@ -23,12 +23,18 @@ object InternalWidgets {
     const val CLOCK_DIGITAL = "clock_digital"
     const val CLOCK_ANALOG = "clock_analog"
     const val SEARCH = "search"
+    const val CLOCK_MD_FILL = "clock_md_fill"
+    const val CLOCK_MD_OUTLINE = "clock_md_outline"
+    const val CLOCK_SPECIAL = "clock_special"
 
     class Def(val type: String, val title: String, val minWdp: Int, val minHdp: Int)
 
     val all = listOf(
         Def(CLOCK_DIGITAL, "Clock (digital)", 180, 100),
         Def(CLOCK_ANALOG, "Clock (analog)", 160, 160),
+        Def(CLOCK_MD_FILL, "Clock (digital, filled)", 200, 110),
+        Def(CLOCK_MD_OUTLINE, "Clock (digital, outline)", 200, 110),
+        Def(CLOCK_SPECIAL, "Clock (special, free size)", 260, 110),
         Def(SEARCH, "Search bar", 280, 56)
     )
 
@@ -37,6 +43,9 @@ object InternalWidgets {
     fun create(ctx: Context, type: String, onSearch: () -> Unit): View = when (type) {
         CLOCK_DIGITAL -> DigitalClockWidget(ctx)
         CLOCK_ANALOG -> AnalogClockWidget(ctx)
+        CLOCK_MD_FILL -> BigDigitalClock(ctx, false)
+        CLOCK_MD_OUTLINE -> BigDigitalClock(ctx, true)
+        CLOCK_SPECIAL -> SpecialClockView(ctx, ClockCfg())
         else -> SearchBarWidget(ctx, onSearch)
     }
 
@@ -50,6 +59,8 @@ object InternalWidgets {
             v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
             v.layout(0, 0, w, h)
             val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            // the big clocks are light text meant for the wallpaper: give the picker picture a dark tile
+            if (type == CLOCK_SPECIAL || type == CLOCK_MD_FILL || type == CLOCK_MD_OUTLINE) bmp.eraseColor(0xFF2F3A44.toInt())
             v.draw(Canvas(bmp))
             BitmapDrawable(ctx.resources, bmp)
         } catch (_: Exception) { null }

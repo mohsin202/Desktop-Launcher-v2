@@ -25,6 +25,7 @@ object Prefs {
     const val K_DESKAPPS = "deskApps"
     const val K_HIDDEN = "hidden"
     const val K_WIDGETS = "widgets"
+    const val K_FREE = "freeWidgets"   // free-form clocks: "id,fx,fy,fw,fh" (fractions x10000 of the desktop)
     const val K_LWIDGETS = "lwidgets" // built-in launcher widgets: "id:type"
     const val K_BLUR = "blur"
     const val K_IME = "imebtn"
@@ -56,6 +57,10 @@ object Prefs {
 
     fun getInt(c: Context, k: String, d: Int) = sp(c).getInt(k, d)
     fun setInt(c: Context, k: String, v: Int) { sp(c).edit().putInt(k, v).apply(); Bus.fire() }
+    fun getStr(c: Context, k: String): String? = sp(c).getString(k, null)
+    fun setStr(c: Context, k: String, v: String?, fire: Boolean = true) {
+        sp(c).edit().apply { if (v == null) remove(k) else putString(k, v) }.apply(); if (fire) Bus.fire()
+    }
     fun has(c: Context, k: String) = sp(c).contains(k)
     fun getLong(c: Context, k: String, d: Long) = sp(c).getLong(k, d)
     fun setLong(c: Context, k: String, v: Long) { sp(c).edit().putLong(k, v).apply() }
