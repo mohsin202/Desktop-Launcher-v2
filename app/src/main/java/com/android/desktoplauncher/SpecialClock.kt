@@ -4,7 +4,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
@@ -24,7 +26,7 @@ import java.util.Locale
 
 /** Settings of one "special" clock (saved per widget id). */
 class ClockCfg(
-    var weight: Int = 800,            // font weight 100..900
+    var weight: Int = 500,            // font weight 100..900
     var style: Int = 3,               // 0 Material You, 1 transparent, 2 glass, 3 colour
     var alpha: Int = 60,              // transparency (percent opaque) for style 1
     var color: Int = 0xFFFFFFFF.toInt(),
@@ -39,7 +41,7 @@ class ClockCfg(
             val p = s?.split(",") ?: return ClockCfg()
             if (p.size < 5) return ClockCfg()
             return ClockCfg(
-                p[0].toIntOrNull()?.coerceIn(100, 900) ?: 800, p[1].toIntOrNull()?.coerceIn(0, 3) ?: 3,
+                p[0].toIntOrNull()?.coerceIn(100, 900) ?: 500, p[1].toIntOrNull()?.coerceIn(0, 3) ?: 3,
                 p[2].toIntOrNull()?.coerceIn(5, 100) ?: 60, p[3].toIntOrNull() ?: 0xFFFFFFFF.toInt(), p[4] == "1"
             )
         }
@@ -66,18 +68,96 @@ private fun lineParts(is24: Boolean, cal: Calendar): IntArray {
 }
 
 /**
- * The special clock. The digits are real text drawn at the size that fits the box, never a stretched bitmap.
- * A wide box shows "HH:MM", a tall box stacks the numbers (HH over MM), whichever gives the bigger digits.
+ * Digit shapes of the special clock: outlines of the chosen condensed numerals (see ClockGlyphData).
+ * When the box is made taller or wider, only the inner parts of a digit stretch (the gap between the stems, the straight
+ * part of a stem); stems, bars and round ends keep their thickness. So the digits look as if they were designed
+ * in that width / height, not as if a picture was pulled.
+ */
+object ClockGlyphs {
+    class Glyph(val w: Float, val h: Float, val polys: List<FloatArray>, val xs: IntArray, val ys: IntArray) {
+        val lx = (0 until xs.size / 2).sumOf { xs[2 * it + 1] - xs[2 * it] }.toFloat()
+        val ly = (0 until ys.size / 2).sumOf { ys[2 * it + 1] - ys[2 * it] }.toFloat()
+    }
+
+    private val glyphs: Map<Char, Glyph> by lazy {
+        ClockGlyphData.all.mapValues { (_, r) ->
+            Glyph(r.w.toFloat(), r.h.toFloat(), r.polys.map { s ->
+                val pts = s.split(" ")
+                val a = FloatArray(pts.size * 2)
+                for ((i, pt) in pts.withIndex()) {
+                    val c = pt.indexOf(',')
+                    a[2 * i] = pt.substring(0, c).toFloat(); a[2 * i + 1] = pt.substring(c + 1).toFloat()
+                }
+                a
+            }, r.xs, r.ys)
+        }
+    }
+
+    fun glyph(ch: Char): Glyph = glyphs[ch] ?: glyphs['0']!!
+
+    /** Width of a digit cell relative to the "0". */
+    fun factor(ch: Char) = glyph(ch).w / 242f
+
+    /** Piecewise linear map: natural length [nat], stretchable intervals [iv] (pairs), rigid scale [gs], target length [t]. */
+    private class Map1(nat: Float, iv: IntArray, gs: Float, t: Float) {
+        private val a = ArrayList<Float>()      // segment starts (natural)
+        private val b = ArrayList<Float>()      // segment ends (natural)
+        private val k = ArrayList<Float>()      // scale of the segment
+        private val o = ArrayList<Float>()      // output at segment start
+        init {
+            var stretch = 0f
+            for (i in 0 until iv.size / 2) stretch += iv[2 * i + 1] - iv[2 * i]
+            val s = if (stretch > 0f) (t - (nat - stretch) * gs) / stretch else gs
+            var p = 0f; var out = 0f
+            fun add(from: Float, to: Float, sc: Float) { a += from; b += to; k += sc; o += out; out += (to - from) * sc }
+            for (i in 0 until iv.size / 2) {
+                val s0 = iv[2 * i].toFloat(); val s1 = iv[2 * i + 1].toFloat()
+                if (s0 > p) add(p, s0, gs)
+                add(s0, s1, s); p = s1
+            }
+            if (p < nat) add(p, nat, gs)
+        }
+        fun at(v: Float): Float {
+            for (i in a.indices) if (v <= b[i] || i == a.size - 1) return o[i] + (v - a[i]) * k[i]
+            return v
+        }
+    }
+
+    /**
+     * Outline of digit [ch] fitted into a [w] x [h] cell. [gs] = scale of the parts that keep their thickness
+     * (1 unit of the 540-tall design = gs pixels), reduced automatically if the cell is too small for it.
+     */
+    fun build(ch: Char, w: Float, h: Float, gs0: Float): Path {
+        val g = glyph(ch)
+        val gs = minOf(gs0, w / (g.w - 0.7f * g.lx), h / (g.h - 0.7f * g.ly))
+        val mx = Map1(g.w, g.xs, gs, w)
+        val my = Map1(g.h, g.ys, gs, h)
+        val path = Path()
+        path.fillType = Path.FillType.EVEN_ODD
+        for (poly in g.polys) {
+            for (i in 0 until poly.size / 2) {
+                val x = mx.at(poly[2 * i]); val y = my.at(poly[2 * i + 1])
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            path.close()
+        }
+        return path
+    }
+
+    /** Stem thickness of the design, in design units. */
+    const val STEM = 57f
+}
+
+/**
+ * The special clock. Digits fill the box: a wide box gives wide digits, a tall box tall digits (see ClockGlyphs).
+ * When the box is very tall the numbers stack (HH over MM) because that keeps the digits looking natural.
  */
 class SpecialClockView(ctx: Context, cfg: ClockCfg) : View(ctx) {
     var cfg: ClockCfg = cfg
         private set
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeJoin = Paint.Join.ROUND }
-    private val b = Rect()
     private val handler = Handler(Looper.getMainLooper())
-    private var tf: Typeface? = null
-    private var tfWeight = -1
     private val tick = object : Runnable {
         override fun run() {
             invalidate()
@@ -100,9 +180,7 @@ class SpecialClockView(ctx: Context, cfg: ClockCfg) : View(ctx) {
     override fun onAttachedToWindow() { super.onAttachedToWindow(); handler.removeCallbacks(tick); handler.post(tick) }
     override fun onDetachedFromWindow() { handler.removeCallbacks(tick); super.onDetachedFromWindow() }
 
-    private class Part(val text: String, val kind: Int)   // kind: 0 hour, 1 colon, 2 minute, 3 colon, 4 second
-
-    private fun partColor(kind: Int): Int {
+    private fun colorOf(kind: Int): Int {          // kind: 0 hour, 1 colon, 2 minute, 4 second
         val c = context
         return when (cfg.style) {
             0 -> when (kind) {
@@ -116,76 +194,90 @@ class SpecialClockView(ctx: Context, cfg: ClockCfg) : View(ctx) {
         }
     }
 
+    /** One item of a line: a digit, or ':' (two dots). kind = colour group. */
+    private class Item(val ch: Char, val kind: Int) { fun f() = if (ch == ':') 0.3f else ClockGlyphs.factor(ch) }
+
+    private fun units(line: List<Item>, nominal: Boolean) =
+        line.sumOf { (if (nominal) (if (it.ch == ':') 0.3f else 1f) else it.f()).toDouble() }.toFloat() + 0.14f * (line.size - 1)
+
     override fun onDraw(canvas: Canvas) {
         val pad = context.dp(4).toFloat()
         val aw = width - 2 * pad
         val ah = height - 2 * pad
-        if (aw <= 4 || ah <= 4) return
+        if (aw <= 8 || ah <= 8) return
         val v = lineParts(DateFormat.is24HourFormat(context), Calendar.getInstance())
-        if (tfWeight != cfg.weight) { tf = Typeface.create(Typeface.DEFAULT, cfg.weight.coerceIn(100, 900), false); tfWeight = cfg.weight }
-        fill.typeface = tf
-        fill.textSize = 100f
-        fill.getTextBounds("0", 0, 1, b)
-        val dh = b.height().toFloat().coerceAtLeast(1f)
-        val top0 = b.top.toFloat()
+        fun two(n: Int) = "%02d".format(n)
+        fun digits(s: String, kind: Int) = s.map { Item(it, kind) }
 
-        // row layout: H:MM(:SS)
-        val row = ArrayList<Part>()
-        row += Part(v[0].toString(), 0); row += Part(":", 1); row += Part("%02d".format(v[1]), 2)
-        if (cfg.seconds) { row += Part(":", 3); row += Part("%02d".format(v[2]), 4) }
-        val gap = 3f
-        val rw = row.map { fill.measureText(it.text) }
-        val rowW = rw.sum() + gap * (row.size - 1)
-        val rowScale = minOf(aw / rowW, ah / dh)
+        val row = ArrayList<Item>()
+        row += digits(v[0].toString(), 0); row += Item(':', 1); row += digits(two(v[1]), 2)
+        if (cfg.seconds) { row += Item(':', 1); row += digits(two(v[2]), 4) }
+        val stack = ArrayList<List<Item>>()
+        stack += digits(two(v[0]), 0); stack += digits(two(v[1]), 2)
+        if (cfg.seconds) stack += digits(two(v[2]), 4)
 
-        // stacked layout: HH / MM (/ SS)
-        val col = ArrayList<Part>()
-        col += Part("%02d".format(v[0]), 0); col += Part("%02d".format(v[1]), 2)
-        if (cfg.seconds) col += Part("%02d".format(v[2]), 4)
-        val cw = col.map { fill.measureText(it.text) }
-        val vgap = dh * 0.18f
-        val colH = col.size * dh + (col.size - 1) * vgap
-        val colScale = minOf(aw / (cw.maxOrNull() ?: 1f), ah / colH)
+        // choose the layout whose digits are closest to natural proportions (width : height = 242 : 540)
+        fun score(lines: List<List<Item>>): Float {
+            val n = lines.size
+            val ch = ah / (n + 0.2f * (n - 1))
+            val cw = aw / lines.maxOf { units(it, true) }
+            return Math.abs(Math.log((cw / ch / 0.45f).toDouble())).toFloat()
+        }
+        val lines: List<List<Item>> = if (score(listOf(row)) <= score(stack)) listOf(row) else stack
+        val n = lines.size
+        val ch = ah / (n + 0.2f * (n - 1))
+        val vgap = ch * 0.2f
+        val cw = aw / lines.maxOf { units(it, false) }
+        // weight slider: 500 = the design's own thickness
+        val m = 0.6f + 0.8f * (cfg.weight.coerceIn(100, 900) - 100) / 800f
+        val g0 = minOf(cw / 242f, ch / 540f) * m
+        edge.strokeWidth = maxOf(context.dp(1).toFloat(), g0 * 3f)
 
-        val useRow = rowScale >= colScale
-        val scale = if (useRow) rowScale else colScale
-        fill.textSize = 100f * scale
-        edge.textSize = fill.textSize
-        edge.typeface = tf
-        edge.strokeWidth = maxOf(context.dp(1).toFloat(), fill.textSize * 0.012f)
-
-        if (useRow) {
-            val total = rowW * scale
-            var x = pad + (aw - total) / 2f
-            val base = pad + (ah - dh * scale) / 2f - top0 * scale
-            for ((i, p) in row.withIndex()) {
-                drawPart(canvas, p, x, base, dh * scale)
-                x += (rw[i] + gap) * scale
+        var y = pad
+        for (line in lines) {
+            var x = pad + (aw - units(line, false) * cw) / 2f
+            for (it in line) {
+                val w = it.f() * cw
+                if (it.ch == ':') {
+                    for (yy in floatArrayOf(0.33f, 0.67f)) dot(canvas, x + w / 2f, y + yy * ch, ClockGlyphs.STEM * g0 * 0.55f, it.kind, y, ch)
+                } else {
+                    val p = ClockGlyphs.build(it.ch, w, ch, g0)
+                    p.offset(x, y)
+                    paintPath(canvas, p, it.kind, y, ch)
+                }
+                x += w + 0.14f * cw
             }
-        } else {
-            val total = colH * scale
-            var y = pad + (ah - total) / 2f
-            for ((i, p) in col.withIndex()) {
-                val x = pad + (aw - cw[i] * scale) / 2f
-                drawPart(canvas, p, x, y - top0 * scale, dh * scale)
-                y += (dh + vgap) * scale
-            }
+            y += ch + vgap
         }
     }
 
-    private fun drawPart(canvas: Canvas, p: Part, x: Float, base: Float, digitH: Float) {
+    private fun paintPath(canvas: Canvas, p: Path, kind: Int, top: Float, h: Float) {
         fill.style = Paint.Style.FILL
-        fill.shader = null
         if (cfg.style == 2) {
-            // glass: light translucent body with a brighter top, plus a thin bright edge
-            fill.shader = LinearGradient(0f, base - digitH, 0f, base, 0xA8FFFFFF.toInt(), 0x30FFFFFF, Shader.TileMode.CLAMP)
-            canvas.drawText(p.text, x, base, fill)
-            edge.color = 0xE6FFFFFF.toInt()
-            canvas.drawText(p.text, x, base, edge)
+            fill.shader = LinearGradient(0f, top, 0f, top + h, 0xB0FFFFFF.toInt(), 0x30FFFFFF, Shader.TileMode.CLAMP)
+            canvas.drawPath(p, fill)
             fill.shader = null
+            edge.color = 0xE6FFFFFF.toInt()
+            canvas.drawPath(p, edge)
         } else {
-            fill.color = partColor(p.kind)
-            canvas.drawText(p.text, x, base, fill)
+            fill.shader = null
+            fill.color = colorOf(kind)
+            canvas.drawPath(p, fill)
+        }
+    }
+
+    private fun dot(canvas: Canvas, cx: Float, cy: Float, r: Float, kind: Int, top: Float, h: Float) {
+        fill.style = Paint.Style.FILL
+        if (cfg.style == 2) {
+            fill.shader = LinearGradient(0f, top, 0f, top + h, 0xB0FFFFFF.toInt(), 0x30FFFFFF, Shader.TileMode.CLAMP)
+            canvas.drawCircle(cx, cy, r, fill)
+            fill.shader = null
+            edge.color = 0xE6FFFFFF.toInt()
+            canvas.drawCircle(cx, cy, r, edge)
+        } else {
+            fill.shader = null
+            fill.color = colorOf(kind)
+            canvas.drawCircle(cx, cy, r, fill)
         }
     }
 }
