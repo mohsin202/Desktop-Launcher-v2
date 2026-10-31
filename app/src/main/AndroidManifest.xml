@@ -45,6 +45,11 @@
         </activity>
 
         <activity
+            android:name=".WidgetEditActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Desktop.Settings" />
+
+        <activity
             android:name=".TrashActivity"
             android:exported="true"
             android:icon="@mipmap/ic_trash"
