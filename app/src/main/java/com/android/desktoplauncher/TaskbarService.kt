@@ -255,6 +255,12 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
             lp.gravity = Gravity.BOTTOM
             lp.setFitInsetsTypes(0)
             lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            // not under the punch hole or a side navigation bar in landscape
+            val si = Insets.safe(uctx)
+            if (si.left + si.right > 0) {
+                lp.width = wm.currentWindowMetrics.bounds.width() - si.left - si.right
+                lp.x = (si.left - si.right) / 2
+            }
             lp.title = "DesktopTaskbar"
             Blur.apply(lp, uctx, 24)
             wm.addView(v, lp)

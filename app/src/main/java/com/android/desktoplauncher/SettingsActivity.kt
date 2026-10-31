@@ -38,8 +38,8 @@ class SettingsActivity : Activity() {
         UiText.applyDirection(sv, this)
         setContentView(sv)
         sv.setOnApplyWindowInsetsListener { v, ins ->
-            val bars = ins.getInsets(WindowInsets.Type.systemBars())
-            v.setPadding(0, bars.top, 0, bars.bottom)
+            val bars = Insets.of(ins)
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             ins
         }
         build()

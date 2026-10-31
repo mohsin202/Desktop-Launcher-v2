@@ -84,6 +84,8 @@ class WidgetSheet(
         addView(sheet, LayoutParams(width, MATCH, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).also {
             it.topMargin = topInset + c.dp(if (twoPane) 24 else 12)
             it.bottomMargin = bottomInset
+            val si = Insets.safe(c)
+            it.leftMargin = si.left; it.rightMargin = si.right
         })
 
         val handle = View(c)

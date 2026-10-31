@@ -141,8 +141,8 @@ class TrashActivity : Activity() {
         root.setBackgroundColor(Colors.surfaceSolid(this))
         UiText.applyDirection(root, this)
         root.setOnApplyWindowInsetsListener { v, ins ->
-            val bars = ins.getInsets(WindowInsets.Type.systemBars())
-            v.setPadding(dp(14), bars.top + dp(8), dp(14), bars.bottom + dp(10))
+            val bars = Insets.of(ins)
+            v.setPadding(dp(14) + bars.left, bars.top + dp(8), dp(14) + bars.right, bars.bottom + dp(10))
             ins
         }
         val title = TextView(this)

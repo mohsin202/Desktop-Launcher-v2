@@ -8,7 +8,11 @@ import android.view.MotionEvent
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.PopupWindow
+import android.widget.ScrollView
 import android.widget.TextView
+
+/** Bottom area (dock or taskbar plus navigation bar) that popup menus must stay above. Set by the launcher. */
+object MenuArea { @Volatile var bottomReserve = 0 }
 
 class MenuItem(
     val label: String,
@@ -81,16 +85,24 @@ class PopupMenuX(private val ctx: Context, private val anchor: View) {
 
         col.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
         val w = col.measuredWidth
-        val h = col.measuredHeight
+        var h = col.measuredHeight
         val dm = ctx.resources.displayMetrics
+        val ins = Insets.safe(ctx)
+        val maxR = dm.widthPixels - ins.right
+        val maxB = dm.heightPixels - maxOf(ins.bottom, MenuArea.bottomReserve)
         var px = x
-        if (px + w > dm.widthPixels) px = if (flipX != null) flipX - w else dm.widthPixels - w
-        if (px < 0) px = 0
+        if (px + w > maxR) px = if (flipX != null) flipX - w else maxR - w
+        if (px < ins.left) px = ins.left
+        // Taller than the free area (between status bar and dock/taskbar): the menu scrolls instead of overflowing.
+        val avail = (dm.heightPixels - maxOf(ins.bottom, MenuArea.bottomReserve)) - ins.top
+        val scroll = h > avail
+        if (scroll) h = avail
         var py = if (above) y - h else y
-        if (py + h > dm.heightPixels) py = dm.heightPixels - h
-        if (py < 0) py = 0
+        if (py + h > maxB) py = maxB - h
+        if (py < ins.top) py = ins.top
 
-        val pw = PopupWindow(col, WRAP, WRAP, lvl == 0)
+        val content: View = if (scroll) ScrollView(ctx).also { it.isVerticalScrollBarEnabled = false; it.addView(col) } else col
+        val pw = if (scroll) PopupWindow(content, w, h, lvl == 0) else PopupWindow(content, WRAP, WRAP, lvl == 0)
         pw.setBackgroundDrawable(ColorDrawable(0))
         pw.elevation = ctx.dp(8).toFloat()
         pw.isClippingEnabled = false

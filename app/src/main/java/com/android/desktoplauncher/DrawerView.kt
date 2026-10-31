@@ -73,6 +73,17 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
     private var moreApps = false
     private var dlFiles: List<Downloads.Entry> = emptyList()
     private var dlExpanded = false
+    // resizable panel (desktop mode only): handle at the top corner opposite to the side the drawer sits on
+    private var centredMode = false
+    private var handleVisible = false
+    private var resizing = false
+    private var rx0 = 0f
+    private var ry0 = 0f
+    private var rw0 = 0
+    private var rh0 = 0
+    private val handlePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        style = android.graphics.Paint.Style.STROKE; strokeCap = android.graphics.Paint.Cap.ROUND
+    }
     private var dlApps: List<AppInfo> = emptyList()
 
     private val gridAdapter = object : BaseAdapter() {
@@ -150,8 +161,15 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
             else if (!hideKeyboardIfVisible()) onClose()
         }
         val dm = c.resources.displayMetrics
-        val pw = if (wide) dm.widthPixels - c.dp(16) else minOf(c.dp(440), dm.widthPixels - c.dp(16))
-        val ph = if (wide) (dm.heightPixels * 0.86f).toInt() else minOf(c.dp(580), (dm.heightPixels * 0.78f).toInt())
+        var pw = if (wide) dm.widthPixels - c.dp(16) else minOf(c.dp(440), dm.widthPixels - c.dp(16))
+        var ph = if (wide) (dm.heightPixels * 0.86f).toInt() else minOf(c.dp(580), (dm.heightPixels * 0.78f).toInt())
+        if (!wide) {
+            // size the user chose last time
+            val sw = Prefs.getLong(c, "drawerWdp", 0L).toInt()
+            val sh = Prefs.getLong(c, "drawerHdp", 0L).toInt()
+            if (sw > 0) pw = c.dp(sw).coerceIn(c.dp(280), dm.widthPixels - c.dp(16))
+            if (sh > 0) ph = c.dp(sh).coerceIn(c.dp(320), (dm.heightPixels * 0.95f).toInt())
+        }
         panel.orientation = LinearLayout.VERTICAL
         panel.background = Colors.rounded(Colors.surface(c), c.dp(28).toFloat())
         panel.elevation = c.dp(10).toFloat()
@@ -160,8 +178,13 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         // Portrait (and phone mode): centred. Landscape desktop: starts near the drawer button.
         val portrait = dm.heightPixels > dm.widthPixels
         val centred = wide || portrait
+        centredMode = centred
+        setWillNotDraw(false)
         val lp = LayoutParams(pw, ph, if (centred) Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL else Gravity.BOTTOM or Gravity.START)
-        if (!centred) lp.marginStart = c.dp(8)
+        // keep clear of the punch hole / side navigation bar in landscape
+        val si = Insets.safe(c)
+        lp.leftMargin = si.left; lp.rightMargin = si.right
+        if (!centred) lp.marginStart = c.dp(8) + (if (Prefs.direction(c) == 2) si.right else si.left)
         lp.bottomMargin = bottomMargin
         addView(panel, lp)
 
@@ -256,6 +279,11 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
 
     /** Called after the view is attached. */
     fun onShown() {
+        if (!wide) {
+            // show the resize handles for a moment so touch users can find them
+            handleVisible = true; invalidate()
+            postDelayed({ if (!resizing) { handleVisible = false; invalidate() } }, 2500)
+        }
         search.requestFocus()
         if (Prefs.bool(c, Prefs.K_DRAWER_IME, false) && c.resources.configuration.keyboard == android.content.res.Configuration.KEYBOARD_NOKEYS) {
             val imm = c.getSystemService(InputMethodManager::class.java)
@@ -263,7 +291,96 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         }
     }
 
+    private fun onLeftCorner() = !centredMode && layoutDirection == LAYOUT_DIRECTION_RTL
+
+    /** -1 = top left handle, +1 = top right handle, 0 = none. Centred drawers have both, side drawers only the far one. */
+    private fun handleSide(x: Float, y: Float): Int {
+        if (wide) return 0
+        val z = c.dp(48)
+        if (y < panel.top || y > panel.top + z) return 0
+        val leftOk = centredMode || onLeftCorner()
+        val rightOk = centredMode || !onLeftCorner()
+        if (leftOk && x >= panel.left && x <= panel.left + z) return -1
+        if (rightOk && x <= panel.right && x >= panel.right - z) return 1
+        return 0
+    }
+
+    private fun inHandleZone(x: Float, y: Float) = handleSide(x, y) != 0
+    private var activeSide = 1
+
+    override fun dispatchGenericMotionEvent(ev: android.view.MotionEvent): Boolean {
+        if (!wide && (ev.actionMasked == android.view.MotionEvent.ACTION_HOVER_MOVE || ev.actionMasked == android.view.MotionEvent.ACTION_HOVER_ENTER)) {
+            val v = inHandleZone(ev.x, ev.y)
+            if (v != handleVisible) { handleVisible = v; invalidate() }
+        } else if (ev.actionMasked == android.view.MotionEvent.ACTION_HOVER_EXIT && handleVisible && !resizing) {
+            handleVisible = false; invalidate()
+        }
+        return super.dispatchGenericMotionEvent(ev)
+    }
+
+    private fun resizeTouch(ev: android.view.MotionEvent): Boolean {
+        val lp = panel.layoutParams as LayoutParams
+        when (ev.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                val side = handleSide(ev.x, ev.y)
+                if (side == 0) return false
+                activeSide = side
+                resizing = true; handleVisible = true
+                rx0 = ev.rawX; ry0 = ev.rawY; rw0 = lp.width; rh0 = lp.height
+                parent?.requestDisallowInterceptTouchEvent(true)
+                hideKeyboardIfVisible()
+                invalidate()
+                return true
+            }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                if (!resizing) return false
+                val dm = c.resources.displayMetrics
+                val dx = ev.rawX - rx0
+                val dy = ev.rawY - ry0
+                val factor = if (centredMode) 2 else 1
+                val w = (rw0 + (if (activeSide < 0) -dx else dx) * factor).toInt().coerceIn(c.dp(280), dm.widthPixels - c.dp(16))
+                val maxH = (if (height > 0) height else dm.heightPixels) - lp.bottomMargin - c.dp(8)
+                val h = (rh0 - dy).toInt().coerceIn(c.dp(320), maxOf(c.dp(320), maxH))
+                if (w != lp.width || h != lp.height) {
+                    lp.width = w; lp.height = h
+                    panel.layoutParams = lp
+                    grid.numColumns = maxOf(3, (w - c.dp(28)) / c.dp(92))
+                }
+                return true
+            }
+            android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                if (!resizing) return false
+                resizing = false
+                Prefs.setLong(c, "drawerWdp", (lp.width / c.resources.displayMetrics.density).toLong())
+                Prefs.setLong(c, "drawerHdp", (lp.height / c.resources.displayMetrics.density).toLong())
+                invalidate()
+                return true
+            }
+        }
+        return false
+    }
+
+    override fun dispatchDraw(canvas: android.graphics.Canvas) {
+        super.dispatchDraw(canvas)
+        if (!handleVisible || wide) return
+        handlePaint.color = Colors.accent(c)
+        handlePaint.strokeWidth = c.dp(4).toFloat()
+        val rad = c.dp(16).toFloat()
+        val inset = c.dp(8).toFloat()
+        if (centredMode || onLeftCorner()) {
+            val cx = panel.left + rad + inset; val cy = panel.top + rad + inset
+            canvas.drawArc(android.graphics.RectF(cx - rad, cy - rad, cx + rad, cy + rad), 185f, 80f, false, handlePaint)
+        }
+        if (centredMode || !onLeftCorner()) {
+            val cx = panel.right - rad - inset; val cy = panel.top + rad + inset
+            canvas.drawArc(android.graphics.RectF(cx - rad, cy - rad, cx + rad, cy + rad), 275f, 80f, false, handlePaint)
+        }
+    }
+
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (!wide && (resizing || ev.actionMasked == android.view.MotionEvent.ACTION_DOWN)) {
+            if (resizeTouch(ev)) return true
+        }
         if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
             val loc = IntArray(2)
             search.getLocationOnScreen(loc)

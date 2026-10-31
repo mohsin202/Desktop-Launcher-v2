@@ -46,6 +46,8 @@ class LauncherActivity : Activity() {
     private var dockH = 0
     private var padTop = 0
     private var padBottom = 0
+    private var padLeft = 0
+    private var padRight = 0
     private var pendingId = -1
     private var pendingInfo: AppWidgetProviderInfo? = null
     private var pendX = 300
@@ -76,9 +78,11 @@ class LauncherActivity : Activity() {
         UiText.applyDirection(root, this)
         setContentView(root)
         root.setOnApplyWindowInsetsListener { _, ins ->
-            val bars = ins.getInsets(WindowInsets.Type.systemBars())
+            val bars = Insets.of(ins)
             padTop = bars.top
             padBottom = bars.bottom
+            padLeft = bars.left
+            padRight = bars.right
             applyPadding()
             ins
         }
@@ -133,11 +137,12 @@ class LauncherActivity : Activity() {
             !phone && barOn() && TaskbarService.instance != null -> maxOf(padBottom, dp(Prefs.tbDp(this)))
             else -> padBottom
         }
-        desktop.setPadding(0, padTop, 0, bottom)
+        MenuArea.bottomReserve = bottom
+        desktop.setPadding(padLeft, padTop, padRight, bottom)
         dock?.let {
             val lp = it.layoutParams as FrameLayout.LayoutParams
             lp.height = dockH
-            lp.leftMargin = dp(16); lp.rightMargin = dp(16); lp.bottomMargin = padBottom + dp(8)
+            lp.leftMargin = padLeft + dp(16); lp.rightMargin = padRight + dp(16); lp.bottomMargin = padBottom + dp(8)
             it.layoutParams = lp
         }
     }

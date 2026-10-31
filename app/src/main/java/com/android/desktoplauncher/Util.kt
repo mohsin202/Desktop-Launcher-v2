@@ -323,3 +323,14 @@ object Launch {
     }
 }
 
+
+/** Space taken by system bars and the display cutout (punch hole), so content never goes under them. */
+object Insets {
+    fun of(ins: android.view.WindowInsets): android.graphics.Insets =
+        ins.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+
+    fun safe(c: Context): android.graphics.Insets = try {
+        c.getSystemService(android.view.WindowManager::class.java).currentWindowMetrics.windowInsets
+            .getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+    } catch (_: Exception) { android.graphics.Insets.NONE }
+}

@@ -456,7 +456,9 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             val p = stored[e.key] ?: continue
             if (p[0] in 0 until gCols && p[1] in 0 until gRows && !blockedByWidget(p[0], p[1]) && occ.add(p[0] * 10000 + p[1])) cells[e.key] = p
         }
-        // 2) everything else flows automatically: desktop = columns (top to bottom), phone = rows (left to right)
+        // 2) everything else flows automatically: desktop = columns (top to bottom), phone = rows (left to right).
+        // The cell an item gets here is remembered, so icons added later take a free cell and never push others around.
+        val newPos = HashMap<String, IntArray>()
         var i = 0
         for ((e, _) in items) {
             if (cells.containsKey(e.key)) continue
@@ -468,7 +470,9 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                 if (!blockedByWidget(col, row) && occ.add(col * 10000 + row)) cell = intArrayOf(col, row)
             }
             cells[e.key] = cell ?: intArrayOf(0, 0)
+            if (cell != null && stored[e.key] == null) newPos[e.key] = cell
         }
+        if (newPos.isNotEmpty()) post { savePos(newPos) }
         for ((e, v) in items) {
             val c = cells[e.key] ?: continue
             val left = paddingLeft + d(8) + c[0] * gCw
@@ -498,10 +502,10 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         val c = context
         val base = trashBase ?: return
         Thread {
-            val last = try { TrashStore.list(c).sortedByDescending { it.expiry }.take(3) } catch (_: Exception) { emptyList() }
+            val last = try { TrashStore.list(c).sortedByDescending { it.expiry }.take(5) } catch (_: Exception) { emptyList() }
             val sig = last.joinToString("|") { it.file.absolutePath }
             if (sig == trashSig && trashBmp != null) return@Thread
-            val bmp = if (last.isEmpty()) null else try { composeTrash(last) } catch (_: Throwable) { null }
+            val bmp = try { composeTrash(last) } catch (_: Throwable) { null }
             post {
                 trashSig = sig
                 trashBmp = bmp
@@ -512,79 +516,14 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
 
     private fun trashDrawable(fg: android.graphics.Bitmap): android.graphics.drawable.Drawable =
         android.graphics.drawable.AdaptiveIconDrawable(
-            android.graphics.drawable.ColorDrawable(context.getColor(resources.getIdentifier("trash_bg", "color", context.packageName))),
+            android.graphics.drawable.ColorDrawable(0xFFC5D3E4.toInt()),
             android.graphics.drawable.BitmapDrawable(resources, fg)
         )
 
-    /**
-     * Foreground of the trash icon: the bin picture, the last trashed items tossed in at odd angles,
-     * then the front glass of the bin drawn over them (semi transparent) so they look like they are inside.
-     */
+    /** Foreground of the trash icon: the code-drawn glass bin with the last trashed items inside (see TrashArt). */
     private fun composeTrash(last: List<TrashStore.Item>): android.graphics.Bitmap {
-        val bin = android.graphics.BitmapFactory.decodeResource(resources, resources.getIdentifier("ic_trash_fg", "drawable", context.packageName))
-        val n = bin.width // 432
-        val k = n / 432f
-        val out = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
-        val cv = android.graphics.Canvas(out)
-        cv.drawBitmap(bin, 0f, 0f, null)
-        val order = last.reversed() // newest drawn last = on top
-        // Items lie piled on the floor of the bin, each one differently turned (the first one upside down).
-        val spots = when (order.size) {
-            1 -> listOf(floatArrayOf(212f, 262f, -14f))
-            2 -> listOf(floatArrayOf(186f, 272f, 168f), floatArrayOf(246f, 252f, -22f))
-            else -> listOf(floatArrayOf(178f, 274f, 168f), floatArrayOf(252f, 266f, -38f), floatArrayOf(212f, 238f, 14f))
-        }
-        val ts = (84 * k).toInt()
-        val border = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE }
-        val shadow = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0x40000000 }
-        val inside = android.graphics.Path().apply {
-            // the bin's inner outline, a little inset so nothing pokes out of the glass
-            moveTo(110f * k, 126f * k); lineTo(200f * k, 94f * k); lineTo(323f * k, 133f * k)
-            lineTo(298f * k, 316f * k); lineTo(232f * k, 340f * k); lineTo(129f * k, 303f * k); close()
-        }
-        val itemsBmp = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
-        val ic = android.graphics.Canvas(itemsBmp)
-        ic.save()
-        ic.clipPath(inside)
-        for ((i, it) in order.withIndex()) {
-            val t = Thumbs.tile(it.file, it.name, ts)
-            val sp = spots[i]
-            val cx = sp[0] * k; val cy = sp[1] * k
-            ic.save()
-            ic.rotate(sp[2], cx, cy)
-            val b = ts * 0.05f
-            val h = ts / 2f + b
-            ic.drawRoundRect(cx - h + 4 * k, cy - h + 6 * k, cx + h + 4 * k, cy + h + 6 * k, ts * 0.18f, ts * 0.18f, shadow)
-            ic.drawRoundRect(cx - h, cy - h, cx + h, cy + h, ts * 0.18f, ts * 0.18f, border)
-            ic.drawBitmap(t, cx - ts / 2f, cy - ts / 2f, null)
-            ic.restore()
-        }
-        ic.restore()
-        cv.drawBitmap(itemsBmp, 0f, 0f, null)
-        // front glass: the bin's front panels again, see-through, over the items
-        val front = android.graphics.Path().apply {
-            moveTo(100f * k, 118f * k); lineTo(228f * k, 160f * k); lineTo(332f * k, 128f * k)
-            lineTo(304f * k, 322f * k); lineTo(232f * k, 349f * k); lineTo(122f * k, 308f * k); close()
-        }
-        cv.save()
-        cv.clipPath(front)
-        val glass = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
-        glass.alpha = 95
-        cv.drawBitmap(bin, 0f, 0f, glass)
-        // bring the items' colours back a little so thumbnails stay readable behind the glass
-        val boost = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG).apply { alpha = 85 }
-        cv.drawBitmap(itemsBmp, 0f, 0f, boost)
-        cv.restore()
-        // The blue recycle sign is printed on the front glass, so it stays fully bright over the items.
-        val px = IntArray(n * n)
-        bin.getPixels(px, 0, n, 0, 0, n, n)
-        for (i in px.indices) {
-            val c = px[i]
-            if (android.graphics.Color.alpha(c) == 0 || android.graphics.Color.blue(c) <= android.graphics.Color.red(c) + 50) px[i] = 0
-        }
-        val logo = android.graphics.Bitmap.createBitmap(px, n, n, android.graphics.Bitmap.Config.ARGB_8888)
-        cv.drawBitmap(logo, 0f, 0f, null)
-        return out
+        val tiles = last.reversed().map { Thumbs.tile(it.file, it.name, TrashArt.TILE) } // oldest first
+        return TrashArt.render(tiles, 432)
     }
 
     private fun spanOf(e: Entry) = if (e is Entry.FolderE) intArrayOf(e.sx, e.sy) else intArrayOf(1, 1)
@@ -1131,7 +1070,42 @@ class WidgetBox(
     private val edgePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
         color = Colors.accent(ctx); style = android.graphics.Paint.Style.STROKE; strokeWidth = ctx.dp(2).toFloat()
     }
-    private val handlePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = Colors.accent(ctx); style = android.graphics.Paint.Style.FILL }
+    private val handlePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = Colors.accent(ctx); style = android.graphics.Paint.Style.STROKE; strokeCap = android.graphics.Paint.Cap.ROUND; strokeWidth = ctx.dp(4).toFloat()
+    }
+    private var hoverCorner = -1
+
+    /** Corners that make sense: in the middle of the screen all four, at one side only the corners on the far side. */
+    private fun cornerEnabled(i: Int): Boolean {
+        val leftRoom = col > 0
+        val rightRoom = col + sx < owner.gridCols()
+        if (!leftRoom && !rightRoom) return true
+        return if (i % 2 == 0) leftRoom else rightRoom
+    }
+
+    private fun cornerAt(x: Float, y: Float): Int {
+        val z = context.dp(44)
+        val l = x <= z
+        val r = x >= width - z
+        val t = y <= z
+        val b = y >= height - z
+        val i = when {
+            l && t -> 0
+            r && t -> 1
+            l && b -> 2
+            r && b -> 3
+            else -> -1
+        }
+        return if (i >= 0 && cornerEnabled(i)) i else -1
+    }
+
+    override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_HOVER_MOVE || ev.actionMasked == MotionEvent.ACTION_HOVER_ENTER) {
+            val h = cornerAt(ev.x, ev.y)
+            if (h != hoverCorner) { hoverCorner = h; invalidate() }
+        } else if (ev.actionMasked == MotionEvent.ACTION_HOVER_EXIT && hoverCorner != -1) { hoverCorner = -1; invalidate() }
+        return super.dispatchGenericMotionEvent(ev)
+    }
 
     private val gd = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
         override fun onLongPress(e: MotionEvent) {
@@ -1161,9 +1135,15 @@ class WidgetBox(
         if (resizeMode) {
             val inset = context.dp(2).toFloat()
             canvas.drawRoundRect(inset, inset, width - inset, height - inset, context.dp(12).toFloat(), context.dp(12).toFloat(), edgePaint)
-            val r = context.dp(6).toFloat()
-            val pts = arrayOf(floatArrayOf(inset, inset), floatArrayOf(width - inset, inset), floatArrayOf(inset, height - inset), floatArrayOf(width - inset, height - inset))
-            for (pt in pts) canvas.drawCircle(pt[0], pt[1], r, handlePaint)
+        }
+        for (i in 0..3) {
+            if (!(resizeMode && cornerEnabled(i)) && i != hoverCorner) continue
+            val rad = context.dp(16).toFloat()
+            val m = context.dp(8).toFloat()
+            val cx = if (i % 2 == 0) m + rad else width - m - rad
+            val cy = if (i < 2) m + rad else height - m - rad
+            val start = when (i) { 0 -> 185f; 1 -> 275f; 2 -> 95f; else -> 5f }
+            canvas.drawArc(android.graphics.RectF(cx - rad, cy - rad, cx + rad, cy + rad), start, 80f, false, handlePaint)
         }
     }
 
@@ -1187,19 +1167,12 @@ class WidgetBox(
             if ((ev.buttonState and MotionEvent.BUTTON_SECONDARY) != 0) {
                 owner.widgetMenu(this, ev.rawX.toInt(), ev.rawY.toInt()); return true
             }
-            val handle = context.dp(28)
-            val left = ev.x <= handle
-            val right = ev.x >= width - handle
-            val top = ev.y <= handle
-            val bottom = ev.y >= height - handle
-            resizing = resizeMode && (left || right) && (top || bottom)
+            val mouse = ev.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE
+            val corner = cornerAt(ev.x, ev.y)
+            resizing = (resizeMode || mouse) && corner >= 0
             if (resizing) {
-                resizeCorner = when {
-                    left && top -> 0
-                    right && top -> 1
-                    left && bottom -> 2
-                    else -> 3
-                }
+                if (!resizeMode) { resizeMode = true; owner.endWidgetEdit(this); invalidate() }
+                resizeCorner = corner
                 moving = true; moved = false; return true
             }
         }
