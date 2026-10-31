@@ -42,7 +42,8 @@ object UiText {
         "Edit" to "ترمیم", "Remove" to "ہٹائیں", "Edit widget" to "وجٹ ترمیم کریں", "Save" to "محفوظ کریں", "Size" to "حجم", "Thick" to "موٹا", "Thin" to "پتلا",
         "Style" to "اسٹائل", "Material You" to "مٹیریل یو", "Transparent" to "شفاف", "Glass" to "گلاس", "Colour" to "رنگ", "Transparency" to "شفافیت",
         "Seconds" to "سیکنڈ", "Show seconds" to "سیکنڈ دکھائیں", "Clock (digital, filled)" to "گھڑی (ڈیجیٹل، بھرا ہوا)", "Clock (digital, outline)" to "گھڑی (ڈیجیٹل، آؤٹ لائن)",
-        "Clock (special, free size)" to "گھڑی (خاص، آزاد سائز)"
+        "Clock (special, free size)" to "گھڑی (خاص، آزاد سائز)",
+        "Clock layout" to "گھڑی کا لے آؤٹ", "Adaptive" to "اڈاپٹیو", "Single line clock" to "سنگل لائن گھڑی", "Double line clock" to "ڈبل لائن گھڑی"
     )
     fun text(c: Context, english: String): String = if (Prefs.language(c) == 1) ur[english] ?: english else english
     fun applyDirection(v: View, c: Context) {

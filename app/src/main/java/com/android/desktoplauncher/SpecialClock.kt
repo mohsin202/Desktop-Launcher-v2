@@ -30,10 +30,11 @@ class ClockCfg(
     var style: Int = 3,               // 0 Material You, 1 transparent, 2 glass, 3 colour
     var alpha: Int = 60,              // transparency (percent opaque) for style 1
     var color: Int = 0xFFFFFFFF.toInt(),
-    var seconds: Boolean = false
+    var seconds: Boolean = false,
+    var layout: Int = 0               // 0 adaptive, 1 single line, 2 double line
 ) {
-    fun encode() = "$weight,$style,$alpha,$color,${if (seconds) 1 else 0}"
-    fun copy() = ClockCfg(weight, style, alpha, color, seconds)
+    fun encode() = "$weight,$style,$alpha,$color,${if (seconds) 1 else 0},$layout"
+    fun copy() = ClockCfg(weight, style, alpha, color, seconds, layout)
 
     companion object {
         fun key(wid: Int) = "fclk_$wid"
@@ -42,7 +43,8 @@ class ClockCfg(
             if (p.size < 5) return ClockCfg()
             return ClockCfg(
                 p[0].toIntOrNull()?.coerceIn(100, 900) ?: 500, p[1].toIntOrNull()?.coerceIn(0, 3) ?: 3,
-                p[2].toIntOrNull()?.coerceIn(5, 100) ?: 60, p[3].toIntOrNull() ?: 0xFFFFFFFF.toInt(), p[4] == "1"
+                p[2].toIntOrNull()?.coerceIn(5, 100) ?: 60, p[3].toIntOrNull() ?: 0xFFFFFFFF.toInt(), p[4] == "1",
+                p.getOrNull(5)?.toIntOrNull()?.coerceIn(0, 2) ?: 0
             )
         }
         fun load(c: Context, wid: Int) = decode(Prefs.getStr(c, key(wid)))
@@ -99,7 +101,12 @@ object ClockGlyphs {
         } else base * maxOf(0.4f, aspect / nat)
         when (ch) {
             '0' -> p.box(0f, 0f, w, h, minOf(rc, w / 2, h / 2))
-            '1' -> { p.moveTo(0f, minOf(h * .16f, w * .9f)); p.lineTo(w, 0f); p.lineTo(w, h) }
+            '1' -> {
+                // the flag is never wider than 0.3 x height, and a wide cell keeps the 1 in its middle
+                val we = minOf(w, h * 0.3f)
+                p.moveTo(0f, we * 0.5f); p.lineTo(we, 0f); p.lineTo(we, h)
+                p.offset((w - we) / 2f, 0f)
+            }
             '2' -> {
                 val r = minOf(rc, w / 2, h / 4); val ym = h * .5f
                 p.moveTo(0f, r); p.arc(r, r, r, 180f); p.lineTo(w - r, 0f); p.arc(w - r, r, r, 270f)
@@ -148,6 +155,8 @@ object ClockGlyphs {
 class SpecialClockView(ctx: Context, cfg: ClockCfg) : View(ctx) {
     var cfg: ClockCfg = cfg
         private set
+    /** The view whose height is "the screen" (the desktop); the adaptive layout switches at half of it. */
+    var refView: View? = null
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE; strokeCap = Paint.Cap.SQUARE; strokeJoin = Paint.Join.MITER; strokeMiter = 3f
@@ -212,14 +221,20 @@ class SpecialClockView(ctx: Context, cfg: ClockCfg) : View(ctx) {
         stack += digits(two(v[0]), 0); stack += digits(two(v[1]), 2)
         if (cfg.seconds) stack += digits(two(v[2]), 4)
 
-        // choose the layout whose digits are closest to natural proportions (width : height = 0.8)
+        // adaptive layout: one line until the clock is half the screen high, then two lines
         fun score(lines: List<List<Item>>): Float {
             val n = lines.size
             val ch = ah / (n + 0.2f * (n - 1))
             val cw = aw / lines.maxOf { units(it, true) }
             return Math.abs(Math.log((cw / ch / 0.8f).toDouble())).toFloat()
         }
-        val lines: List<List<Item>> = if (score(listOf(row)) <= score(stack)) listOf(row) else stack
+        val refH = refView?.height ?: 0
+        val double = when (cfg.layout) {
+            1 -> false
+            2 -> true
+            else -> if (refH > 0) height >= refH / 2 else score(stack) < score(listOf(row))
+        }
+        val lines: List<List<Item>> = if (double) stack else listOf(row)
         val n = lines.size
         val ch = ah / (n + 0.2f * (n - 1))
         val vgap = ch * 0.2f
@@ -315,6 +330,7 @@ class FreeBox(ctx: Context, val wid: Int, val clock: SpecialClockView, private v
     }
 
     init {
+        clock.refView = owner
         addView(clock, LayoutParams(MATCH, MATCH))
         setWillNotDraw(false)
     }

@@ -28,6 +28,7 @@ class WidgetEditActivity : Activity() {
     private var swatches: LinearLayout? = null
     private var alphaBox: LinearLayout? = null
     private val radios = ArrayList<RadioButton>()
+    private val layRadios = ArrayList<RadioButton>()
 
     private fun t(s: String) = UiText.text(this, s)
 
@@ -161,6 +162,21 @@ class WidgetEditActivity : Activity() {
         }
         syncStyle()
 
+        // --- Clock layout
+        val lay = card("Clock layout")
+        layRadios.clear()
+        for ((i, n) in listOf("Adaptive", "Single line clock", "Double line clock").withIndex()) {
+            val r = RadioButton(this)
+            r.text = t(n)
+            r.textSize = 16f
+            r.setTextColor(Colors.text(this))
+            r.setPadding(dp(4), dp(8), dp(4), dp(8))
+            r.setOnClickListener { cfg.layout = i; syncLayout(); apply() }
+            layRadios += r
+            lay.addView(r)
+        }
+        syncLayout()
+
         // --- Seconds
         val sec = card("Seconds")
         val sw = Switch(this)
@@ -174,6 +190,8 @@ class WidgetEditActivity : Activity() {
     }
 
     private fun apply() { clock.apply(cfg) }
+
+    private fun syncLayout() { for ((i, r) in layRadios.withIndex()) r.isChecked = i == cfg.layout }
 
     private fun syncStyle() {
         for ((i, r) in radios.withIndex()) r.isChecked = i == cfg.style
@@ -219,6 +237,7 @@ class WidgetEditActivity : Activity() {
             frame.addView(iv, FrameLayout.LayoutParams(-1, -1))
         }
         clock = SpecialClockView(this, cfg)
+        clock.refView = frame
         frame.addView(clock, FrameLayout.LayoutParams((st.fw * w2).toInt().coerceAtLeast(8), (st.fh * ph).toInt().coerceAtLeast(8)).also {
             it.leftMargin = (st.fx * w2).toInt(); it.topMargin = (st.fy * ph).toInt()
         })
