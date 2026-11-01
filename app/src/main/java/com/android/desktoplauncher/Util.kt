@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorFilter
@@ -98,6 +99,25 @@ object Colors {
         if (night(c)) sys(c, android.R.color.system_accent1_100, 0xFFD3E3FD.toInt())
         else sys(c, android.R.color.system_accent1_800, 0xFF1F3A66.toInt())
 
+    fun glassOn(c: Context) = Prefs.bool(c, Prefs.K_GLASS, false)
+
+    /** A panel background: the plain colour, or (glass blur on) frosted glass like the special clock's Glass style. */
+    fun panel(c: Context, base: Int, r: Float, radii: FloatArray? = null): Drawable {
+        fun shape(f: GradientDrawable.() -> Unit) = GradientDrawable().apply {
+            if (radii != null) cornerRadii = radii else cornerRadius = r
+            f()
+        }
+        if (!glassOn(c)) return shape { setColor(base) }
+        val night = night(c)
+        val tint = shape { setColor((base and 0x00FFFFFF) or (if (night) 0x70000000 else 0x58000000)) }
+        val sheen = shape {
+            orientation = GradientDrawable.Orientation.TOP_BOTTOM
+            colors = intArrayOf(if (night) 0x4DFFFFFF else 0x99FFFFFF.toInt(), if (night) 0x12FFFFFF else 0x2EFFFFFF)
+            setStroke(c.dp(1).coerceAtLeast(1), 0xB3FFFFFF.toInt())
+        }
+        return android.graphics.drawable.LayerDrawable(arrayOf(tint, sheen))
+    }
+
     fun rounded(color: Int, r: Float) = GradientDrawable().apply { setColor(color); cornerRadius = r }
 }
 
@@ -129,24 +149,55 @@ object Blur {
 object Icons {
     private val cache = ConcurrentHashMap<String, Drawable.ConstantState>()
 
-    fun app(c: Context, comp: ComponentName, themed: Boolean): Drawable {
-        val key = comp.flattenToString() + (if (themed) "#t" else "") + (if (Colors.night(c)) "n" else "d")
+    /** Home screen and drawer both use the two settings: "themed icons" and "themed icon on unsupported icons". */
+    fun app(c: Context, comp: ComponentName, @Suppress("UNUSED_PARAMETER") themed: Boolean = false): Drawable {
+        val on = Prefs.bool(c, Prefs.K_THEMED, false)
+        val all = on && Prefs.bool(c, Prefs.K_THEMED_ALL, false)
+        val key = comp.flattenToString() + (if (on) (if (all) "#ta" else "#t") else "") + (if (Colors.night(c)) "n" else "d")
         cache[key]?.let { return it.newDrawable().mutate() }
         val d: Drawable = try {
             val base = c.packageManager.getActivityIcon(comp)
-            if (themed && Build.VERSION.SDK_INT >= 33 && base is AdaptiveIconDrawable) {
-                val mono = base.monochrome
+            if (!on) base else {
+                var mono: Drawable? = null
+                if (Build.VERSION.SDK_INT >= 33 && base is AdaptiveIconDrawable) mono = base.monochrome
                 if (mono != null) {
                     val fg = mono.constantState?.newDrawable()?.mutate() ?: mono
                     fg.setTint(Colors.iconFg(c))
                     AdaptiveIconDrawable(ColorDrawable(Colors.iconBg(c)), fg)
-                } else base
-            } else base
+                } else if (all) makeMono(c, base) else base
+            }
         } catch (e: Exception) {
             c.packageManager.defaultActivityIcon
         }
         d.constantState?.let { cache[key] = it }
         return d
+    }
+
+    /** Builds a one-colour icon for an app that has no monochrome layer. */
+    private fun makeMono(c: Context, base: Drawable): Drawable {
+        val n = 216
+        val bmp = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
+        val cv = Canvas(bmp)
+        val src: Drawable = if (base is AdaptiveIconDrawable) (base.foreground ?: base) else base
+        if (base is AdaptiveIconDrawable) src.setBounds(0, 0, n, n)
+        else { val m = (n * 0.19f).toInt(); src.setBounds(m, m, n - m, n - m) }
+        src.draw(cv)
+        val px = IntArray(n * n)
+        bmp.getPixels(px, 0, n, 0, 0, n, n)
+        var cover = 0L
+        for (p in px) if ((p ushr 24) > 200) cover++
+        val opaque = cover > n.toLong() * n * 0.55          // a full square picture: use its dark parts as the shape
+        val col = Colors.iconFg(c) and 0x00FFFFFF
+        for (i in px.indices) {
+            val p = px[i]
+            val a = p ushr 24
+            val lum = (0.299f * ((p shr 16) and 255) + 0.587f * ((p shr 8) and 255) + 0.114f * (p and 255)) / 255f
+            val out = if (opaque) (a * (1f - lum).coerceIn(0f, 1f) * 1.3f).toInt() else a
+            px[i] = (out.coerceIn(0, 255) shl 24) or col
+        }
+        bmp.setPixels(px, 0, n, 0, 0, n, n)
+        val fg = android.graphics.drawable.BitmapDrawable(c.resources, bmp)
+        return AdaptiveIconDrawable(ColorDrawable(Colors.iconBg(c)), fg)
     }
 
     fun file(f: File): Drawable =

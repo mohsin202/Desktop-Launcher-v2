@@ -181,7 +181,7 @@ class SearchBarWidget(ctx: Context, private val onSearch: () -> Unit) : LinearLa
     init {
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        background = Colors.rounded(Colors.surfaceSolid(ctx), ctx.dp(40).toFloat())
+        background = Colors.panel(ctx, Colors.surfaceSolid(ctx), ctx.dp(40).toFloat())
         elevation = ctx.dp(2).toFloat()
         setPadding(ctx.dp(14), 0, ctx.dp(14), 0)
         addView(icon, LayoutParams(ctx.dp(28), ctx.dp(28)))

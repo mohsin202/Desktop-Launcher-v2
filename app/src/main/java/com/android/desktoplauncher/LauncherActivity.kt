@@ -71,7 +71,7 @@ class LauncherActivity : Activity() {
         desktop = DesktopView(this)
         root.addView(desktop, FrameLayout.LayoutParams(MATCH, MATCH))
         catBar = CatBar(this, desktop)
-        root.addView(catBar, FrameLayout.LayoutParams(WRAP, dp(40), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
+        root.addView(catBar, FrameLayout.LayoutParams(WRAP, dp(24), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
         banner = TextView(this)
         banner.setTextColor(Color.WHITE)
         banner.textSize = 13f
@@ -146,8 +146,8 @@ class LauncherActivity : Activity() {
             it.layoutParams = lp
         }
         val bottom = when {
-            phone && barOn() -> catMargin + dp(48)
-            phone -> catMargin + dp(48)
+            phone && barOn() -> catMargin + dp(32)
+            phone -> catMargin + dp(32)
             !phone && barOn() && TaskbarService.instance != null -> maxOf(padBottom, dp(Prefs.tbDp(this)))
             else -> padBottom
         }
@@ -230,7 +230,7 @@ class LauncherActivity : Activity() {
         if (catMenu != null) return
         closeDrawer()
         val phone = !Modes.tablet(this)
-        val gap = if (phone) catMargin + dp(40) + dp(8) else MenuArea.bottomReserve + dp(8)
+        val gap = if (phone) catMargin + dp(24) + dp(8) else MenuArea.bottomReserve + dp(8)
         val m = CatMenu(this, desktop, gap) { closeCats() }
         root.addView(m, FrameLayout.LayoutParams(MATCH, MATCH))
         catMenu = m

@@ -48,6 +48,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
 
     // screens: every category has pages; only the current page has views
     private val allEntries = ArrayList<Entry>()
+    private var knownKeys: HashSet<String>? = null
     private val allWidgets = ArrayList<WidgetBox>()
     private val allFrees = ArrayList<FreeBox>()
     var catId: String = Cats.home(act)
@@ -185,8 +186,16 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             list += Entry.FolderE(fd.id, fd.name, fd.members, fd.sx, fd.sy).also { it.resolved = res }
         }
         if (folderChanged) FolderStore.save(c, folderData.filter { it.members.isNotEmpty() })
+        // an icon / file / folder that appears while one of the user's own screens is showing stays on that screen
+        val keys = list.map { it.key }.toHashSet()
+        val prev = knownKeys
+        if (prev != null && Cats.isCustom(catId) && Cats.customs(c).any { it.id == catId }) {
+            for (k in keys) if (k !in prev) Cats.assign(c, k, catId)
+        }
+        knownKeys = keys
         allEntries.clear(); allEntries += list
         allWidgets.clear(); allFrees.clear()
+        loadWPages()
         loadWidgets()
         loadFree()
         builtSig = ""
@@ -198,11 +207,43 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     fun refresh() { rebuild() }
     fun catOrder(): List<String> = order
     fun pageCount(cat: String): Int = layouts[cat]?.count ?: 1
-    fun widgetsLocked() = catId != Cats.ALL
+    fun widgetsLocked() = catId != Cats.ALL && catId != Cats.WIDGETS
+
+    // widgets belong either to the All screen (no entry) or to a page of the Widgets screen
+    private val wPageOf = HashMap<Int, Int>()
+    private fun pageOfW(wid: Int) = wPageOf[wid] ?: -1
+    private fun loadWPages() {
+        wPageOf.clear()
+        for (s in Prefs.list(context, "wpage")) {
+            val w = s.substringBefore('=').toIntOrNull() ?: continue
+            val p = s.substringAfter('=').toIntOrNull() ?: continue
+            wPageOf[w] = p
+        }
+    }
+    private fun saveWPages() {
+        val ids = HashSet<Int>(); for (b in allWidgets) ids += b.wid; for (f in allFrees) ids += f.wid
+        Prefs.setList(context, "wpage", wPageOf.filter { it.key in ids }.map { "${it.key}=${it.value}" }, fire = false)
+    }
+    private fun widgetPageCount(): Int {
+        val stored = Prefs.getStr(context, "wpages")?.toIntOrNull() ?: 1
+        val used = (allWidgets.map { pageOfW(it.wid) } + allFrees.map { pageOfW(it.wid) }).maxOrNull() ?: -1
+        return maxOf(1, stored, used + 1)
+    }
+    /** The "+" of the Widgets screen: one more (empty) page. */
+    fun addWidgetPage() {
+        Prefs.setStr(context, "wpages", (widgetPageCount() + 1).toString(), fire = false)
+        rebuild()
+    }
+    /** Where a new widget goes: on the Widgets page that is showing, otherwise on All. */
+    private fun widgetHome(): Int {
+        if (catId == Cats.WIDGETS) return pageIdx
+        goTo(Cats.ALL, 0)
+        return -1
+    }
+    private fun homeFor(wid: Int, page: Int) { if (page >= 0) wPageOf[wid] = page else wPageOf.remove(wid); saveWPages() }
 
     private fun sig() = "$gCols,$gRows,$gCw,$gCh,$width,$height,$paddingLeft,$paddingTop,$paddingRight,$paddingBottom,${Modes.tablet(context)}"
 
-    private fun ensureAll() { if (catId != Cats.ALL || pageIdx != 0) goTo(Cats.ALL, 0) }
 
     /** Builds the views of the current page (items, widgets) from the stored data. */
     private fun rebuild() {
@@ -219,8 +260,8 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         if (catId == Cats.DISCOVER) {
             val dv = makeDiscover(); discoverView = dv; addView(dv)
         } else if (catId == Cats.WIDGETS) {
-            for (b in allWidgets) if (wPack[b]?.get(0) == pageIdx) { reset(b); addView(b); widgets += b }
-            for (f in allFrees) if (wPack[f]?.get(0) == pageIdx) { reset(f); addView(f, 0); frees += f }
+            for (b in allWidgets) if (pageOfW(b.wid) == pageIdx) { reset(b); addView(b); widgets += b }
+            for (f in allFrees) if (pageOfW(f.wid) == pageIdx) { reset(f); addView(f, 0); frees += f }
         } else {
             for (e in allEntries) {
                 val p = lay?.pos?.get(e.key) ?: continue
@@ -231,8 +272,8 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                 cells[e.key] = intArrayOf(p[1], p[2])
             }
             if (catId == Cats.ALL && pageIdx == 0) {
-                for (b in allWidgets) { reset(b); addView(b); widgets += b }
-                for (f in allFrees) { reset(f); addView(f, 0); frees += f }
+                for (b in allWidgets) if (pageOfW(b.wid) < 0) { reset(b); addView(b); widgets += b }
+                for (f in allFrees) if (pageOfW(f.wid) < 0) { reset(f); addView(f, 0); frees += f }
             }
         }
         refreshFolderEdit()
@@ -254,7 +295,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         layouts.clear()
         val ord = ArrayList<String>()
         ord += Cats.DISCOVER; ord += Cats.ALL
-        if (allWidgets.isNotEmpty() || allFrees.isNotEmpty()) ord += Cats.WIDGETS
+        ord += Cats.WIDGETS
         for (cat in listOf(Cats.APPS, Cats.MEDIA, Cats.SHORTCUTS, Cats.FOLDERS, Cats.FILES))
             if (allEntries.any { Cats.matches(cat, it, assign[it.key], valid) }) ord += cat
         for (cu in customs) ord += cu.id
@@ -264,14 +305,14 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         for (cat in ord.filter { it != catId } + ord.filter { it == catId }) {
             layouts[cat] = when (cat) {
                 Cats.DISCOVER -> CatLayout(1, HashMap())
-                Cats.WIDGETS -> packWidgets()
+                Cats.WIDGETS -> CatLayout(widgetPageCount(), HashMap())
                 else -> layoutEntries(cat, allEntries.filter { Cats.matches(cat, it, assign[it.key], valid) })
             }
         }
     }
 
     private fun blockedAt(cat: String, page: Int, col: Int, row: Int): Boolean =
-        cat == Cats.ALL && page == 0 && allWidgets.any { o -> o.col >= 0 && col >= o.col && col < o.col + o.sx && row >= o.row && row < o.row + o.sy }
+        cat == Cats.ALL && page == 0 && allWidgets.any { o -> pageOfW(o.wid) < 0 && o.col >= 0 && col >= o.col && col < o.col + o.sx && row >= o.row && row < o.row + o.sy }
 
     /** Gives every item of the screen a page, column and row. Stored places are kept, the rest flows into the first free cell. */
     private fun layoutEntries(cat: String, list: List<Entry>): CatLayout {
@@ -331,35 +372,6 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         for (k in fresh) pos[k]?.let { toSave[k] = it }
         if (toSave.isNotEmpty()) savePos(cat, toSave)
         return CatLayout(maxOf(1, used.size), pos)
-    }
-
-    /** Widgets screen: all widgets one after the other, first fit, as many pages as needed. */
-    private fun packWidgets(): CatLayout {
-        wPack.clear()
-        val occ = ArrayList<HashSet<Int>>()
-        var maxPage = 0
-        fun place(v: View, sx0: Int, sy0: Int) {
-            val sx = sx0.coerceIn(1, maxOf(1, gCols)); val sy = sy0.coerceIn(1, maxOf(1, gRows))
-            var pg = 0
-            while (pg < 200) {
-                while (occ.size <= pg) occ.add(HashSet())
-                val o = occ[pg]
-                for (r in 0..(gRows - sy)) for (cc in 0..(gCols - sx)) {
-                    var free = true
-                    for (a in cc until cc + sx) for (b in r until r + sy) if ((a * 10000 + b) in o) free = false
-                    if (free) {
-                        for (a in cc until cc + sx) for (b in r until r + sy) o.add(a * 10000 + b)
-                        wPack[v] = intArrayOf(pg, cc, r, sx, sy)
-                        if (pg > maxPage) maxPage = pg
-                        return
-                    }
-                }
-                pg++
-            }
-        }
-        for (b in allWidgets) place(b, b.sx, b.sy)
-        for (f in allFrees) place(f, Math.ceil((f.fw * width / gCw).toDouble()).toInt(), Math.ceil((f.fh * height / gCh).toDouble()).toInt())
-        return CatLayout(maxPage + 1, HashMap())
     }
 
     fun goTo(cat: String, page: Int, dir: Int = 0) {
@@ -505,12 +517,13 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             cv.drawRoundRect(l * sc, t * sc, r * sc, b * sc, d(12) * sc, d(12) * sc, p)
         }
         if (cat == Cats.WIDGETS) {
-            for ((_, pk) in wPack) if (pk[0] == page) box(originX() + pk[1] * gCw, originY() + pk[2] * gCh, originX() + (pk[1] + pk[3]) * gCw, originY() + (pk[2] + pk[4]) * gCh)
+            for (b in allWidgets) if (pageOfW(b.wid) == page && b.col >= 0) box(originX() + b.col * gCw, originY() + b.row * gCh, originX() + (b.col + b.sx) * gCw, originY() + (b.row + b.sy) * gCh)
+            for (f in allFrees) if (pageOfW(f.wid) == page) box((f.fx * width).toInt(), (f.fy * height).toInt(), ((f.fx + f.fw) * width).toInt(), ((f.fy + f.fh) * height).toInt())
             return bmp
         }
         if (cat == Cats.ALL && page == 0) {
-            for (b in allWidgets) if (b.col >= 0) box(originX() + b.col * gCw, originY() + b.row * gCh, originX() + (b.col + b.sx) * gCw, originY() + (b.row + b.sy) * gCh)
-            for (f in allFrees) box((f.fx * width).toInt(), (f.fy * height).toInt(), ((f.fx + f.fw) * width).toInt(), ((f.fy + f.fh) * height).toInt())
+            for (b in allWidgets) if (b.col >= 0 && pageOfW(b.wid) < 0) box(originX() + b.col * gCw, originY() + b.row * gCh, originX() + (b.col + b.sx) * gCw, originY() + (b.row + b.sy) * gCh)
+            for (f in allFrees) if (pageOfW(f.wid) < 0) box((f.fx * width).toInt(), (f.fy * height).toInt(), ((f.fx + f.fw) * width).toInt(), ((f.fy + f.fh) * height).toInt())
         }
         val lay = layouts[cat] ?: return bmp
         val isz = d(Prefs.iconDp(context))
@@ -653,9 +666,10 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                 changed = true
             }
             b.sx = b.sx.coerceIn(1, gCols); b.sy = b.sy.coerceIn(1, gRows)
-            val ok = b.col >= 0 && b.row >= 0 && b.col + b.sx <= gCols && b.row + b.sy <= gRows && !overlaps(b, b.col, b.row, b.sx, b.sy, placed)
+            val same = placed.filter { pageOfW(it.wid) == pageOfW(b.wid) }
+            val ok = b.col >= 0 && b.row >= 0 && b.col + b.sx <= gCols && b.row + b.sy <= gRows && !overlaps(b, b.col, b.row, b.sx, b.sy, same)
             if (!ok) {
-                val f = findFree(b, placed, b.sx, b.sy)
+                val f = findFree(b, same, b.sx, b.sy)
                 if (f != null) { b.col = f[0]; b.row = f[1]; b.sx = f[2]; b.sy = f[3] } else { b.col = 0; b.row = 0 }
                 changed = true
             }
@@ -665,7 +679,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     }
 
     fun addWidget(id: Int, info: android.appwidget.AppWidgetProviderInfo, screenX: Int, screenY: Int) {
-        ensureAll()
+        homeFor(id, widgetHome())
         val hv: AppWidgetHostView = act.host.createView(act, id, info)
         val dens = resources.displayMetrics.density
         val box = WidgetBox(act, id, hv, hv, (maxOf(info.minWidth, 1) / dens).toInt(), (maxOf(info.minHeight, 1) / dens).toInt(), this)
@@ -674,8 +688,8 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
 
     fun addInternal(type: String, screenX: Int, screenY: Int) {
         val def = InternalWidgets.def(type) ?: return
-        ensureAll()
         val id = InternalWidgets.nextId(allWidgetIds())
+        homeFor(id, widgetHome())
         if (type == InternalWidgets.CLOCK_SPECIAL) { addFree(id, screenX, screenY); return }
         Prefs.setList(context, Prefs.K_LWIDGETS, Prefs.list(context, Prefs.K_LWIDGETS) + "$id:$type", fire = false)
         val box = WidgetBox(act, id, InternalWidgets.create(act, type) { act.openSearchFromWidget() }, null, def.minWdp, def.minHdp, this)
@@ -720,7 +734,6 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     }
 
     private fun addFree(id: Int, screenX: Int, screenY: Int) {
-        ensureAll()
         val w = width.coerceAtLeast(1); val h = height.coerceAtLeast(1)
         val f = makeFree(id)
         val bd = freeBounds()
@@ -762,7 +775,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         frees.remove(box)
         allFrees.remove(box)
         Prefs.setStr(context, ClockCfg.key(box.wid), null, fire = false)
-        freeSave()
+        freeSave(); saveWPages()
         if (widgetsLocked()) rebuild() else requestLayout()
     }
 
@@ -832,7 +845,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         removeView(box)
         widgets.remove(box)
         allWidgets.remove(box)
-        saveWidgets()
+        saveWidgets(); saveWPages()
         if (widgetsLocked()) rebuild() else requestLayout()
     }
 
@@ -905,7 +918,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     private fun savePosHere(m: Map<String, IntArray>) = savePos(catId, m.mapValues { intArrayOf(pageIdx, it.value[0], it.value[1]) })
 
     private fun wRect(b: WidgetBox): IntArray {
-        if (catId == Cats.ALL) {
+        if (catId == Cats.ALL || catId == Cats.WIDGETS) {
             val l = originX() + b.col * gCw; val t = originY() + b.row * gCh
             return intArrayOf(l, t, l + maxOf(1, b.sx) * gCw, t + maxOf(1, b.sy) * gCh)
         }
@@ -915,7 +928,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     }
 
     private fun fRect(f: FreeBox, w: Int, h: Int): IntArray {
-        if (catId == Cats.ALL) return freeRect(f, w, h)
+        if (catId == Cats.ALL || catId == Cats.WIDGETS) return freeRect(f, w, h)
         val p = wPack[f] ?: return intArrayOf(0, 0, 8, 8)
         val l = originX() + p[1] * gCw + d(4); val t = originY() + p[2] * gCh + d(4)
         return intArrayOf(l, t, l + p[3] * gCw - d(8), t + p[4] * gCh - d(8))
@@ -1137,7 +1150,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
 
         val card = LinearLayout(c)
         card.orientation = LinearLayout.VERTICAL
-        card.background = Colors.rounded(Colors.surface(c), d(32).toFloat())
+        card.background = Colors.panel(c, Colors.surface(c), d(32).toFloat())
         card.setPadding(d(14), d(14), d(14), d(18))
         card.isClickable = true
         UiText.applyDirection(card, c)
@@ -1152,7 +1165,9 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         title.setOnLongClickListener { renameFolder(f); true }
         card.addView(title, LinearLayout.LayoutParams(MATCH, WRAP).also { it.bottomMargin = d(10) })
 
-        val rowH = d(112)
+        // a row is tall enough for the icon and two lines of name (also with a large system font)
+        val lineH = android.text.TextPaint().also { it.textSize = 12f * resources.displayMetrics.scaledDensity }.fontSpacing
+        val rowH = d(8) + d(56) + d(4) + (lineH * 2).toInt() + d(12)
         val grid = android.widget.GridView(c)
         grid.numColumns = 3
         grid.selector = android.graphics.drawable.ColorDrawable(0)
@@ -1167,6 +1182,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                 cell.orientation = LinearLayout.VERTICAL
                 cell.gravity = Gravity.CENTER_HORIZONTAL
                 cell.setPadding(d(4), d(8), d(4), d(4))
+                cell.layoutParams = android.widget.AbsListView.LayoutParams(MATCH, rowH)
                 val iv = android.widget.ImageView(c)
                 val label: String
                 if (en is Entry.AppE) { iv.setImageDrawable(Icons.app(c, en.info.comp, false)); label = en.info.label }
@@ -1194,7 +1210,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             true
         }
         val rows = ((f.resolved.size + 2) / 3).coerceIn(1, 3)
-        card.addView(grid, LinearLayout.LayoutParams(MATCH, rows * rowH))
+        card.addView(grid, LinearLayout.LayoutParams(MATCH, rows * rowH + d(6)))
 
         val w = if (width > 0) width else resources.displayMetrics.widthPixels
         val cw = minOf(d(340), w - d(32))
@@ -1393,7 +1409,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     }
 
     private fun blockedByWidget(col: Int, row: Int): Boolean = catId == Cats.ALL && pageIdx == 0 &&
-        allWidgets.any { o -> o.col >= 0 && col >= o.col && col < o.col + o.sx && row >= o.row && row < o.row + o.sy }
+        allWidgets.any { o -> pageOfW(o.wid) < 0 && o.col >= 0 && col >= o.col && col < o.col + o.sx && row >= o.row && row < o.row + o.sy }
 
     // ---------------------------------------------------------------- menus
 
@@ -1495,7 +1511,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         val box = LinearLayout(act)
         box.orientation = LinearLayout.VERTICAL
         box.setPadding(d(24), d(22), d(24), d(20))
-        box.background = Colors.rounded(Colors.surfaceSolid(act), d(28).toFloat())
+        box.background = Colors.panel(act, Colors.surfaceSolid(act), d(28).toFloat())
         UiText.applyDirection(box, act)
         val name = TextView(act)
         name.text = f.name

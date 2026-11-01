@@ -75,9 +75,7 @@ class WidgetSheet(
         sheet.orientation = LinearLayout.VERTICAL
         sheet.isClickable = true
         val r = c.dp(28).toFloat()
-        sheet.background = GradientDrawable().apply {
-            setColor(Colors.surfaceSolid(c)); cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
-        }
+        sheet.background = Colors.panel(c, Colors.surfaceSolid(c), r, floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f))
         sheet.setPadding(c.dp(12), c.dp(8), c.dp(12), 0)
         val sw = c.resources.displayMetrics.widthPixels
         val width = if (twoPane) minOf(c.dp(960), (sw * 0.94f).toInt()) else MATCH

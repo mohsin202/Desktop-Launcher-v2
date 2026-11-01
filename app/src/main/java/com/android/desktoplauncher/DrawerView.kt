@@ -171,7 +171,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
             if (sh > 0) ph = c.dp(sh).coerceIn(c.dp(320), (dm.heightPixels * 0.95f).toInt())
         }
         panel.orientation = LinearLayout.VERTICAL
-        panel.background = Colors.rounded(Colors.surface(c), c.dp(28).toFloat())
+        panel.background = Colors.panel(c, Colors.surface(c), c.dp(28).toFloat())
         panel.elevation = c.dp(10).toFloat()
         panel.setPadding(c.dp(14), c.dp(14), c.dp(14), c.dp(10))
         panel.isClickable = true

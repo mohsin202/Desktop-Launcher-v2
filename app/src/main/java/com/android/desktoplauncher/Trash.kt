@@ -316,7 +316,7 @@ class TrashActivity : Activity() {
         val box = LinearLayout(this)
         box.orientation = LinearLayout.VERTICAL
         box.setPadding(dp(24), dp(24), dp(24), dp(20))
-        box.background = Colors.rounded(Colors.surfaceSolid(this), dp(28).toFloat())
+        box.background = Colors.panel(this, Colors.surfaceSolid(this), dp(28).toFloat())
         UiText.applyDirection(box, this)
         val t = TextView(this)
         t.text = if (l.size == 1) l[0].name else "${l.size} " + UiText.text(this, "items")

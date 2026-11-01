@@ -18,6 +18,7 @@ object Bus {
 object Prefs {
     const val K_DOTS = "dots"
     const val K_THEMED = "themed"
+    const val K_THEMED_ALL = "themed_all"
     const val K_TASKBAR = "taskbar"
     const val K_NAV = "nav"
     const val K_TBH = "tbh"
@@ -28,6 +29,7 @@ object Prefs {
     const val K_FREE = "freeWidgets"   // free-form clocks: "id,fx,fy,fw,fh" (fractions x10000 of the desktop)
     const val K_LWIDGETS = "lwidgets" // built-in launcher widgets: "id:type"
     const val K_BLUR = "blur"
+    const val K_GLASS = "glassblur"
     const val K_IME = "imebtn"
     const val K_POS = "pos"
     const val K_WINKEY = "winkey"

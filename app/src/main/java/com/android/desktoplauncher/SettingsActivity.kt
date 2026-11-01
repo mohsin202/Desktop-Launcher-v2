@@ -189,8 +189,9 @@ class SettingsActivity : Activity() {
         rg.check(100 + Prefs.iconMode(this))
         rg.setOnCheckedChangeListener { _, id -> Prefs.setIconMode(this, id - 100) }
         addSetting(rg)
-        sw(UiText.text(this, "App drawer themed icons"), Prefs.K_THEMED, false)
-        note(UiText.text(this, "Uses the wallpaper colours for apps that provide a monochrome icon (Android 13+)."))
+        sw(UiText.text(this, "Enable themed icons"), Prefs.K_THEMED, false)
+        sw(UiText.text(this, "Themed icon on unsupported icons"), Prefs.K_THEMED_ALL, false)
+        note(UiText.text(this, "Applies to the home screen and the app drawer. Apps without a monochrome icon are turned into one-colour icons when the second option is on."))
         sw(UiText.text(this, "Show notification dots"), Prefs.K_DOTS, true)
         val notifOn = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")?.contains(packageName) == true
         if (!notifOn) btn(UiText.text(this, "Allow notification access (needed for dots)")) { go(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
@@ -211,6 +212,8 @@ class SettingsActivity : Activity() {
 
         head("APPEARANCE")
         sw(UiText.text(this, "Enable UI blur"), Prefs.K_BLUR, false)
+        sw(UiText.text(this, "Enable glass blur"), Prefs.K_GLASS, false)
+        note(UiText.text(this, "Makes the app drawer, menus, folders, widget sheet and taskbar frosted glass, like the Glass style of the special clock."))
         note(UiText.text(this, "Blurs only overlay windows such as the taskbar and menus. When off, solid Material You colours are used."))
         sw(UiText.text(this, "Show keyboard when app drawer opens"), Prefs.K_DRAWER_IME, false)
         note(UiText.text(this, "When off, the app drawer opens without automatically showing the keyboard. Back should hide the keyboard before closing the drawer."))

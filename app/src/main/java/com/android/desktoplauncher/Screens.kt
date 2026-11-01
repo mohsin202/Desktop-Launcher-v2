@@ -141,7 +141,7 @@ object Screens {
 }
 
 /** Rounded button: category name, or dots (current page dark). */
-class CatPill(ctx: Context, private val wDp: Int, private val hDp: Int, private val bgColor: Int) : View(ctx) {
+class CatPill(ctx: Context, private val wDp: Int, private val hDp: Int, private val bgColor: () -> Int) : View(ctx) {
     private val bg = Paint(Paint.ANTI_ALIAS_FLAG)
     private val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -155,7 +155,7 @@ class CatPill(ctx: Context, private val wDp: Int, private val hDp: Int, private 
 
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
-        bg.color = bgColor
+        bg.color = bgColor()
         canvas.drawRoundRect(0f, 0f, w, h, h / 2f, h / 2f, bg)
         val fg = Colors.iconFg(context)
         if (Screens.dots && Screens.pages > 0) {
@@ -170,10 +170,33 @@ class CatPill(ctx: Context, private val wDp: Int, private val hDp: Int, private 
             }
         } else {
             tp.color = Colors.text(context)
-            tp.textSize = h * 0.42f
+            tp.textSize = h * 0.5f
             val s = TextUtils.ellipsize(Screens.name, android.text.TextPaint(tp), w - h * 0.6f, TextUtils.TruncateAt.END).toString()
             canvas.drawText(s, w / 2f, h / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
         }
+    }
+}
+
+/** Small round arrow button; its colours are read again whenever the theme (light / dark) changes. */
+class CatArrow(private val act: LauncherActivity, txt: String, private val onTap: () -> Unit) : TextView(act) {
+    private var sig = 0
+    init {
+        text = txt
+        textSize = 14f
+        gravity = Gravity.CENTER
+        setOnClickListener { onTap() }
+        applyColors()
+    }
+    private fun key() = Colors.taskbar(act) * 31 + Colors.text(act)
+    private fun applyColors() {
+        sig = key()
+        setTextColor(Colors.text(act))
+        background = Colors.rounded((Colors.taskbar(act) and 0x00FFFFFF) or 0xE6000000.toInt(), act.dp(12).toFloat())
+    }
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); applyColors() }
+    override fun onDraw(canvas: Canvas) {
+        if (key() != sig) { post { applyColors() } }
+        super.onDraw(canvas)
     }
 }
 
@@ -183,26 +206,16 @@ class CatBar(private val act: LauncherActivity, private val desk: DesktopView) :
         orientation = HORIZONTAL
         gravity = Gravity.CENTER
         layoutDirection = View.LAYOUT_DIRECTION_LTR
-        val bgc = (Colors.taskbar(act) and 0x00FFFFFF) or 0xE6000000.toInt()
-        fun arrow(txt: String, left: Boolean): View {
-            val t = TextView(act)
-            t.text = txt
-            t.textSize = 20f
-            t.gravity = Gravity.CENTER
-            t.setTextColor(Colors.text(act))
-            t.background = Colors.rounded(bgc, act.dp(20).toFloat())
-            t.setOnClickListener {
-                val rtl = desk.layoutDirection == View.LAYOUT_DIRECTION_RTL
-                desk.step(if (left) (if (rtl) 1 else -1) else (if (rtl) -1 else 1))
-            }
-            return t
+        fun arrow(txt: String, left: Boolean) = CatArrow(act, txt) {
+            val rtl = desk.layoutDirection == View.LAYOUT_DIRECTION_RTL
+            desk.step(if (left) (if (rtl) 1 else -1) else (if (rtl) -1 else 1))
         }
-        addView(arrow("<", true), LayoutParams(act.dp(40), act.dp(40)))
-        val pill = CatPill(act, 124, 40, bgc)
+        addView(arrow("<", true), LayoutParams(act.dp(24), act.dp(24)))
+        val pill = CatPill(act, 76, 24) { (Colors.taskbar(act) and 0x00FFFFFF) or 0xE6000000.toInt() }
         pill.setOnClickListener { act.openCats() }
         pill.setOnLongClickListener { desk.nextCategory(); true }
-        addView(pill, LayoutParams(act.dp(124), act.dp(40)).also { it.leftMargin = act.dp(12); it.rightMargin = act.dp(12) })
-        addView(arrow(">", false), LayoutParams(act.dp(40), act.dp(40)))
+        addView(pill, LayoutParams(act.dp(76), act.dp(24)).also { it.leftMargin = act.dp(8); it.rightMargin = act.dp(8) })
+        addView(arrow(">", false), LayoutParams(act.dp(24), act.dp(24)))
     }
 }
 
@@ -250,7 +263,7 @@ class CatMenu(private val act: LauncherActivity, private val desk: DesktopView, 
         isClickable = true
         setOnClickListener { closer() }
         card.orientation = LinearLayout.VERTICAL
-        card.background = Colors.rounded(Colors.surfaceSolid(act), act.dp(30).toFloat())
+        card.background = Colors.panel(act, Colors.surfaceSolid(act), act.dp(30).toFloat())
         card.setPadding(act.dp(10), act.dp(12), act.dp(10), act.dp(14))
         card.isClickable = true
         val ins = Insets.safe(act)
@@ -390,6 +403,18 @@ class CatMenu(private val act: LauncherActivity, private val desk: DesktopView, 
             col.addView(n, LinearLayout.LayoutParams(WRAP, WRAP).also { it.topMargin = act.dp(8) })
             row.addView(col, LinearLayout.LayoutParams(WRAP, WRAP))
             if (active) cur = col
+        }
+        if (cat == Cats.WIDGETS) {
+            val plus = TextView(act)
+            plus.text = "+"
+            plus.textSize = 28f
+            plus.gravity = Gravity.CENTER
+            plus.setTextColor(Colors.iconBg(act))
+            plus.background = GradientDrawable().also { it.shape = GradientDrawable.OVAL; it.setColor(Colors.iconFg(act)) }
+            plus.setOnClickListener { desk.addWidgetPage(); show() }
+            row.addView(plus, LinearLayout.LayoutParams(act.dp(52), act.dp(52)).also {
+                it.gravity = Gravity.CENTER_VERTICAL; it.marginStart = act.dp(10); it.marginEnd = act.dp(6)
+            })
         }
         hs.addView(row)
         card.addView(hs, LinearLayout.LayoutParams(MATCH, WRAP))

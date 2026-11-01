@@ -253,15 +253,12 @@ class SpecialClockView(ctx: Context, cfg: ClockCfg) : View(ctx) {
                 if (it.ch == ':') {
                     for (yy in floatArrayOf(0.33f, 0.67f)) dot(canvas, x + w / 2f, y + yy * ch, sw * 0.6f, it.kind, y, ch)
                 } else {
-                    val p = ClockGlyphs.build(it.ch, maxOf(1f, w - sw), maxOf(1f, ch - sw), sw)
-                    p.offset(x + sw / 2f, y + sw / 2f)
-                    // the digit as a closed shape, trimmed to its own cell (flat, clean ends; the outline is complete)
+                    // margin keeps square caps and mitred tips inside the cell: nothing is trimmed, the outline stays whole
+                    val m = sw * 0.8f
+                    val p = ClockGlyphs.build(it.ch, maxOf(1f, w - 2 * m), maxOf(1f, ch - 2 * m), sw)
+                    p.offset(x + m, y + m)
                     val shape = Path()
                     stroke.getFillPath(p, shape)
-                    try {
-                        val cell = Path(); cell.addRect(x, y, x + w, y + ch, Path.Direction.CW)
-                        shape.op(cell, Path.Op.INTERSECT)
-                    } catch (_: Throwable) {}
                     paintShape(canvas, shape, it.kind, y, ch)
                 }
                 x += w + 0.16f * cw

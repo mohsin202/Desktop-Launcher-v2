@@ -375,7 +375,7 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
         RippleDrawable(ColorStateList.valueOf(0x33000000), null, Colors.rounded(0xFFFFFFFF.toInt(), ctx.dp(10).toFloat()))
 
     fun refresh() {
-        background = if (pill) Colors.rounded(Colors.taskbar(ctx), ctx.dp(28).toFloat()) else android.graphics.drawable.ColorDrawable(Colors.taskbar(ctx))
+        background = if (pill) Colors.panel(ctx, Colors.taskbar(ctx), ctx.dp(28).toFloat()) else android.graphics.drawable.ColorDrawable(Colors.taskbar(ctx))
         // Keep the scroll position across rebuilds (the strip used to jump back to the start).
         val keepX = scroll.scrollX
         center.removeAllViews()
@@ -452,11 +452,11 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
         }
         if (showNav) {
             // taskbar mode: the category button takes the place of the time
-            val pill = CatPill(ctx, 112, 34, (Colors.iconBg(ctx) and 0x00FFFFFF) or 0xCC000000.toInt())
+            val pill = CatPill(ctx, 68, 22) { (Colors.iconBg(ctx) and 0x00FFFFFF) or 0xCC000000.toInt() }
             pill.setOnClickListener {
                 Launch.start(ctx, android.content.Intent(ctx, LauncherActivity::class.java).setAction(LauncherActivity.ACTION_CATEGORIES))
             }
-            right.addView(pill, LinearLayout.LayoutParams(ctx.dp(112), ctx.dp(34)).also {
+            right.addView(pill, LinearLayout.LayoutParams(ctx.dp(68), ctx.dp(22)).also {
                 it.gravity = Gravity.CENTER_VERTICAL; it.marginStart = ctx.dp(6); it.marginEnd = ctx.dp(6)
             })
         } else {

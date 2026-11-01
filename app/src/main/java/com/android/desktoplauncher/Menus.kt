@@ -44,7 +44,7 @@ class PopupMenuX(private val ctx: Context, private val anchor: View) {
         val col = LinearLayout(ctx)
         UiText.applyDirection(col, ctx)
         col.orientation = LinearLayout.VERTICAL
-        col.background = Colors.rounded(Colors.surface(ctx), ctx.dp(12).toFloat())
+        col.background = Colors.panel(ctx, Colors.surface(ctx), ctx.dp(12).toFloat())
         col.setPadding(ctx.dp(4), ctx.dp(6), ctx.dp(4), ctx.dp(6))
         col.minimumWidth = ctx.dp(190)
 
