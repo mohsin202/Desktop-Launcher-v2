@@ -253,12 +253,16 @@ class SpecialClockView(ctx: Context, cfg: ClockCfg) : View(ctx) {
                 if (it.ch == ':') {
                     for (yy in floatArrayOf(0.33f, 0.67f)) dot(canvas, x + w / 2f, y + yy * ch, sw * 0.6f, it.kind, y, ch)
                 } else {
-                    canvas.save()
-                    canvas.clipRect(x, y, x + w, y + ch)
                     val p = ClockGlyphs.build(it.ch, maxOf(1f, w - sw), maxOf(1f, ch - sw), sw)
                     p.offset(x + sw / 2f, y + sw / 2f)
-                    paintPath(canvas, p, it.kind, y, ch)
-                    canvas.restore()
+                    // the digit as a closed shape, trimmed to its own cell (flat, clean ends; the outline is complete)
+                    val shape = Path()
+                    stroke.getFillPath(p, shape)
+                    try {
+                        val cell = Path(); cell.addRect(x, y, x + w, y + ch, Path.Direction.CW)
+                        shape.op(cell, Path.Op.INTERSECT)
+                    } catch (_: Throwable) {}
+                    paintShape(canvas, shape, it.kind, y, ch)
                 }
                 x += w + 0.16f * cw
             }
@@ -266,21 +270,18 @@ class SpecialClockView(ctx: Context, cfg: ClockCfg) : View(ctx) {
         }
     }
 
-    private fun paintPath(canvas: Canvas, p: Path, kind: Int, top: Float, h: Float) {
+    private fun paintShape(canvas: Canvas, shape: Path, kind: Int, top: Float, h: Float) {
+        fill.style = Paint.Style.FILL
         if (cfg.style == 2) {
-            val out = Path()
-            stroke.color = 0xFFFFFFFF.toInt()
-            stroke.getFillPath(p, out)
-            try { out.op(out, Path.Op.UNION) } catch (_: Throwable) {}
-            fill.style = Paint.Style.FILL
             fill.shader = LinearGradient(0f, top, 0f, top + h, 0xB0FFFFFF.toInt(), 0x30FFFFFF, Shader.TileMode.CLAMP)
-            canvas.drawPath(out, fill)
+            canvas.drawPath(shape, fill)
             fill.shader = null
             edge.color = 0xE6FFFFFF.toInt()
-            canvas.drawPath(out, edge)
+            canvas.drawPath(shape, edge)
         } else {
-            stroke.color = colorOf(kind)
-            canvas.drawPath(p, stroke)
+            fill.shader = null
+            fill.color = colorOf(kind)
+            canvas.drawPath(shape, fill)
         }
     }
 
@@ -339,6 +340,16 @@ class FreeBox(ctx: Context, val wid: Int, val clock: SpecialClockView, private v
 
     fun startEdit() { resizeMode = true; invalidate() }
     fun endEdit() { if (resizeMode) { resizeMode = false; invalidate() } }
+    fun editing() = resizeMode
+
+    private var lockLong = false
+    private val lockGd = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onLongPress(e: MotionEvent) {
+            lockLong = true
+            owner.freeMenu(this@FreeBox, e.rawX.toInt(), e.rawY.toInt())
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        }
+    })
 
     private fun edgesAt(x: Float, y: Float): Int {
         val m = minOf(width, height).toFloat()
@@ -373,6 +384,15 @@ class FreeBox(ctx: Context, val wid: Int, val clock: SpecialClockView, private v
     }
 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
+        if (owner.widgetsLocked()) {
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                lockLong = false
+                if ((ev.buttonState and MotionEvent.BUTTON_SECONDARY) != 0) { lockLong = true; owner.freeMenu(this, ev.rawX.toInt(), ev.rawY.toInt()); return true }
+            }
+            lockGd.onTouchEvent(ev)
+            if (ev.actionMasked == MotionEvent.ACTION_UP && !lockLong) owner.emptyTap()
+            return true
+        }
         val pw = (parent as? View)?.width?.toFloat() ?: return true
         val ph = (parent as? View)?.height?.toFloat() ?: return true
         when (ev.actionMasked) {
@@ -400,22 +420,19 @@ class FreeBox(ctx: Context, val wid: Int, val clock: SpecialClockView, private v
                 if (!moved && Math.abs(dx) < context.dp(6) && Math.abs(dy) < context.dp(6)) return true
                 moved = true
                 val minW = context.dp(64).toFloat()
-                val keep = context.dp(48).toFloat()
+                // the clock lives inside the usable desktop: below the status bar, above the dock / taskbar, inside the side bars
+                val bd = owner.freeBounds()
+                val bl = bd[0].toFloat(); val bt = bd[1].toFloat(); val br = bd[2].toFloat(); val bb = bd[3].toFloat()
                 var l = sl; var t = st; var r = sr; var b = sb
                 if (mode == 1) {
                     val w = sr - sl; val h = sb - st
-                    l = (sl + dx).coerceIn(keep - w, pw - keep); t = (st + dy).coerceIn(keep - h, ph - keep)
+                    l = (sl + dx).coerceIn(bl, maxOf(bl, br - w)); t = (st + dy).coerceIn(bt, maxOf(bt, bb - h))
                     r = l + w; b = t + h
                 } else {
-                    if (edges and L != 0) l = (sl + dx).coerceAtMost(sr - minW)
-                    if (edges and R != 0) r = (sr + dx).coerceAtLeast(sl + minW)
-                    if (edges and T != 0) t = (st + dy).coerceAtMost(sb - minW)
-                    if (edges and B != 0) b = (sb + dy).coerceAtLeast(st + minW)
-                    // keep a visible part on the screen, nothing else is limited
-                    if (l > pw - keep) l = pw - keep
-                    if (r < keep) r = keep
-                    if (t > ph - keep) t = ph - keep
-                    if (b < keep) b = keep
+                    if (edges and L != 0) l = (sl + dx).coerceIn(bl, sr - minW)
+                    if (edges and R != 0) r = (sr + dx).coerceIn(sl + minW, br)
+                    if (edges and T != 0) t = (st + dy).coerceIn(bt, sb - minW)
+                    if (edges and B != 0) b = (sb + dy).coerceIn(st + minW, bb)
                 }
                 fx = l / pw; fy = t / ph; fw = (r - l) / pw; fh = (b - t) / ph
                 owner.requestLayout()

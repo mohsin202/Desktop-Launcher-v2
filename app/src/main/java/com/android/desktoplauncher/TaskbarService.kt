@@ -450,14 +450,25 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
                 b.background = ripple(); b.setOnClickListener { svc.global(AccessibilityService.GLOBAL_ACTION_RECENTS) }
             }, LinearLayout.LayoutParams(cell, MATCH))
         }
-        val clock = TextClock(ctx)
-        clock.format12Hour = "h:mm a"
-        clock.format24Hour = "HH:mm"
-        clock.textSize = 13f
-        clock.setTextColor(Colors.text(ctx))
-        clock.gravity = Gravity.CENTER
-        clock.setPadding(ctx.dp(8), 0, ctx.dp(4), 0)
-        right.addView(clock, LinearLayout.LayoutParams(WRAP, MATCH))
+        if (showNav) {
+            // taskbar mode: the category button takes the place of the time
+            val pill = CatPill(ctx, 112, 34, (Colors.iconBg(ctx) and 0x00FFFFFF) or 0xCC000000.toInt())
+            pill.setOnClickListener {
+                Launch.start(ctx, android.content.Intent(ctx, LauncherActivity::class.java).setAction(LauncherActivity.ACTION_CATEGORIES))
+            }
+            right.addView(pill, LinearLayout.LayoutParams(ctx.dp(112), ctx.dp(34)).also {
+                it.gravity = Gravity.CENTER_VERTICAL; it.marginStart = ctx.dp(6); it.marginEnd = ctx.dp(6)
+            })
+        } else {
+            val clock = TextClock(ctx)
+            clock.format12Hour = "h:mm a"
+            clock.format24Hour = "HH:mm"
+            clock.textSize = 13f
+            clock.setTextColor(Colors.text(ctx))
+            clock.gravity = Gravity.CENTER
+            clock.setPadding(ctx.dp(8), 0, ctx.dp(4), 0)
+            right.addView(clock, LinearLayout.LayoutParams(WRAP, MATCH))
+        }
     }
 
     private fun appItem(comp: ComponentName, running: Boolean, active: Boolean, pinned: Boolean, cell: Int): View {

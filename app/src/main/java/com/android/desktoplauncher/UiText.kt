@@ -43,7 +43,10 @@ object UiText {
         "Style" to "اسٹائل", "Material You" to "مٹیریل یو", "Transparent" to "شفاف", "Glass" to "گلاس", "Colour" to "رنگ", "Transparency" to "شفافیت",
         "Seconds" to "سیکنڈ", "Show seconds" to "سیکنڈ دکھائیں", "Clock (digital, filled)" to "گھڑی (ڈیجیٹل، بھرا ہوا)", "Clock (digital, outline)" to "گھڑی (ڈیجیٹل، آؤٹ لائن)",
         "Clock (special, free size)" to "گھڑی (خاص، آزاد سائز)",
-        "Clock layout" to "گھڑی کا لے آؤٹ", "Adaptive" to "اڈاپٹیو", "Single line clock" to "سنگل لائن گھڑی", "Double line clock" to "ڈبل لائن گھڑی"
+        "Clock layout" to "گھڑی کا لے آؤٹ", "Adaptive" to "اڈاپٹیو", "Single line clock" to "سنگل لائن گھڑی", "Double line clock" to "ڈبل لائن گھڑی",
+        "Discover" to "ڈسکور", "All" to "تمام", "Photos & Videos" to "تصاویر اور ویڈیوز", "Shortcuts" to "شارٹ کٹس", "Folders" to "فولڈرز",
+        "Move to screen" to "اسکرین میں منتقل کریں", "Automatic" to "خودکار", "New screen" to "نئی اسکرین", "Delete screen" to "اسکرین حذف کریں",
+        "Open Google" to "گوگل کھولیں", "Google Discover opens in the Google app" to "گوگل ڈسکور گوگل ایپ میں کھلتا ہے"
     )
     fun text(c: Context, english: String): String = if (Prefs.language(c) == 1) ur[english] ?: english else english
     fun applyDirection(v: View, c: Context) {

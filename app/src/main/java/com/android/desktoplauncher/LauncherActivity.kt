@@ -31,6 +31,7 @@ import android.text.TextWatcher
 class LauncherActivity : Activity() {
     companion object {
         const val ACTION_TOGGLE_DRAWER = "com.android.desktoplauncher.TOGGLE_DRAWER"
+        const val ACTION_CATEGORIES = "com.android.desktoplauncher.CATEGORIES"
         private const val REQ_BIND = 11
         private const val REQ_CONFIG = 12
         private const val HOST_ID = 1024
@@ -43,6 +44,9 @@ class LauncherActivity : Activity() {
     lateinit var awm: AppWidgetManager
     private var drawer: DrawerView? = null
     private var dock: TaskbarView? = null
+    private var catBar: CatBar? = null
+    private var catMenu: CatMenu? = null
+    private var catMargin = 0
     private var dockH = 0
     private var padTop = 0
     private var padBottom = 0
@@ -66,6 +70,8 @@ class LauncherActivity : Activity() {
         root = FrameLayout(this)
         desktop = DesktopView(this)
         root.addView(desktop, FrameLayout.LayoutParams(MATCH, MATCH))
+        catBar = CatBar(this, desktop)
+        root.addView(catBar, FrameLayout.LayoutParams(WRAP, dp(40), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
         banner = TextView(this)
         banner.setTextColor(Color.WHITE)
         banner.textSize = 13f
@@ -132,8 +138,16 @@ class LauncherActivity : Activity() {
 
     private fun applyPadding() {
         val phone = !Modes.tablet(this)
+        catMargin = if (phone && barOn()) padBottom + dp(8) + dockH + dp(4) else padBottom + dp(8)
+        catBar?.visibility = if (phone) android.view.View.VISIBLE else android.view.View.GONE
+        catBar?.let {
+            val lp = it.layoutParams as FrameLayout.LayoutParams
+            lp.bottomMargin = catMargin
+            it.layoutParams = lp
+        }
         val bottom = when {
-            phone && barOn() -> padBottom + dockH + dp(16)
+            phone && barOn() -> catMargin + dp(48)
+            phone -> catMargin + dp(48)
             !phone && barOn() && TaskbarService.instance != null -> maxOf(padBottom, dp(Prefs.tbDp(this)))
             else -> padBottom
         }
@@ -186,7 +200,8 @@ class LauncherActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.action == ACTION_TOGGLE_DRAWER) toggleDrawer()
-        else { closeWidgetSheet(); closeDrawer(); TaskbarService.instance?.closeDrawer(); desktop.clearSelection(); desktop.closeFolder() }
+        else if (intent.action == ACTION_CATEGORIES) { closeWidgetSheet(); closeDrawer(); TaskbarService.instance?.closeDrawer(); openCats() }
+        else { closeWidgetSheet(); closeDrawer(); closeCats(); TaskbarService.instance?.closeDrawer(); desktop.clearSelection(); desktop.closeFolder(); desktop.goHome() }
     }
 
     override fun onConfigurationChanged(c: Configuration) {
@@ -197,7 +212,7 @@ class LauncherActivity : Activity() {
     }
 
     @Deprecated("Deprecated in Java")
-    override fun onBackPressed() { if (sheet != null) closeWidgetSheet() else if (drawer != null) closeDrawer() else desktop.closeFolder() }
+    override fun onBackPressed() { if (catMenu != null) { if (catMenu?.back() != true) closeCats() } else if (sheet != null) closeWidgetSheet() else if (drawer != null) closeDrawer() else desktop.closeFolder() }
 
     fun toggleDrawer() {
         val svc = TaskbarService.instance
@@ -209,6 +224,21 @@ class LauncherActivity : Activity() {
             drawer = d
             d.post { d.onShown() }
         }
+    }
+
+    fun openCats() {
+        if (catMenu != null) return
+        closeDrawer()
+        val phone = !Modes.tablet(this)
+        val gap = if (phone) catMargin + dp(40) + dp(8) else MenuArea.bottomReserve + dp(8)
+        val m = CatMenu(this, desktop, gap) { closeCats() }
+        root.addView(m, FrameLayout.LayoutParams(MATCH, MATCH))
+        catMenu = m
+    }
+
+    fun closeCats() {
+        catMenu?.let { root.removeView(it) }
+        catMenu = null
     }
 
     fun desktopOpenFile(file: java.io.File) { desktop.openFile(file) }
