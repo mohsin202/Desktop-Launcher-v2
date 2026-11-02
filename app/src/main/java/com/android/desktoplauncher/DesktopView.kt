@@ -420,7 +420,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     }
 
     /** Home screen is showing and nothing else is going on (no folder, no widget being resized, no drag). */
-    fun homeIdle() = folderPanel == null && editFolder == null && !dragLock && allWidgets.none { it.editing() } && allFrees.none { it.editing() }
+    fun homeIdle() = catId != Cats.DISCOVER && folderPanel == null && editFolder == null && !dragLock && allWidgets.none { it.editing() } && allFrees.none { it.editing() }
 
     private fun canSwipe() = folderPanel == null && editFolder == null && !dragLock && allWidgets.none { it.editing() } && allFrees.none { it.editing() }
 
@@ -465,37 +465,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         for (i in 0 until childCount) getChildAt(i).animate().translationX(0f).setDuration(150).start()
     }
 
-    private fun makeDiscover(): View {
-        val c = context
-        val box = LinearLayout(c)
-        box.orientation = LinearLayout.VERTICAL
-        box.gravity = Gravity.CENTER
-        val t = TextView(c)
-        t.text = UiText.text(c, "Discover")
-        t.textSize = 30f
-        t.setTextColor(Color.WHITE)
-        t.setShadowLayer(6f, 0f, 2f, Color.BLACK)
-        box.addView(t, LinearLayout.LayoutParams(WRAP, WRAP))
-        val s = TextView(c)
-        s.text = UiText.text(c, "Google Discover opens in the Google app")
-        s.textSize = 14f
-        s.gravity = Gravity.CENTER
-        s.setTextColor(Color.WHITE)
-        s.setShadowLayer(4f, 0f, 1f, Color.BLACK)
-        box.addView(s, LinearLayout.LayoutParams(WRAP, WRAP).also { it.topMargin = d(8) })
-        val b = TextView(c)
-        b.text = UiText.text(c, "Open Google")
-        b.textSize = 17f
-        b.setTextColor(Colors.iconBg(c))
-        b.background = Colors.rounded(Colors.iconFg(c), d(28).toFloat())
-        b.setPadding(d(28), d(14), d(28), d(14))
-        b.setOnClickListener {
-            val i = c.packageManager.getLaunchIntentForPackage("com.google.android.googlequicksearchbox")
-            if (i != null) Launch.start(c, i) else c.toast("Google app not found")
-        }
-        box.addView(b, LinearLayout.LayoutParams(WRAP, WRAP).also { it.topMargin = d(24) })
-        return box
-    }
+    private fun makeDiscover(): View = NewsView(act)
 
     /** Picture of one page for the category page. The page on screen is the real view, the others are drawn from the stored places. */
     fun thumbnail(cat: String, page: Int, tw: Int, th: Int, wall: android.graphics.drawable.Drawable?): android.graphics.Bitmap {
