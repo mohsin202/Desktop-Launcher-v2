@@ -35,7 +35,11 @@ class LauncherActivity : Activity() {
         private const val REQ_BIND = 11
         private const val REQ_CONFIG = 12
         private const val HOST_ID = 1024
+        private var live: java.lang.ref.WeakReference<LauncherActivity>? = null
+        /** The taskbar's drawer is its own window: it asks the launcher screen behind it to blur. */
+        fun blurFromOverlay(on: Boolean) { live?.get()?.let { it.extBlur = on; it.syncBlur() } }
     }
+    private var extBlur = false
 
     private lateinit var root: FrameLayout
     private lateinit var desktop: DesktopView
@@ -93,9 +97,11 @@ class LauncherActivity : Activity() {
             ins
         }
         Bus.add(busListener)
+        live = java.lang.ref.WeakReference(this)
     }
 
     override fun onDestroy() {
+        if (live?.get() === this) live = null
         Bus.remove(busListener)
         super.onDestroy()
     }
@@ -216,7 +222,7 @@ class LauncherActivity : Activity() {
 
     /** The desktop (and the page button) are blurred while the drawer, the screens page or the widget sheet is open. */
     private fun syncBlur() {
-        val on = drawer != null || catMenu != null || sheet != null
+        val on = drawer != null || catMenu != null || sheet != null || extBlur
         Blur.behind(this, desktop, on)
         Blur.behind(this, catBar, on)
     }

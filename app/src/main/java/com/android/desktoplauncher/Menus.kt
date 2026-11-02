@@ -120,7 +120,7 @@ class PopupMenuX(private val ctx: Context, private val anchor: View) {
             anchor.getLocationOnScreen(a); anchor.getLocationInWindow(b)
             pw.showAtLocation(anchor, Gravity.NO_GRAVITY, px - (a[0] - b[0]), py - (a[1] - b[1]))
             Blur.popup(ctx, pw)
-            if (lvl == 0 && ctx is android.app.Activity && blurred == null) { blurred = anchor.rootView; Blur.behind(ctx, blurred, true) }
+            if (lvl == 0 && blurred == null && (ctx is android.app.Activity || anchor.rootView is DrawerView)) { blurred = anchor.rootView; Blur.behind(ctx, blurred, true) }
         } catch (e: Exception) {
             stack.remove(pw)
         }

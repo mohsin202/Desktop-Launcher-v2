@@ -298,7 +298,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
         lp.title = "DesktopDrawer"
         // Do not use BLUR_BEHIND on this full-screen touch layer: Android blurs the entire
         // app area and some ROMs also stop dispatching touches. The panel itself is translucent.
-        try { wm.addView(d, lp); drawer = d; d.post { d.onShown() } } catch (_: Exception) {}
+        try { wm.addView(d, lp); drawer = d; d.post { d.onShown() }; LauncherActivity.blurFromOverlay(true) } catch (_: Exception) {}
         raiseBar()
     }
 
@@ -322,6 +322,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
     fun closeDrawer() {
         drawer?.let { try { wm.removeView(it) } catch (_: Exception) {} }
         drawer = null
+        LauncherActivity.blurFromOverlay(false)
     }
 
     fun isDrawerOpen() = drawer != null
