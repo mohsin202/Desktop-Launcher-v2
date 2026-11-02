@@ -420,6 +420,16 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     }
 
     /** Home screen is showing and nothing else is going on (no folder, no widget being resized, no drag). */
+    /** True if a visible widget is under this screen point: swipes that start on a widget scroll it, they don't open the drawer. */
+    fun widgetAtRaw(x: Float, y: Float): Boolean {
+        val r = android.graphics.Rect()
+        for (w in allWidgets) {
+            if (!w.isShown || !w.getGlobalVisibleRect(r)) continue
+            if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return true
+        }
+        return false
+    }
+
     fun homeIdle() = catId != Cats.DISCOVER && folderPanel == null && editFolder == null && !dragLock && allWidgets.none { it.editing() } && allFrees.none { it.editing() }
 
     private fun canSwipe() = folderPanel == null && editFolder == null && !dragLock && allWidgets.none { it.editing() } && allFrees.none { it.editing() }

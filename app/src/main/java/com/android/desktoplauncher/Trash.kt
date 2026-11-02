@@ -3,6 +3,7 @@ package com.android.desktoplauncher
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -109,7 +110,10 @@ object TrashStore {
 }
 
 /** The launcher's own Trash app: lists trashed files from the whole phone; restore or delete them. */
-class TrashActivity : Activity() {
+open class TrashActivity : Activity() {
+    /** true in the real-window variant (desktop/tablet): fills its own system window instead of drawing a floating card. */
+    protected open val windowed = false
+
     private lateinit var listBox: LinearLayout
     private lateinit var restoreBtn: TextView
     private lateinit var deleteBtn: TextView
@@ -131,6 +135,20 @@ class TrashActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        // Desktop/tablet: a translucent activity cannot show the launcher behind it on freeform ROMs (black background),
+        // so hand over to a normal resizable activity in its own task and let the system draw it as a real window.
+        if (!windowed && Modes.tablet(this)) {
+            try {
+                val dm = resources.displayMetrics
+                val w = minOf(dp(560), dm.widthPixels - dp(48)); val h = minOf(dp(720), (dm.heightPixels * 0.8f).toInt())
+                val l = (dm.widthPixels - w) / 2; val t = (dm.heightPixels - h) / 2
+                val opts = android.app.ActivityOptions.makeBasic().setLaunchBounds(android.graphics.Rect(l, t, l + w, t + h))
+                val i = Intent(this, TrashWindowActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                startActivity(i, opts.toBundle())
+                finish(); return
+            } catch (_: Throwable) { /* fall through to the floating card */ }
+        }
         try { build() } catch (e: Throwable) { android.util.Log.e("DesktopTrash", "build failed", e); showError(e) }
     }
 
@@ -139,23 +157,24 @@ class TrashActivity : Activity() {
         window.setDecorFitsSystemWindows(false)
         // floating window: a dimmed screen with a rounded card in the middle; tapping outside closes it
         val scrim = FrameLayout(this)
-        scrim.setBackgroundColor(0x66000000)
-        scrim.setOnClickListener { finish() }
+        if (!windowed) { scrim.setBackgroundColor(0x66000000); scrim.setOnClickListener { finish() } }
         UiText.applyDirection(scrim, this)
         scrim.setOnApplyWindowInsetsListener { v, ins ->
             val bars = Insets.of(ins)
-            v.setPadding(dp(12) + bars.left, bars.top + dp(12), dp(12) + bars.right, bars.bottom + dp(12))
+            val m = if (windowed) 0 else dp(12)
+            v.setPadding(m + bars.left, bars.top + m, m + bars.right, bars.bottom + m)
             ins
         }
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
-        root.background = Colors.panel(this, Colors.surfaceSolid(this), dp(32).toFloat())
+        root.background = if (windowed) Colors.rounded(Colors.surfaceSolid(this), 0f) else Colors.panel(this, Colors.surfaceSolid(this), dp(32).toFloat())
         root.isClickable = true
         root.setPadding(dp(14), dp(12), dp(14), dp(14))
         val dm = resources.displayMetrics
         val cw = minOf(dp(560), dm.widthPixels - dp(24))
         val chh = minOf(dp(720), (dm.heightPixels * 0.84f).toInt())
-        scrim.addView(root, FrameLayout.LayoutParams(cw, chh, Gravity.CENTER))
+        if (windowed) scrim.addView(root, FrameLayout.LayoutParams(MATCH, MATCH))
+        else scrim.addView(root, FrameLayout.LayoutParams(cw, chh, Gravity.CENTER))
 
         // close button: on the end side of the top row (left in right-to-left, right in left-to-right)
         val top = FrameLayout(this)
@@ -386,4 +405,9 @@ class Tick(c: Context, private val on: Boolean) : View(c) {
             canvas.drawCircle(cx, cy, r, p)
         }
     }
+}
+
+/** Real-window variant of the Trash, used on desktop/tablet layouts (not listed in the drawer). */
+class TrashWindowActivity : TrashActivity() {
+    override val windowed = true
 }

@@ -368,10 +368,11 @@ class LauncherActivity : Activity() {
 
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
             if (e1 == null || Modes.tablet(this@LauncherActivity)) return false
+            val overWidget = desktop.widgetAtRaw(e1.rawX, e1.rawY)
             val dy = e1.y - e2.y
             // Swipe up on the desktop opens the app drawer: a short, light flick anywhere is enough, but only while the
             // plain home screen is showing (not with a menu, folder, widget sheet or screens page open).
-            if (drawer == null && dy > dp(40) && vy < -450f && Math.abs(vy) > Math.abs(vx)) {
+            if (drawer == null && !overWidget && dy > dp(40) && vy < -450f && Math.abs(vy) > Math.abs(vx)) {
                 if (catMenu != null || sheet != null || PopupMenuX.anyOpen() || !desktop.homeIdle()) return false
                 root.post { if (drawer == null) toggleDrawer() }
                 return true
@@ -387,7 +388,29 @@ class LauncherActivity : Activity() {
         }
     })
 
+    // Distance-based upward swipe: works from anywhere on the screen, no matter how slow or short.
+    private var upX = 0f; private var upY = 0f; private var upOk = false; private var upLongPress = 0L
+    private fun trackUpSwipe(ev: MotionEvent) {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                upX = ev.rawX; upY = ev.rawY; upOk = drawer == null && !Modes.tablet(this) && !desktop.widgetAtRaw(ev.rawX, ev.rawY)
+                upLongPress = ev.eventTime
+            }
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> upOk = false
+            MotionEvent.ACTION_UP -> {
+                if (!upOk) return
+                upOk = false
+                val dy = upY - ev.rawY; val dx = ev.rawX - upX
+                if (dy > dp(48) && dy > Math.abs(dx) * 1.5f && drawer == null) {
+                    if (catMenu != null || sheet != null || PopupMenuX.anyOpen() || !desktop.homeIdle()) return
+                    root.post { if (drawer == null) toggleDrawer() }
+                }
+            }
+        }
+    }
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        trackUpSwipe(ev)
         if (::swipe.isInitialized) swipe.onTouchEvent(ev)
         return super.dispatchTouchEvent(ev)
     }
