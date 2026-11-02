@@ -250,6 +250,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     /** Builds the views of the current page (items, widgets) from the stored data. */
     private fun rebuild() {
         val c = context
+        act.wallBlur(catId == Cats.DISCOVER)
         removeAllViews(); items.clear(); widgets.clear(); frees.clear(); cells.clear(); wPack.clear()
         folderPanel = null; trashIv = null; emph.clear(); discoverView = null
         if (width <= 0 || height <= 0) { builtSig = ""; requestLayout(); return }

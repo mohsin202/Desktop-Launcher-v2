@@ -285,7 +285,7 @@ class GlobeIcon(ctx: Context) : View(ctx) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = ctx.dp(2).toFloat() }
     init { isClickable = true }
     override fun onDraw(canvas: Canvas) {
-        p.color = Colors.iconBg(context)
+        p.color = Colors.iconFg(context)
         val w = width.toFloat(); val h = height.toFloat()
         val cx = w / 2; val cy = h / 2; val r = minOf(w, h) * 0.30f
         canvas.drawCircle(cx, cy, r, p)
@@ -330,7 +330,7 @@ class NewsView(private val act: LauncherActivity) : FrameLayout(act) {
         head.background = Colors.panel(act, (Colors.surface(act) and 0x00FFFFFF) or 0xD9000000.toInt(), act.dp(26).toFloat())
         head.setPadding(act.dp(8), act.dp(8), act.dp(8), act.dp(8))
         val globe = GlobeIcon(act)
-        globe.background = Colors.rounded(Colors.iconFg(act), act.dp(22).toFloat())
+        globe.background = Colors.rounded(Colors.iconBg(act), act.dp(22).toFloat())
         globe.setOnClickListener { showPicker() }
         head.addView(globe, LinearLayout.LayoutParams(act.dp(44), act.dp(44)))
         val tbox = LinearLayout(act)
@@ -349,8 +349,8 @@ class NewsView(private val act: LauncherActivity) : FrameLayout(act) {
         refresh.text = "↻"
         refresh.textSize = 22f
         refresh.gravity = Gravity.CENTER
-        refresh.setTextColor(Colors.iconBg(act))
-        refresh.background = Colors.rounded(Colors.iconFg(act), act.dp(22).toFloat())
+        refresh.setTextColor(Colors.iconFg(act))
+        refresh.background = Colors.rounded(Colors.iconBg(act), act.dp(22).toFloat())
         refresh.setOnClickListener { reload(true) }
         head.addView(refresh, LinearLayout.LayoutParams(act.dp(44), act.dp(44)))
         col.addView(head, LinearLayout.LayoutParams(MATCH, WRAP))
@@ -383,8 +383,11 @@ class NewsView(private val act: LauncherActivity) : FrameLayout(act) {
         t.textSize = 13f
         t.gravity = Gravity.CENTER
         t.setPadding(act.dp(14), act.dp(6), act.dp(14), act.dp(6))
-        t.setTextColor(if (on) Colors.iconBg(act) else Colors.text(act))
-        t.background = Colors.rounded(if (on) Colors.iconFg(act) else (Colors.surfaceHigh(act) and 0x00FFFFFF) or 0xCC000000.toInt(), act.dp(16).toFloat())
+        // same pair as the app icons: plate = icon background colour, ink = icon foreground colour
+        t.setTextColor(if (on) Colors.iconFg(act) else Colors.text(act))
+        t.background = if (on) android.graphics.drawable.GradientDrawable().also {
+            it.setColor(Colors.iconBg(act)); it.cornerRadius = act.dp(16).toFloat(); it.setStroke(act.dp(2), Colors.accent(act))
+        } else Colors.rounded((Colors.surfaceHigh(act) and 0x00FFFFFF) or 0xCC000000.toInt(), act.dp(16).toFloat())
         t.setOnClickListener { tap() }
         return t
     }
@@ -502,9 +505,9 @@ class NewsView(private val act: LauncherActivity) : FrameLayout(act) {
                 val row = TextView(act)
                 row.text = c.en + "   " + c.ur
                 row.textSize = 17f
-                row.setTextColor(if (c.code == country.code) Colors.iconBg(act) else Colors.text(act))
+                row.setTextColor(if (c.code == country.code) Colors.iconFg(act) else Colors.text(act))
                 row.setPadding(act.dp(16), act.dp(14), act.dp(16), act.dp(14))
-                row.background = Colors.rounded(if (c.code == country.code) Colors.iconFg(act) else 0, act.dp(16).toFloat())
+                row.background = Colors.rounded(if (c.code == country.code) Colors.iconBg(act) else 0, act.dp(16).toFloat())
                 row.setOnClickListener {
                     country = c
                     lang = c.langs[0]

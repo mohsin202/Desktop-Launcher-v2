@@ -224,6 +224,18 @@ class LauncherActivity : Activity() {
     /** Page button above the dock, blurred while a folder is open. */
     fun blurChrome(on: Boolean) { Blur.behind(this, catBar, on || drawer != null || catMenu != null || sheet != null || extBlur) }
 
+    /** Blurs the wallpaper behind the launcher window (everything behind it, but not the dock, which is part of this window). */
+    fun wallBlur(on: Boolean) {
+        if (android.os.Build.VERSION.SDK_INT < 31) return
+        try {
+            val want = on && (Prefs.bool(this, Prefs.K_BLUR, false) || Prefs.bool(this, Prefs.K_GLASS, false))
+            val lp = window.attributes
+            if (want) { lp.blurBehindRadius = dp(26); window.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND) }
+            else { lp.blurBehindRadius = 0; window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND) }
+            window.attributes = lp
+        } catch (_: Throwable) {}
+    }
+
     private fun syncBlur() {
         val on = drawer != null || catMenu != null || sheet != null || extBlur
         Blur.behind(this, desktop, on)
