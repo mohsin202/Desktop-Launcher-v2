@@ -28,7 +28,16 @@ class PopupMenuX(private val ctx: Context, private val anchor: View) {
     companion object {
         private val active = java.util.Collections.newSetFromMap(java.util.WeakHashMap<PopupMenuX, Boolean>())
         /** True while any menu of the launcher is open. */
-        fun anyOpen() = active.isNotEmpty()
+        fun anyOpen(): Boolean {
+            // only menus whose window is really on screen count; a stale entry must never block swipes and shortcuts
+            val it = active.iterator()
+            var open = false
+            while (it.hasNext()) {
+                val m = it.next()
+                if (m.stack.firstOrNull()?.isShowing == true) open = true else it.remove()
+            }
+            return open
+        }
     }
     private val stack = ArrayList<PopupWindow>()
     /** Called when the whole menu has closed (item chosen, tapped outside, back). */
@@ -85,7 +94,8 @@ class PopupMenuX(private val ctx: Context, private val anchor: View) {
     }
 
     private fun level(x: Int, y: Int, items: List<MenuItem>, lvl: Int, above: Boolean, flipX: Int?) {
-        closeFrom(lvl)
+        // only close what is really open: closing level 0 of an empty menu would remove the spotlight and fire onClosed
+        if (stack.size > lvl) closeFrom(lvl)
         val col = LinearLayout(ctx)
         UiText.applyDirection(col, ctx)
         col.orientation = LinearLayout.VERTICAL

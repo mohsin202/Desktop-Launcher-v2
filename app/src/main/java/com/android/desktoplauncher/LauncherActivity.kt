@@ -412,6 +412,17 @@ class LauncherActivity : Activity() {
                 upOk = !Modes.tablet(this) && (if (upOpening) !desktop.widgetAtRaw(ev.rawX, ev.rawY) else upTopAtDown)
             }
             MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> upOk = false
+            MotionEvent.ACTION_MOVE -> {
+                // open as soon as the finger has travelled far enough, without waiting for it to lift
+                if (upOk && upOpening && drawer == null) {
+                    val dy = upY - ev.rawY; val dx = ev.rawX - upX
+                    if (dy > dp(56) && dy > Math.abs(dx) * 1.5f) {
+                        upOk = false
+                        if (catMenu != null || sheet != null || PopupMenuX.anyOpen() || !desktop.homeIdle()) return
+                        root.post { if (drawer == null) toggleDrawer() }
+                    }
+                }
+            }
             MotionEvent.ACTION_UP -> {
                 if (!upOk) return
                 upOk = false
