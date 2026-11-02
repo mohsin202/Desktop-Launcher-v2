@@ -55,7 +55,7 @@
             android:icon="@mipmap/ic_trash"
             android:label="@string/trash_name"
             android:taskAffinity="com.android.desktoplauncher.trash"
-            android:theme="@style/Theme.Desktop.Settings">
+            android:theme="@style/Theme.Desktop.Floating">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
