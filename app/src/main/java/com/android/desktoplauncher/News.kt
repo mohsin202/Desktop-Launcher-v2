@@ -117,11 +117,11 @@ object NewsData {
     private val pool = Executors.newFixedThreadPool(2)
     private val main = Handler(Looper.getMainLooper())
 
-    fun load(url: String, force: Boolean, done: (List<Article>?) -> Unit) {
+    fun load(url: String, force: Boolean, srcName: String = "", done: (List<Article>?) -> Unit) {
         val hit = cache[url]
         if (!force && hit != null && System.currentTimeMillis() - hit.first < 10 * 60_000L) { done(hit.second); return }
         pool.execute {
-            val res = try { fetch(url) } catch (_: Throwable) { null }
+            val res = try { fetch(url, srcName) } catch (_: Throwable) { null }
             if (res != null) cache[url] = System.currentTimeMillis() to res
             main.post { done(res) }
         }
@@ -168,28 +168,83 @@ object NewsData {
         return newsWord(lang)
     }
 
-    /**
-     * Loads the feed of the edition. If the language is not written in Latin letters and the edition mostly gives
-     * articles in another language (Google has no feed for it), articles written in that language are searched for.
-     */
+    class Feed(val name: String, val url: String)
+
+    /** Direct feeds of the national publishers in the language (Google has no real feed for some languages). */
+    private fun publishers(cc: NewsCountry, lang: String): List<Feed> = when {
+        cc.code == "PK" && lang == "ur" -> listOf(
+            Feed("ایکسپریس", "https://www.express.pk/feed/"),
+            Feed("اے آر وائی", "https://urdu.arynews.tv/feed/"),
+            Feed("بول نیوز", "https://www.bolnews.com/urdu/feed/"),
+            Feed("انڈیپنڈنٹ اردو", "https://www.independenturdu.com/rss.xml"),
+            Feed("بی بی سی اردو", "https://feeds.bbci.co.uk/urdu/rss.xml"),
+            Feed("جنگ", "https://feeds.feedburner.com/com/Yeor"),
+            Feed("ڈیلی پاکستان", "https://dailypakistan.com.pk/feed"),
+            Feed("جیو نیوز", "https://urdu.geo.tv/rss/1/0"),
+            Feed("روزنامہ خبریں", "https://roznamakhabrein.com/feed/"),
+            Feed("24 نیوز", "https://www.24urdu.com/rss/world")
+        )
+        else -> emptyList()
+    }
+
+    private fun topicKeywords(lang: String, t: Topic): List<String> {
+        if (lang != "ur") return emptyList()
+        return when (t.section) {
+            "SPORTS" -> listOf("کرکٹ", "میچ", "ٹیم", "کھلاڑی", "فٹبال", "ورلڈ کپ", "بابر", "پی سی بی", "ٹی 20", "ٹیسٹ", "اولمپک", "ہاکی", "کپتان")
+            "BUSINESS" -> listOf("ڈالر", "روپے", "اسٹاک", "سونا", "سونے", "پیٹرول", "قیمت", "بجٹ", "معیشت", "تجارت", "آئی ایم ایف", "شرح سود", "برآمدات", "مہنگائی")
+            "WORLD" -> listOf("امریکا", "امریکہ", "بھارت", "ایران", "اسرائیل", "غزہ", "چین", "روس", "یوکرین", "افغانستان", "برطانیہ", "ٹرمپ", "اقوام متحدہ", "سعودی")
+            "TECHNOLOGY" -> listOf("ٹیکنالوجی", "موبائل", "انٹرنیٹ", "اے آئی", "ایپ", "گوگل", "سام سنگ", "ایپل", "سافٹ ویئر", "سائبر")
+            "ENTERTAINMENT" -> listOf("فلم", "اداکار", "اداکارہ", "ڈرامہ", "ڈرامے", "گلوکار", "شوبز", "بالی ووڈ", "گانا", "ٹیلی ویژن", "ماڈل")
+            "SCIENCE" -> listOf("سائنس", "سائنسدان", "تحقیق", "خلا", "ناسا", "زمین", "ماحولیات", "موسمیاتی")
+            "HEALTH" -> listOf("صحت", "ڈاکٹر", "بیماری", "ہسپتال", "علاج", "وائرس", "ڈینگی", "کینسر", "ویکسین", "دوا")
+            else -> emptyList()
+        }
+    }
+
+    private fun fresh(a: Article): Boolean = a.time <= 0 || System.currentTimeMillis() - a.time < 45L * 86400_000L
+
     fun loadSmart(cc: NewsCountry, lang: String, t: Topic, force: Boolean, done: (List<Article>?) -> Unit) {
+        val feeds = publishers(cc, lang)
+        if (feeds.isEmpty() || t.query != null) { googleLoad(cc, lang, t, force, done); return }
+        val all = ArrayList<Article>()
+        var pending = feeds.size
+        for (f in feeds) load(f.url, force, f.name) { res ->
+            for (a in res ?: emptyList()) if (inScript(lang, a.title) && fresh(a) && all.none { it.title == a.title }) all += a
+            if (--pending == 0) {
+                val kw = topicKeywords(lang, t)
+                val mine = if (kw.isEmpty()) all else all.filter { a -> kw.any { a.title.contains(it) } }
+                val sorted = ArrayList(mine.sortedByDescending { it.time })
+                if (t.section == null || sorted.size >= 12) done(if (sorted.isEmpty()) null else sorted)
+                else googleLoad(cc, lang, t, force) { g ->
+                    for (a in g ?: emptyList()) if (fresh(a) && sorted.none { it.title == a.title }) sorted += a
+                    sorted.sortByDescending { it.time }
+                    done(if (sorted.isEmpty()) g else sorted)
+                }
+            }
+        }
+    }
+
+    /**
+     * Loads the Google News feed of the edition. If the language is not written in Latin letters and the edition mostly
+     * gives articles in another language, articles written in that language are searched for.
+     */
+    private fun googleLoad(cc: NewsCountry, lang: String, t: Topic, force: Boolean, done: (List<Article>?) -> Unit) {
         load(url(cc, lang, t), force) { first ->
             if (!isScriptLang(lang) || t.query != null) { done(first); return@load }
-            val ok = first?.filter { inScript(lang, it.title) } ?: emptyList()
+            val ok = first?.filter { inScript(lang, it.title) && fresh(it) } ?: emptyList()
             if (ok.size >= 8) { done(ok); return@load }
-            // fallback: search in the language itself
             val word = topicWord(lang, t) + (if (lang == "ur") " " + cc.ur else "")
             val q = Topic("", null, "raw:$word")
             load(url(cc, lang, q), force) { second ->
                 val all = ArrayList<Article>(ok)
-                for (a in (second ?: emptyList())) if (inScript(lang, a.title) && all.none { it.title == a.title }) all += a
+                for (a in (second ?: emptyList())) if (inScript(lang, a.title) && fresh(a) && all.none { it.title == a.title }) all += a
                 all.sortByDescending { it.time }
                 done(if (all.isEmpty() && first == null && second == null) null else all)
             }
         }
     }
 
-    private fun fetch(u: String): List<Article> {
+    private fun fetch(u: String, srcName: String): List<Article> {
         val conn = URL(u).openConnection() as HttpURLConnection
         conn.connectTimeout = 10000; conn.readTimeout = 15000
         conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Android) DesktopLauncher")
@@ -198,6 +253,8 @@ object NewsData {
             p.setInput(conn.inputStream, "UTF-8")
             val out = ArrayList<Article>()
             val fmt = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US)
+            val fmt2 = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.US)
+            fun parse(s: String): Long = try { fmt.parse(s)?.time ?: 0L } catch (_: Exception) { try { fmt2.parse(s)?.time ?: 0L } catch (_: Exception) { 0L } }
             var inItem = false
             var title = ""; var link = ""; var src = ""; var date = 0L
             var ev = p.eventType
@@ -208,13 +265,13 @@ object NewsData {
                         "title" -> if (inItem) title = p.nextText().trim()
                         "link" -> if (inItem) link = p.nextText().trim()
                         "source" -> if (inItem) src = p.nextText().trim()
-                        "pubDate" -> if (inItem) date = try { fmt.parse(p.nextText().trim())?.time ?: 0L } catch (_: Exception) { 0L }
+                        "pubDate" -> if (inItem) date = parse(p.nextText().trim())
                     }
                 } else if (ev == XmlPullParser.END_TAG && p.name == "item") {
                     inItem = false
                     var t = title
                     if (src.isNotEmpty() && t.endsWith(" - $src")) t = t.removeSuffix(" - $src")
-                    if (t.isNotEmpty() && link.isNotEmpty()) out += Article(t, src, link, date)
+                    if (t.isNotEmpty() && link.isNotEmpty()) out += Article(t, src.ifEmpty { srcName }, link, date)
                 }
                 ev = p.next()
             }
@@ -251,6 +308,7 @@ class NewsView(private val act: LauncherActivity) : FrameLayout(act) {
     private var lang: String
     private var topic = 0
     private var picker: View? = null
+    private val rtl = Prefs.language(act) == 1
 
     private companion object { const val K = "newsc" }
 
@@ -268,6 +326,9 @@ class NewsView(private val act: LauncherActivity) : FrameLayout(act) {
         val head = LinearLayout(act)
         head.orientation = LinearLayout.HORIZONTAL
         head.gravity = Gravity.CENTER_VERTICAL
+        // own background, so the title is readable on any wallpaper in both light and dark mode
+        head.background = Colors.panel(act, (Colors.surface(act) and 0x00FFFFFF) or 0xD9000000.toInt(), act.dp(26).toFloat())
+        head.setPadding(act.dp(8), act.dp(8), act.dp(8), act.dp(8))
         val globe = GlobeIcon(act)
         globe.background = Colors.rounded(Colors.iconFg(act), act.dp(22).toFloat())
         globe.setOnClickListener { showPicker() }
@@ -280,6 +341,7 @@ class NewsView(private val act: LauncherActivity) : FrameLayout(act) {
         title.setTextColor(Colors.text(act))
         tbox.addView(title)
         subtitle.textSize = 12f
+        for (v in listOf(title, subtitle)) { v.textDirection = if (rtl) View.TEXT_DIRECTION_RTL else View.TEXT_DIRECTION_LTR; v.textAlignment = View.TEXT_ALIGNMENT_VIEW_START }
         subtitle.setTextColor(Colors.text(act) and 0x00FFFFFF or 0xB3000000.toInt())
         tbox.addView(subtitle)
         head.addView(tbox, LinearLayout.LayoutParams(0, WRAP, 1f).also { it.marginStart = act.dp(12) })
@@ -328,7 +390,7 @@ class NewsView(private val act: LauncherActivity) : FrameLayout(act) {
     }
 
     private fun buildChips() {
-        subtitle.text = country.en + " · " + country.ur
+        subtitle.text = if (rtl) country.ur + " · " + country.en else country.en + " · " + country.ur
         langRow.removeAllViews()
         langScroll.visibility = if (country.langs.size > 1) View.VISIBLE else View.GONE
         for (l in country.langs) langRow.addView(chip(NewsData.langName(l), l == lang) { lang = l; save(); buildChips(); reload(false) },
@@ -349,8 +411,9 @@ class NewsView(private val act: LauncherActivity) : FrameLayout(act) {
         t.textSize = 15f
         t.gravity = Gravity.CENTER
         t.setTextColor(Colors.text(act))
-        t.setPadding(act.dp(16), act.dp(40), act.dp(16), 0)
-        list.addView(t, LinearLayout.LayoutParams(MATCH, WRAP))
+        t.setPadding(act.dp(16), act.dp(24), act.dp(16), act.dp(24))
+        t.background = Colors.panel(act, (Colors.surface(act) and 0x00FFFFFF) or 0xD9000000.toInt(), act.dp(18).toFloat())
+        list.addView(t, LinearLayout.LayoutParams(MATCH, WRAP).also { it.topMargin = act.dp(24) })
     }
 
     private fun reload(force: Boolean) {
