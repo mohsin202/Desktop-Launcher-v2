@@ -14,6 +14,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.text.format.Formatter
+import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
@@ -136,20 +137,42 @@ class TrashActivity : Activity() {
     private fun build() {
         actionBar?.hide()
         window.setDecorFitsSystemWindows(false)
-        val root = LinearLayout(this)
-        root.orientation = LinearLayout.VERTICAL
-        root.setBackgroundColor(Colors.surfaceSolid(this))
-        UiText.applyDirection(root, this)
-        root.setOnApplyWindowInsetsListener { v, ins ->
+        // floating window: a dimmed screen with a rounded card in the middle; tapping outside closes it
+        val scrim = FrameLayout(this)
+        scrim.setBackgroundColor(0x66000000)
+        scrim.setOnClickListener { finish() }
+        UiText.applyDirection(scrim, this)
+        scrim.setOnApplyWindowInsetsListener { v, ins ->
             val bars = Insets.of(ins)
-            v.setPadding(dp(14) + bars.left, bars.top + dp(8), dp(14) + bars.right, bars.bottom + dp(10))
+            v.setPadding(dp(12) + bars.left, bars.top + dp(12), dp(12) + bars.right, bars.bottom + dp(12))
             ins
         }
+        val root = LinearLayout(this)
+        root.orientation = LinearLayout.VERTICAL
+        root.background = Colors.panel(this, Colors.surfaceSolid(this), dp(32).toFloat())
+        root.isClickable = true
+        root.setPadding(dp(14), dp(12), dp(14), dp(14))
+        val dm = resources.displayMetrics
+        val cw = minOf(dp(560), dm.widthPixels - dp(24))
+        val chh = minOf(dp(720), (dm.heightPixels * 0.84f).toInt())
+        scrim.addView(root, FrameLayout.LayoutParams(cw, chh, Gravity.CENTER))
+
+        // close button: on the end side of the top row (left in right-to-left, right in left-to-right)
+        val top = FrameLayout(this)
+        val close = TextView(this)
+        close.text = "\u2715"
+        close.textSize = 18f
+        close.gravity = Gravity.CENTER
+        close.setTextColor(Colors.iconBg(this))
+        close.background = GradientDrawable().also { it.shape = GradientDrawable.OVAL; it.setColor(Colors.iconFg(this)) }
+        close.setOnClickListener { finish() }
+        top.addView(close, FrameLayout.LayoutParams(dp(40), dp(40), Gravity.END or Gravity.CENTER_VERTICAL))
+        root.addView(top, LinearLayout.LayoutParams(MATCH, WRAP))
         val title = TextView(this)
         title.text = UiText.text(this, "Trash")
-        title.textSize = 34f
+        title.textSize = 30f
         title.setTextColor(Colors.accent(this))
-        title.setPadding(dp(14), dp(40), dp(14), dp(20))
+        title.setPadding(dp(10), dp(4), dp(10), dp(14))
         root.addView(title, LinearLayout.LayoutParams(MATCH, WRAP))
 
         val card = ScrollView(this)
@@ -168,7 +191,7 @@ class TrashActivity : Activity() {
         bar.addView(deleteBtn, LinearLayout.LayoutParams(0, dp(52), 1f).also { it.marginEnd = dp(8) })
         bar.addView(restoreBtn, LinearLayout.LayoutParams(0, dp(52), 1f))
         root.addView(bar, LinearLayout.LayoutParams(MATCH, WRAP))
-        setContentView(root)
+        setContentView(scrim)
         updateButtons()
     }
 
