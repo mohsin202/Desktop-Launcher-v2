@@ -206,6 +206,8 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
 
     fun refresh() { rebuild() }
     fun catOrder(): List<String> = order
+    /** The screens that are reachable by swiping / the page buttons: hidden ones are left out. */
+    private fun navOrder(): List<String> = order.filter { !Cats.isHidden(context, it) }
     fun pageCount(cat: String): Int = layouts[cat]?.count ?: 1
     fun widgetsLocked() = catId != Cats.ALL && catId != Cats.WIDGETS
 
@@ -344,7 +346,9 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         }
         // everything else flows: desktop = columns (top to bottom), phone = rows (left to right)
         val fresh = ArrayList<String>()
-        var i = 0
+        // with the user's own layout page in front of All, new icons go there only while that page is showing
+        val startPage = if (cat == Cats.ALL && Cats.hasFree(context) && !(catId == Cats.ALL && pageIdx == 0)) 1 else 0
+        var i = startPage * cap
         for (e in list) {
             if (pos.containsKey(e.key)) continue
             var placed: IntArray? = null
@@ -395,17 +399,19 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
 
     /** One page further (+1) or back (-1) through all screens; false at the very first / last page. */
     fun step(dir: Int): Boolean {
-        var ci = order.indexOf(catId); if (ci < 0) ci = 0
+        val nav = navOrder().let { if (catId in it) it else order }
+        var ci = nav.indexOf(catId); if (ci < 0) ci = 0
         var p = pageIdx + dir
-        if (p < 0) { if (ci == 0) return false; ci--; p = pageCount(order[ci]) - 1 }
-        else if (p >= pageCount(catId)) { if (ci >= order.lastIndex) return false; ci++; p = 0 }
-        goTo(order[ci], p, dir)
+        if (p < 0) { if (ci == 0) return false; ci--; p = pageCount(nav[ci]) - 1 }
+        else if (p >= pageCount(catId)) { if (ci >= nav.lastIndex) return false; ci++; p = 0 }
+        goTo(nav[ci], p, dir)
         return true
     }
 
     fun nextCategory() {
-        val ci = order.indexOf(catId)
-        goTo(order[(ci + 1) % order.size], 0, 1)
+        val nav = navOrder().let { if (catId in it) it else order }
+        val ci = nav.indexOf(catId)
+        goTo(nav[(ci + 1) % nav.size], 0, 1)
     }
 
     fun goHome() {
@@ -547,12 +553,32 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         return bmp
     }
 
+    /** Puts the item on the first free place of the user's own layout page (page 1 of All). */
+    private fun moveToFree(e: Entry) {
+        val c = context
+        Cats.assign(c, e.key, null)
+        val occ = HashSet<Int>()
+        for ((k, p) in layouts[Cats.ALL]?.pos ?: HashMap()) if (k != e.key && p[0] == 0) occ.add(p[1] * 10000 + p[2])
+        val tablet = Modes.tablet(c)
+        val cap = maxOf(1, gCols * gRows)
+        var spot: IntArray? = null
+        for (k in 0 until cap) {
+            val col = if (tablet) k / gRows else k % gCols
+            val row = if (tablet) k % gRows else k / gCols
+            if (!blockedAt(Cats.ALL, 0, col, row) && (col * 10000 + row) !in occ) { spot = intArrayOf(0, col, row); break }
+        }
+        if (spot == null) { c.toast("No free space on the page"); return }
+        savePos(Cats.ALL, mapOf(e.key to spot))
+        goTo(Cats.ALL, 0)
+    }
+
     private fun moveItem(e: Entry): MenuItem {
         val c = context
         val cur = Cats.assignments(c)[e.key]
         val kids = ArrayList<MenuItem>()
         kids += MenuItem("Automatic", checked = cur == null) { Cats.assign(c, e.key, null); rebuild() }
         for (cu in Cats.customs(c)) kids += MenuItem(cu.name, checked = cur == cu.id) { Cats.assign(c, e.key, cu.id); rebuild() }
+        if (Cats.hasFree(c)) kids += MenuItem("Custom layout page") { moveToFree(e) }
         kids += MenuItem("New screen") { val id = Cats.add(c); Cats.assign(c, e.key, id); rebuild() }
         return MenuItem("Move to screen", children = kids)
     }

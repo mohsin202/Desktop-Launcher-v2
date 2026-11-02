@@ -257,8 +257,12 @@ class SpecialClockView(ctx: Context, cfg: ClockCfg) : View(ctx) {
                     val m = sw * 0.8f
                     val p = ClockGlyphs.build(it.ch, maxOf(1f, w - 2 * m), maxOf(1f, ch - 2 * m), sw)
                     p.offset(x + m, y + m)
+                    val raw = Path()
+                    stroke.getFillPath(p, raw)
+                    // merge the overlapping parts of the stroke outline so only the outer shape is left (no inner lines)
                     val shape = Path()
-                    stroke.getFillPath(p, shape)
+                    val merged = try { shape.op(raw, Path(), Path.Op.UNION) } catch (_: Throwable) { false }
+                    if (!merged) { shape.reset(); shape.addPath(raw) }
                     paintShape(canvas, shape, it.kind, y, ch)
                 }
                 x += w + 0.16f * cw

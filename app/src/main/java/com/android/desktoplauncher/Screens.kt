@@ -40,6 +40,66 @@ object Cats {
     private const val K_CUSTOM = "ccats"   // user made screens: "id:name"
     private const val K_ASSIGN = "cassign" // items put on a user screen: "id=key"
     private const val K_HOME = "homecat"
+    private const val K_FREEPAGE = "allfree"  // "1" = the first page of All is the user's own layout page
+    private const val K_HIDECATS = "hidecats" // screens hidden from the home screen
+
+    fun hasFree(c: Context) = Prefs.getStr(c, K_FREEPAGE) == "1"
+    fun isHidden(c: Context, id: String) = id in Prefs.list(c, K_HIDECATS)
+    fun setHidden(c: Context, id: String, hidden: Boolean) {
+        val l = Prefs.list(c, K_HIDECATS).filter { it != id }.toMutableList()
+        if (hidden) l += id
+        Prefs.setList(c, K_HIDECATS, l, fire = false)
+    }
+
+    /** Adds the user's own layout page in front of All (every icon of All moves one page back). */
+    fun createFree(c: Context) {
+        if (hasFree(c)) return
+        shiftAll(c, 1)
+        Prefs.setStr(c, K_FREEPAGE, "1", fire = false)
+    }
+
+    /** Removes it again: icons that were on it flow into the normal pages, the others move one page forward. */
+    fun deleteFree(c: Context) {
+        if (!hasFree(c)) return
+        shiftAll(c, -1)
+        Prefs.setStr(c, K_FREEPAGE, null, fire = false)
+    }
+
+    /** Moves the stored places of All by whole pages. Places saved before screens existed are converted on the way. */
+    private fun shiftAll(c: Context, delta: Int) {
+        class Rec(val tag: String, val cat: String, var page: Int, val col: Int, val row: Int, val key: String)
+        val recs = ArrayList<Rec>()
+        val seen = HashSet<String>()
+        for (s in Prefs.list(c, K_POS2)) {
+            val p = s.split("@", limit = 6)
+            if (p.size != 6) continue
+            val pg = p[2].toIntOrNull() ?: continue
+            val col = p[3].toIntOrNull() ?: continue
+            val row = p[4].toIntOrNull() ?: continue
+            recs += Rec(p[0], p[1], pg, col, row, p[5])
+            if (p[1] == ALL) seen += p[0] + "@" + p[5]
+        }
+        for (s in Prefs.list(c, Prefs.K_POS)) {
+            if (s.length < 4 || s[1] != '@') continue
+            val i2 = s.lastIndexOf('@'); val i1 = s.lastIndexOf('@', i2 - 1)
+            if (i1 < 2) continue
+            val col = s.substring(i1 + 1, i2).toIntOrNull() ?: continue
+            val row = s.substring(i2 + 1).toIntOrNull() ?: continue
+            val tag = s.substring(0, 1); val key = s.substring(2, i1)
+            if ((tag + "@" + key) !in seen) recs += Rec(tag, ALL, 0, col, row, key)
+        }
+        val out = ArrayList<String>()
+        for (r in recs) {
+            if (r.cat == ALL) {
+                val np = r.page + delta
+                if (np < 0) continue
+                r.page = np
+            }
+            out += "${r.tag}@${r.cat}@${r.page}@${r.col}@${r.row}@${r.key}"
+        }
+        Prefs.setList(c, Prefs.K_POS, emptyList(), fire = false)
+        Prefs.setList(c, K_POS2, out, fire = false)
+    }
 
     private val titles = mapOf(
         DISCOVER to "Discover", ALL to "All", WIDGETS to "Widgets", APPS to "Apps", MEDIA to "Photos & Videos",
@@ -357,11 +417,12 @@ class CatMenu(private val act: LauncherActivity, private val desk: DesktopView, 
             val open = { desk.goTo(cat, if (active) desk.pageIdx else 0); closer() }
             val tv = thumbView(cat, if (active) desk.pageIdx else 0, tw, th, active)
             tv.setOnClickListener { open() }
-            tv.setOnLongClickListener { pagesOf = cat; show(); true }
+            tv.setOnLongClickListener { catMenuAt(tv, cat); true }
+            if (Cats.isHidden(act, cat)) col.alpha = 0.45f
             col.addView(tv, LinearLayout.LayoutParams(WRAP, WRAP))
             val name = pill(Cats.name(act, cat))
             name.setOnClickListener { open() }
-            name.setOnLongClickListener { if (Cats.isCustom(cat)) { rename(cat); true } else false }
+            name.setOnLongClickListener { if (Cats.isCustom(cat)) { rename(cat); true } else { catMenuAt(name, cat); true } }
             col.addView(name, LinearLayout.LayoutParams(WRAP, WRAP).also { it.topMargin = act.dp(8) })
             row.addView(col, LinearLayout.LayoutParams(WRAP, WRAP))
             if (active) cur = col
@@ -407,11 +468,26 @@ class CatMenu(private val act: LauncherActivity, private val desk: DesktopView, 
             val tv = thumbView(cat, i, tw, th, active)
             tv.setOnClickListener { desk.goTo(cat, i); closer() }
             col.addView(tv, LinearLayout.LayoutParams(WRAP, WRAP))
-            val n = pill((i + 1).toString())
+            val own = cat == Cats.ALL && i == 0 && Cats.hasFree(act)
+            val n = pill(if (own) UiText.text(act, "Custom layout") else (i + 1).toString())
             n.setOnClickListener { desk.goTo(cat, i); closer() }
+            if (own) {
+                tv.setOnLongClickListener {
+                    PopupMenuX(act, this).show(tvX(tv), tvY(tv), listOf(MenuItem("Delete page") { Cats.deleteFree(act); desk.refresh(); show() }))
+                    true
+                }
+                n.setOnLongClickListener { tv.performLongClick(); true }
+            }
             col.addView(n, LinearLayout.LayoutParams(WRAP, WRAP).also { it.topMargin = act.dp(8) })
             row.addView(col, LinearLayout.LayoutParams(WRAP, WRAP))
             if (active) cur = col
+        }
+        if (cat == Cats.ALL && !Cats.hasFree(act)) {
+            val add = pill("+  " + UiText.text(act, "Custom layout"))
+            add.setOnClickListener { Cats.createFree(act); desk.refresh(); desk.goTo(Cats.ALL, 0); closer() }
+            row.addView(add, LinearLayout.LayoutParams(WRAP, WRAP).also {
+                it.gravity = Gravity.CENTER_VERTICAL; it.marginStart = act.dp(10); it.marginEnd = act.dp(6)
+            })
         }
         if (cat == Cats.WIDGETS) {
             val plus = TextView(act)
@@ -429,6 +505,22 @@ class CatMenu(private val act: LauncherActivity, private val desk: DesktopView, 
         card.addView(hs, LinearLayout.LayoutParams(MATCH, WRAP))
         val target = cur
         if (target != null) hs.post { target.requestRectangleOnScreen(Rect(0, 0, target.width, target.height), true) }
+    }
+
+    private fun tvX(v: View): Int { val l = IntArray(2); v.getLocationOnScreen(l); return l[0] + v.width / 2 }
+    private fun tvY(v: View): Int { val l = IntArray(2); v.getLocationOnScreen(l); return l[1] + v.height / 2 }
+
+    /** Long press on a screen: Open (shows its pages) / Hide (take it off the home screen) or Show. */
+    private fun catMenuAt(v: View, cat: String) {
+        val hidden = Cats.isHidden(act, cat)
+        PopupMenuX(act, this).show(tvX(v), tvY(v), listOf(
+            MenuItem("Open") { pagesOf = cat; show() },
+            MenuItem(if (hidden) "Show" else "Hide") {
+                Cats.setHidden(act, cat, !hidden)
+                if (!hidden && desk.catId == cat) desk.goHome()
+                desk.refresh(); show()
+            }
+        ), above = true)
     }
 
     private fun rename(id: String) {
