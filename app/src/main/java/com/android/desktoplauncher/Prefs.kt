@@ -30,6 +30,8 @@ object Prefs {
     const val K_LWIDGETS = "lwidgets" // built-in launcher widgets: "id:type"
     const val K_BLUR = "blur"
     const val K_GLASS = "glassblur"
+    const val K_FREEFORM = "freeform"
+    const val K_WINSIZE = "winsize"
     const val K_IME = "imebtn"
     const val K_POS = "pos"
     const val K_WINKEY = "winkey"

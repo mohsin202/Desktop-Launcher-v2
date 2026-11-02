@@ -218,6 +218,23 @@ class SettingsActivity : Activity() {
         sw(UiText.text(this, "Show keyboard when app drawer opens"), Prefs.K_DRAWER_IME, false)
         note(UiText.text(this, "When off, the app drawer opens without automatically showing the keyboard. Back should hide the keyboard before closing the drawer."))
 
+        head("WINDOWS")
+        sw(UiText.text(this, "Open apps in freeform windows"), Prefs.K_FREEFORM, false)
+        note(UiText.text(this, "Apps opened from the home screen, app drawer, taskbar and search open in resizable windows, if the system allows it."))
+        val wg = RadioGroup(this)
+        listOf("Phone", "Tablet", "Desktop").forEachIndexed { i, n ->
+            val r = RadioButton(this)
+            r.text = UiText.text(this, n)
+            r.id = 300 + i
+            r.setTextColor(Colors.text(this))
+            r.setPadding(dp(2), dp(7), dp(2), dp(7))
+            wg.addView(r)
+        }
+        wg.check(300 + Prefs.getInt(this, Prefs.K_WINSIZE, 2))
+        wg.setOnCheckedChangeListener { _, id -> Prefs.setInt(this, Prefs.K_WINSIZE, id - 300) }
+        addSetting(wg)
+        note(UiText.text(this, "Window size. You can also pick a size for one app from its menu: Window size."))
+
         head("TASKBAR / DOCK")
         val sw600 = resources.configuration.smallestScreenWidthDp
         note(UiText.text(this, "Smallest width") + ": $sw600 dp — " + UiText.text(this, if (sw600 >= 600) "tablet mode: the dock is merged into the taskbar (over all apps)." else "phone mode: normal dock on the home screen. At 600 dp or more the dock becomes the taskbar."))

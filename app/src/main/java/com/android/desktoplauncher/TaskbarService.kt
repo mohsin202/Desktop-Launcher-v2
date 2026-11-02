@@ -494,6 +494,7 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
             val items = ArrayList<MenuItem>()
             items += MenuItem("Open") { Launch.app(ctx, comp) }
             items += MenuItem("App Info") { Launch.info(ctx, comp.packageName) }
+            items += Launch.sizeMenu(ctx, comp)
             items += MenuItem(if (pinned) "Unpin from taskbar" else "Pin to taskbar") {
                 Prefs.toggleInList(ctx, Prefs.K_PINNED, comp.flattenToString())
             }

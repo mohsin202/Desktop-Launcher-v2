@@ -34,9 +34,45 @@ class PopupMenuX(private val ctx: Context, private val anchor: View) {
     /** Called when the whole menu has closed (item chosen, tapped outside, back). */
     var onClosed: (() -> Unit)? = null
     private var blurred: View? = null
+    /** The item this menu belongs to: shown sharp, outlined and slightly raised above the blurred screen while the menu is open. */
+    var spotlight: View? = null
+    private var spotWin: PopupWindow? = null
+
+    private fun showSpotlight() {
+        val v = spotlight ?: return
+        val w = v.width; val h = v.height
+        if (w <= 0 || h <= 0) return
+        try {
+            val m = ctx.dp(10)
+            val bmp = android.graphics.Bitmap.createBitmap(w + 2 * m, h + 2 * m, android.graphics.Bitmap.Config.ARGB_8888)
+            val cv = android.graphics.Canvas(bmp)
+            val fg = v.foreground
+            v.foreground = null
+            cv.translate(m.toFloat(), m.toFloat())
+            cv.scale(1.1f, 1.1f, w / 2f, h / 2f)
+            try { v.draw(cv) } finally { v.foreground = fg }
+            val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            p.style = android.graphics.Paint.Style.STROKE
+            p.strokeWidth = ctx.dp(2).toFloat()
+            p.color = Colors.accent(ctx)
+            cv.drawRoundRect(android.graphics.RectF(0f, 0f, w.toFloat(), h.toFloat()), ctx.dp(14).toFloat(), ctx.dp(14).toFloat(), p)
+            val iv = android.widget.ImageView(ctx)
+            iv.setImageBitmap(bmp)
+            val pw = PopupWindow(iv, w + 2 * m, h + 2 * m, false)
+            pw.setBackgroundDrawable(ColorDrawable(0))
+            pw.isTouchable = false
+            pw.isClippingEnabled = false
+            val loc = IntArray(2); v.getLocationOnScreen(loc)
+            val a = IntArray(2); val b = IntArray(2)
+            anchor.getLocationOnScreen(a); anchor.getLocationInWindow(b)
+            pw.showAtLocation(anchor, Gravity.NO_GRAVITY, loc[0] - m - (a[0] - b[0]), loc[1] - m - (a[1] - b[1]))
+            spotWin = pw
+        } catch (_: Throwable) { spotWin = null }
+    }
 
     fun show(x: Int, y: Int, items: List<MenuItem>, above: Boolean = false) {
         active.add(this)
+        showSpotlight()
         level(x, y, items, 0, above, null)
         if (stack.isEmpty()) active.remove(this)
     }
@@ -45,7 +81,7 @@ class PopupMenuX(private val ctx: Context, private val anchor: View) {
 
     private fun closeFrom(n: Int) {
         while (stack.size > n) stack.removeAt(stack.size - 1).dismiss()
-        if (n == 0) { active.remove(this); blurred?.let { Blur.behind(ctx, it, false) }; blurred = null; onClosed?.invoke() }
+        if (n == 0) { try { spotWin?.dismiss() } catch (_: Throwable) {}; spotWin = null; active.remove(this); blurred?.let { Blur.behind(ctx, it, false) }; blurred = null; onClosed?.invoke() }
     }
 
     private fun level(x: Int, y: Int, items: List<MenuItem>, lvl: Int, above: Boolean, flipX: Int?) {

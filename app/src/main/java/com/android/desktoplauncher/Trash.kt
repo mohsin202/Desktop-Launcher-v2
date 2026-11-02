@@ -137,15 +137,15 @@ open class TrashActivity : Activity() {
         super.onCreate(b)
         // Desktop/tablet: a translucent activity cannot show the launcher behind it on freeform ROMs (black background),
         // so hand over to a normal resizable activity in its own task and let the system draw it as a real window.
-        if (!windowed && Modes.tablet(this)) {
+        if (!windowed && (Modes.tablet(this) || Prefs.bool(this, Prefs.K_FREEFORM, false))) {
             try {
                 val dm = resources.displayMetrics
                 val w = minOf(dp(560), dm.widthPixels - dp(48)); val h = minOf(dp(720), (dm.heightPixels * 0.8f).toInt())
                 val l = (dm.widthPixels - w) / 2; val t = (dm.heightPixels - h) / 2
-                val opts = android.app.ActivityOptions.makeBasic().setLaunchBounds(android.graphics.Rect(l, t, l + w, t + h))
+                val bundle = Launch.options(this, android.graphics.Rect(l, t, l + w, t + h))
                 val i = Intent(this, TrashWindowActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-                startActivity(i, opts.toBundle())
+                startActivity(i, bundle)
                 finish(); return
             } catch (_: Throwable) { /* fall through to the floating card */ }
         }

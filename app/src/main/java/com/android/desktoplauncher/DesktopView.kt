@@ -452,7 +452,11 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     override fun onTouchEvent(ev: MotionEvent): Boolean {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> { swX = ev.rawX; swY = ev.rawY; swiping = false }
-            MotionEvent.ACTION_MOVE -> if (!swiping && canSwipe() && startsSwipe(ev)) beginSwipe()
+            MotionEvent.ACTION_MOVE -> {
+                if (!swiping && canSwipe() && startsSwipe(ev)) beginSwipe()
+                // a moving finger is a swipe, not a long press: the Copy / Cut / Wallpaper menu must not pop up
+                if (Math.hypot((ev.rawX - swX).toDouble(), (ev.rawY - swY).toDouble()) > swSlop) cancelLongPress()
+            }
         }
         if (swiping) {
             val dx = ev.rawX - swX
@@ -1213,7 +1217,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         grid.setOnItemLongClickListener { _, v, p, _ ->
             val en = f.resolved[p]
             val loc = IntArray(2); v.getLocationOnScreen(loc)
-            PopupMenuX(c, this).show(loc[0] + v.width / 2, loc[1] + v.height / 2, listOf(
+            PopupMenuX(c, this).also { it.spotlight = v }.show(loc[0] + v.width / 2, loc[1] + v.height / 2, listOf(
                 MenuItem("Open") { closeFolder(); open(en) },
                 MenuItem("Remove from folder") { removeFromFolder(f, en) }
             ))
@@ -1470,7 +1474,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             if (editFolder != e.id && !forceMenu) { editFolder = e.id; refreshFolderEdit(); return }
             val fview = viewOf(e)
             setEmph(fview, 4, true)
-            PopupMenuX(c, this).also { it.onClosed = { setEmph(fview, 4, false) } }.show(x, y, listOf(
+            PopupMenuX(c, this).also { it.spotlight = fview; it.onClosed = { setEmph(fview, 4, false) } }.show(x, y, listOf(
                 MenuItem("Open") { showFolder(e.id) },
                 MenuItem("Rename") { renameFolder(e) },
                 moveItem(e),
@@ -1484,12 +1488,14 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         val iview = viewOf(e)
         setEmph(iview, 4, true)
         val m = PopupMenuX(c, this)
+        m.spotlight = iview
         m.onClosed = { setEmph(iview, 4, false) }
         when (e) {
             is Entry.AppE -> m.show(x, y, listOf(
                 MenuItem("Open") { open(e) },
                 MenuItem("App Info") { Launch.info(c, e.info.pkg) },
                 MenuItem("Share") { Launch.shareApp(c, e.info.pkg) },
+                Launch.sizeMenu(c, e.info.comp),
                 moveItem(e),
                 MenuItem("Remove") {
                     Prefs.setList(c, Prefs.K_DESKAPPS, Prefs.list(c, Prefs.K_DESKAPPS).filter { it != e.info.comp.flattenToString() })

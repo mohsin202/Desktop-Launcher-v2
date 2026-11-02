@@ -388,22 +388,28 @@ class LauncherActivity : Activity() {
         }
     })
 
-    // Distance-based upward swipe: works from anywhere on the screen, no matter how slow or short.
-    private var upX = 0f; private var upY = 0f; private var upOk = false; private var upLongPress = 0L
+    // Distance-based swipe: a short, slow swipe up (anywhere, except over a widget) opens the drawer, a short swipe down closes it.
+    private var upX = 0f; private var upY = 0f; private var upOk = false
+    private var upOpening = true; private var upTopAtDown = false
     private fun trackUpSwipe(ev: MotionEvent) {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                upX = ev.rawX; upY = ev.rawY; upOk = drawer == null && !Modes.tablet(this) && !desktop.widgetAtRaw(ev.rawX, ev.rawY)
-                upLongPress = ev.eventTime
+                upX = ev.rawX; upY = ev.rawY
+                upOpening = drawer == null
+                upTopAtDown = drawer?.isContentAtTopForSwipeDismiss() == true
+                upOk = !Modes.tablet(this) && (if (upOpening) !desktop.widgetAtRaw(ev.rawX, ev.rawY) else upTopAtDown)
             }
             MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> upOk = false
             MotionEvent.ACTION_UP -> {
                 if (!upOk) return
                 upOk = false
                 val dy = upY - ev.rawY; val dx = ev.rawX - upX
-                if (dy > dp(48) && dy > Math.abs(dx) * 1.5f && drawer == null) {
+                if (Math.abs(dy) < dp(40) || Math.abs(dy) < Math.abs(dx) * 1.5f) return
+                if (upOpening && dy > 0 && drawer == null) {
                     if (catMenu != null || sheet != null || PopupMenuX.anyOpen() || !desktop.homeIdle()) return
                     root.post { if (drawer == null) toggleDrawer() }
+                } else if (!upOpening && dy < 0 && drawer != null) {
+                    root.post { if (drawer != null && drawer?.isContentAtTopForSwipeDismiss() == true) closeDrawer() }
                 }
             }
         }

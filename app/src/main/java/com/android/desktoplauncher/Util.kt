@@ -335,7 +335,7 @@ object Files {
         if (f.isDirectory) { openFolder(c, f); return }
         val i = Intent(Intent.ACTION_VIEW).setDataAndType(uri(f), mime(f))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        try { c.startActivity(i) } catch (e: Exception) { c.toast("No app can open this file") }
+        try { c.startActivity(i, Launch.options(c)) } catch (e: Exception) { c.toast("No app can open this file") }
     }
 
     fun openFolder(c: Context, f: File) {
@@ -367,14 +367,51 @@ object Files {
 }
 
 object Launch {
-    fun start(c: Context, i: Intent) {
-        try { c.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) { c.toast("Cannot open") }
+    /**
+     * Launch options for "Open apps in freeform windows": asks for the freeform windowing mode (hidden API, may be refused by
+     * the ROM) and a window rectangle, like taskbar apps do. Returns null when the setting is off and no bounds are given.
+     */
+    /** Window sizes of the "Window size" choice: 0 phone, 1 tablet, 2 desktop (in dp, clamped to the screen). */
+    fun sizeRect(c: Context, size: Int): android.graphics.Rect {
+        val dm = c.resources.displayMetrics
+        val (wd, hd) = when (size) { 0 -> 400 to 720; 1 -> 820 to 620; else -> 1180 to 760 }
+        val w = minOf((wd * dm.density).toInt(), (dm.widthPixels * 0.94f).toInt())
+        val h = minOf((hd * dm.density).toInt(), (dm.heightPixels * 0.9f).toInt())
+        val l = (dm.widthPixels - w) / 2; val t = (dm.heightPixels - h) / 2
+        return android.graphics.Rect(l, t, l + w, t + h)
     }
 
-    fun app(c: Context, comp: ComponentName) {
-        start(c, Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setComponent(comp)
-            .addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
+    /**
+     * Launch options for freeform windows: asks for the freeform windowing mode (hidden API, may be refused by the ROM)
+     * and a window rectangle, like taskbar apps do. [size] (0 phone, 1 tablet, 2 desktop) forces a window of that size even
+     * when the setting is off; otherwise the saved window size is used. Returns null when nothing is asked for.
+     */
+    fun options(c: Context, bounds: android.graphics.Rect? = null, size: Int? = null): android.os.Bundle? {
+        val on = Prefs.bool(c, Prefs.K_FREEFORM, false) || size != null
+        if (!on && bounds == null) return null
+        return try {
+            val o = android.app.ActivityOptions.makeBasic()
+            if (on) try { o.javaClass.getMethod("setLaunchWindowingMode", Int::class.javaPrimitiveType).invoke(o, 5) } catch (_: Throwable) {}
+            o.setLaunchBounds(bounds ?: sizeRect(c, size ?: Prefs.getInt(c, Prefs.K_WINSIZE, 2)))
+            o.toBundle()
+        } catch (_: Throwable) { null }
     }
+
+    fun start(c: Context, i: Intent, size: Int? = null) {
+        try { c.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), options(c, null, size)) } catch (e: Exception) { c.toast("Cannot open") }
+    }
+
+    fun app(c: Context, comp: ComponentName, size: Int? = null) {
+        start(c, Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setComponent(comp)
+            .addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED), size)
+    }
+
+    /** "Window size >" sub menu (Phone / Tablet / Desktop) for the menu of an app icon. */
+    fun sizeMenu(c: Context, comp: ComponentName): MenuItem = MenuItem("Window size", children = listOf(
+        MenuItem("Phone") { app(c, comp, 0) },
+        MenuItem("Tablet") { app(c, comp, 1) },
+        MenuItem("Desktop") { app(c, comp, 2) }
+    ))
 
     fun info(c: Context, pkg: String) =
         start(c, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")))

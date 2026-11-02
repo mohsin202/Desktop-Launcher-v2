@@ -94,7 +94,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
             val cell = (cv as? AppCell) ?: AppCell(c)
             val a = apps[p]
             cell.bind(a)
-            cell.setSecondaryClick { x, y -> showAppMenu(a, x, y) }
+            cell.setSecondaryClick { x, y -> showAppMenu(a, x, y, cell) }
             return cell
         }
     }
@@ -108,7 +108,8 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         override fun getView(p: Int, cv: View?, parent: ViewGroup?): View {
             val r = results[p]
             r.custom?.let { return it() }
-            val row = LinearLayout(c)
+            val row = EmphRow(c, false)
+            row.plain = r.header || r.custom != null
             row.orientation = LinearLayout.HORIZONTAL
             row.gravity = Gravity.CENTER_VERTICAL
             if (r.header) {
@@ -208,7 +209,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         grid.setOnItemClickListener { _, _, p, _ -> launch(apps[p]) }
         var lx = 0; var ly = 0
         grid.setOnTouchListener { _, ev -> lx = ev.rawX.toInt(); ly = ev.rawY.toInt(); false }
-        grid.setOnItemLongClickListener { _, _, p, _ -> showAppMenu(apps[p], lx, ly); true }
+        grid.setOnItemLongClickListener { _, v, p, _ -> showAppMenu(apps[p], lx, ly, v); true }
         val gp = LinearLayout.LayoutParams(MATCH, 0, 1f)
         gp.topMargin = c.dp(10)
         panel.addView(grid, gp)
@@ -231,7 +232,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
                     c.toast("Shortcut created on Desktop")
                 } catch (_: Exception) { c.toast("Could not create shortcut") }
             } }
-            PopupMenuX(c, this).show(loc[0], loc[1] + v.height, items)
+            PopupMenuX(c, this).also { it.spotlight = v }.show(loc[0], loc[1] + v.height, items)
             true
         }
         panel.addView(list, LinearLayout.LayoutParams(MATCH, 0, 1f).also { it.topMargin = c.dp(6) })
@@ -412,15 +413,17 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
 
     private fun launch(a: AppInfo) { Launch.app(c, a.comp); onClose() }
 
-    private fun showAppMenu(a: AppInfo, x: Int, y: Int) {
+    private fun showAppMenu(a: AppInfo, x: Int, y: Int, target: View? = null) {
         menu?.dismiss()
         val pinned = Prefs.list(c, Prefs.K_PINNED).contains(a.comp.flattenToString())
         val m = PopupMenuX(c, this)
+        m.spotlight = target
         menu = m
         m.show(x, y, listOf(
             MenuItem("Open") { launch(a) },
             MenuItem("App Info") { onClose(); Launch.info(c, a.pkg) },
             MenuItem("Share") { onClose(); Launch.shareApp(c, a.pkg) },
+            Launch.sizeMenu(c, a.comp).let { m0 -> MenuItem(m0.label, children = m0.children?.map { k -> MenuItem(k.label) { onClose(); k.action?.invoke() } }) },
             MenuItem(if (pinned) "Unpin from Taskbar" else "Pin to Taskbar") {
                 Prefs.toggleInList(c, Prefs.K_PINNED, a.comp.flattenToString())
             },
@@ -550,10 +553,10 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
                     val cell = AppCell(c)
                     cell.bind(a)
                     cell.setOnClickListener { remember(); launch(a) }
-                    cell.setSecondaryClick { x, y -> showAppMenu(a, x, y) }
+                    cell.setSecondaryClick { x, y -> showAppMenu(a, x, y, cell) }
                     cell.setOnLongClickListener { v ->
                         val loc = IntArray(2); v.getLocationOnScreen(loc)
-                        showAppMenu(a, loc[0] + v.width / 2, loc[1] + v.height / 2); true
+                        showAppMenu(a, loc[0] + v.width / 2, loc[1] + v.height / 2, v); true
                     }
                     row.addView(cell, LinearLayout.LayoutParams(0, WRAP, 1f))
                 } else row.addView(View(c), LinearLayout.LayoutParams(0, 1, 1f))
@@ -648,10 +651,15 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
             sub.addView(tm, LinearLayout.LayoutParams(WRAP, WRAP))
             col.addView(sub, LinearLayout.LayoutParams(MATCH, WRAP))
             row.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
+            row.setOnHoverListener { v, ev ->
+                if (ev.actionMasked == android.view.MotionEvent.ACTION_HOVER_ENTER) emphasize(v, true, false)
+                else if (ev.actionMasked == android.view.MotionEvent.ACTION_HOVER_EXIT) emphasize(v, false, false)
+                false
+            }
             row.setOnClickListener { Files.open(c, f); onClose() }
             row.setOnLongClickListener { v ->
                 val loc = IntArray(2); v.getLocationOnScreen(loc)
-                PopupMenuX(c, this).show(loc[0], loc[1] + v.height, listOf(
+                PopupMenuX(c, this).also { it.spotlight = v }.show(loc[0], loc[1] + v.height, listOf(
                     MenuItem("Open") { Files.open(c, f); onClose() },
                     MenuItem("Create shortcut on Desktop") {
                         if (Downloads.createShortcut(c, f)) {
@@ -687,7 +695,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
                         cell.setOnClickListener { launch(a) }
                         cell.setOnLongClickListener { v ->
                             val loc = IntArray(2); v.getLocationOnScreen(loc)
-                            showAppMenu(a, loc[0] + v.width / 2, loc[1] + v.height / 2); true
+                            showAppMenu(a, loc[0] + v.width / 2, loc[1] + v.height / 2, v); true
                         }
                         row.addView(cell, LinearLayout.LayoutParams(0, WRAP, 1f))
                     } else row.addView(View(c), LinearLayout.LayoutParams(0, 1, 1f))
@@ -851,10 +859,40 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         }
     }
 
+    /** Pointer hover / keyboard selection: accent outline around the item and, for icons, a slight lift. */
+    private fun emphasize(v: View, on: Boolean, lift: Boolean) {
+        if (lift) v.animate().scaleX(if (on) 1.1f else 1f).scaleY(if (on) 1.1f else 1f).setDuration(120).start()
+        v.foreground = if (on) android.graphics.drawable.GradientDrawable().also {
+            it.setColor(0)
+            it.cornerRadius = c.dp(14).toFloat()
+            it.setStroke(c.dp(2), Colors.accent(c))
+        } else null
+    }
+
+    private inner class EmphRow(ctx: Context, private val lift: Boolean) : LinearLayout(ctx) {
+        private var hover = false
+        var plain = false
+        init {
+            setOnHoverListener { _, ev ->
+                if (plain) return@setOnHoverListener false
+                if (ev.actionMasked == android.view.MotionEvent.ACTION_HOVER_ENTER) { hover = true; emphasize(this, true, lift) }
+                else if (ev.actionMasked == android.view.MotionEvent.ACTION_HOVER_EXIT) { hover = false; emphasize(this, isSelected, lift) }
+                false
+            }
+        }
+        override fun setSelected(selected: Boolean) { super.setSelected(selected); emphasize(this, selected || hover, lift) }
+    }
+
     private inner class AppCell(ctx: Context) : LinearLayout(ctx) {
+        private var hover = false
         private val icon = BadgedIcon(ctx)
         private val label = TextView(ctx)
         init {
+            setOnHoverListener { _, ev ->
+                if (ev.actionMasked == android.view.MotionEvent.ACTION_HOVER_ENTER) { hover = true; emphasize(this, true, true) }
+                else if (ev.actionMasked == android.view.MotionEvent.ACTION_HOVER_EXIT) { hover = false; emphasize(this, isSelected, true) }
+                false
+            }
             orientation = VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(0, ctx.dp(4), 0, ctx.dp(4))
@@ -866,6 +904,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
             label.setTextColor(Colors.text(ctx))
             addView(label, LayoutParams(MATCH, WRAP))
         }
+        override fun setSelected(selected: Boolean) { super.setSelected(selected); emphasize(this, selected || hover, true) }
         fun bind(a: AppInfo) {
             icon.setImageDrawable(Icons.app(context, a.comp, themed))
             icon.dot = dots && NotifState.has(a.pkg)

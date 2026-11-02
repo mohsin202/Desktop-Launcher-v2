@@ -34,12 +34,14 @@ class DockView(private val ctx: Context) : LinearLayout(ctx) {
             val show = { x: Int, y: Int ->
                 menu?.dismiss()
                 val m = PopupMenuX(ctx, this)
+                m.spotlight = f
                 menu = m
                 val loc = IntArray(2)
                 getLocationOnScreen(loc)
                 m.show(x, loc[1], listOf(
                     MenuItem("Open") { Launch.app(ctx, comp) },
                     MenuItem("App Info") { Launch.info(ctx, comp.packageName) },
+                    Launch.sizeMenu(ctx, comp),
                     MenuItem("Remove from dock") { Prefs.toggleInList(ctx, Prefs.K_PINNED, comp.flattenToString()) }
                 ), above = true)
             }
