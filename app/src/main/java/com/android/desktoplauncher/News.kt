@@ -104,6 +104,7 @@ object NewsData {
         }
         val tail = "hl=$hl&gl=$code&ceid=$code:$ceLang"
         return when {
+            t.query != null && t.query.startsWith("raw:") -> "https://news.google.com/rss/search?q=" + URLEncoder.encode(t.query.removePrefix("raw:"), "UTF-8") + "&$tail"
             t.query != null -> "https://news.google.com/rss/search?q=" + URLEncoder.encode(queryText(t, lang), "UTF-8") + "&$tail"
             t.section != null -> "https://news.google.com/rss/headlines/section/topic/${t.section}?$tail"
             else -> "https://news.google.com/rss?$tail"
@@ -123,6 +124,68 @@ object NewsData {
             val res = try { fetch(url) } catch (_: Throwable) { null }
             if (res != null) cache[url] = System.currentTimeMillis() to res
             main.post { done(res) }
+        }
+    }
+
+    private fun inScript(lang: String, s: String): Boolean {
+        val ranges: List<IntRange> = when (lang) {
+            "ur", "ar", "fa" -> listOf(0x0600..0x06FF, 0x0750..0x077F)
+            "hi", "mr" -> listOf(0x0900..0x097F)
+            "bn" -> listOf(0x0980..0x09FF)
+            "ta" -> listOf(0x0B80..0x0BFF)
+            "te" -> listOf(0x0C00..0x0C7F)
+            "ml" -> listOf(0x0D00..0x0D7F)
+            "th" -> listOf(0x0E00..0x0E7F)
+            "zh", "ja" -> listOf(0x4E00..0x9FFF, 0x3040..0x30FF)
+            "ko" -> listOf(0xAC00..0xD7AF)
+            "ru", "uk" -> listOf(0x0400..0x04FF)
+            "el" -> listOf(0x0370..0x03FF)
+            "he" -> listOf(0x0590..0x05FF)
+            else -> return true
+        }
+        var hit = 0
+        for (ch in s) if (ranges.any { ch.code in it }) hit++
+        return hit >= 3
+    }
+
+    private fun isScriptLang(lang: String) = lang in setOf("ur", "ar", "fa", "hi", "mr", "bn", "ta", "te", "ml", "th", "zh", "ja", "ko", "ru", "uk", "el", "he")
+
+    private fun newsWord(lang: String) = when (lang) {
+        "ur" -> "خبریں"; "ar" -> "أخبار"; "fa" -> "اخبار"; "hi" -> "समाचार"; "mr" -> "बातम्या"; "bn" -> "খবর"; "ta" -> "செய்திகள்"
+        "te" -> "వార్తలు"; "ml" -> "വാർത്തകൾ"; "th" -> "ข่าว"; "zh" -> "新闻"; "ja" -> "ニュース"; "ko" -> "뉴스"; "ru" -> "новости"
+        "uk" -> "новини"; "el" -> "ειδήσεις"; "he" -> "חדשות"; else -> "news"
+    }
+
+    private fun topicWord(lang: String, t: Topic): String {
+        if (lang == "ur") return when (t.section) {
+            "WORLD" -> "دنیا"; "BUSINESS" -> "کاروبار"; "SPORTS" -> "کھیل"; "TECHNOLOGY" -> "ٹیکنالوجی"; "ENTERTAINMENT" -> "تفریح"
+            "SCIENCE" -> "سائنس"; "HEALTH" -> "صحت"; else -> newsWord(lang)
+        }
+        if (lang == "ar") return when (t.section) {
+            "WORLD" -> "العالم"; "BUSINESS" -> "اقتصاد"; "SPORTS" -> "رياضة"; "TECHNOLOGY" -> "تكنولوجيا"; "ENTERTAINMENT" -> "فن"
+            "SCIENCE" -> "علوم"; "HEALTH" -> "صحة"; else -> newsWord(lang)
+        }
+        return newsWord(lang)
+    }
+
+    /**
+     * Loads the feed of the edition. If the language is not written in Latin letters and the edition mostly gives
+     * articles in another language (Google has no feed for it), articles written in that language are searched for.
+     */
+    fun loadSmart(cc: NewsCountry, lang: String, t: Topic, force: Boolean, done: (List<Article>?) -> Unit) {
+        load(url(cc, lang, t), force) { first ->
+            if (!isScriptLang(lang) || t.query != null) { done(first); return@load }
+            val ok = first?.filter { inScript(lang, it.title) } ?: emptyList()
+            if (ok.size >= 8) { done(ok); return@load }
+            // fallback: search in the language itself
+            val word = topicWord(lang, t) + (if (lang == "ur") " " + cc.ur else "")
+            val q = Topic("", null, "raw:$word")
+            load(url(cc, lang, q), force) { second ->
+                val all = ArrayList<Article>(ok)
+                for (a in (second ?: emptyList())) if (inScript(lang, a.title) && all.none { it.title == a.title }) all += a
+                all.sortByDescending { it.time }
+                done(if (all.isEmpty() && first == null && second == null) null else all)
+            }
         }
     }
 
@@ -196,13 +259,12 @@ class NewsView(private val act: LauncherActivity) : FrameLayout(act) {
         val loc = Locale.getDefault().country
         country = NewsData.byCode(saved?.getOrNull(0) ?: loc) ?: NewsData.byCode("PK")!!
         lang = saved?.getOrNull(1)?.takeIf { it in country.langs } ?: country.langs[0]
-        layoutDirection = View.LAYOUT_DIRECTION_LTR
 
         val col = LinearLayout(act)
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(act.dp(14), act.dp(8), act.dp(14), 0)
 
-        // header: globe on the left, title next to it
+        // header: globe first (left in LTR, right in RTL), title next to it
         val head = LinearLayout(act)
         head.orientation = LinearLayout.HORIZONTAL
         head.gravity = Gravity.CENTER_VERTICAL
@@ -293,9 +355,8 @@ class NewsView(private val act: LauncherActivity) : FrameLayout(act) {
 
     private fun reload(force: Boolean) {
         note(UiText.text(act, "Loading..."))
-        val url = NewsData.url(country, lang, NewsData.topics[topic])
-        NewsData.load(url, force) { res ->
-            if (!isAttachedToWindow) return@load
+        NewsData.loadSmart(country, lang, NewsData.topics[topic], force) { res ->
+            if (!isAttachedToWindow) return@loadSmart
             when {
                 res == null -> note(UiText.text(act, "Could not load the news. Check the internet connection."))
                 res.isEmpty() -> note(UiText.text(act, "No news found for this choice."))
