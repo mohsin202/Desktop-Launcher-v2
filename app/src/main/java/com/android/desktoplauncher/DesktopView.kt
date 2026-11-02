@@ -220,9 +220,9 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             wPageOf[w] = p
         }
     }
-    private fun saveWPages() {
+    private fun saveWPages(prune: Boolean = false) {
         val ids = HashSet<Int>(); for (b in allWidgets) ids += b.wid; for (f in allFrees) ids += f.wid
-        Prefs.setList(context, "wpage", wPageOf.filter { it.key in ids }.map { "${it.key}=${it.value}" }, fire = false)
+        Prefs.setList(context, "wpage", wPageOf.filter { !prune || it.key in ids }.map { "${it.key}=${it.value}" }, fire = false)
     }
     private fun widgetPageCount(): Int {
         val stored = Prefs.getStr(context, "wpages")?.toIntOrNull() ?: 1
@@ -775,7 +775,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         frees.remove(box)
         allFrees.remove(box)
         Prefs.setStr(context, ClockCfg.key(box.wid), null, fire = false)
-        freeSave(); saveWPages()
+        freeSave(); saveWPages(true)
         if (widgetsLocked()) rebuild() else requestLayout()
     }
 
@@ -845,7 +845,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         removeView(box)
         widgets.remove(box)
         allWidgets.remove(box)
-        saveWidgets(); saveWPages()
+        saveWidgets(); saveWPages(true)
         if (widgetsLocked()) rebuild() else requestLayout()
     }
 

@@ -28,6 +28,7 @@ class PopupMenuX(private val ctx: Context, private val anchor: View) {
     private val stack = ArrayList<PopupWindow>()
     /** Called when the whole menu has closed (item chosen, tapped outside, back). */
     var onClosed: (() -> Unit)? = null
+    private var blurred: View? = null
 
     fun show(x: Int, y: Int, items: List<MenuItem>, above: Boolean = false) =
         level(x, y, items, 0, above, null)
@@ -36,7 +37,7 @@ class PopupMenuX(private val ctx: Context, private val anchor: View) {
 
     private fun closeFrom(n: Int) {
         while (stack.size > n) stack.removeAt(stack.size - 1).dismiss()
-        if (n == 0) onClosed?.invoke()
+        if (n == 0) { blurred?.let { Blur.behind(ctx, it, false) }; blurred = null; onClosed?.invoke() }
     }
 
     private fun level(x: Int, y: Int, items: List<MenuItem>, lvl: Int, above: Boolean, flipX: Int?) {
@@ -119,6 +120,7 @@ class PopupMenuX(private val ctx: Context, private val anchor: View) {
             anchor.getLocationOnScreen(a); anchor.getLocationInWindow(b)
             pw.showAtLocation(anchor, Gravity.NO_GRAVITY, px - (a[0] - b[0]), py - (a[1] - b[1]))
             Blur.popup(ctx, pw)
+            if (lvl == 0 && ctx is android.app.Activity && blurred == null) { blurred = anchor.rootView; Blur.behind(ctx, blurred, true) }
         } catch (e: Exception) {
             stack.remove(pw)
         }

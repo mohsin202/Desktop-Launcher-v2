@@ -131,6 +131,17 @@ object Blur {
         lp.blurBehindRadius = 0
     }
 
+    /** Real blur of what is behind an overlay: the launcher's own views are blurred while a drawer / menu is open. */
+    fun behind(c: Context, v: View?, on: Boolean) {
+        if (v == null || Build.VERSION.SDK_INT < 31) return
+        try {
+            if (on && (Prefs.bool(c, Prefs.K_BLUR, false) || Prefs.bool(c, Prefs.K_GLASS, false))) {
+                val r = c.dp(14).toFloat()
+                v.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(r, r, android.graphics.Shader.TileMode.CLAMP))
+            } else v.setRenderEffect(null)
+        } catch (_: Throwable) { }
+    }
+
     /** Keep popups touch-safe; bounded glass blur needs a Window-backed surface. */
     fun popup(c: Context, pw: android.widget.PopupWindow) {
         if (Build.VERSION.SDK_INT < 31 || !on(c)) return

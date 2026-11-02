@@ -214,6 +214,13 @@ class LauncherActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() { if (catMenu != null) { if (catMenu?.back() != true) closeCats() } else if (sheet != null) closeWidgetSheet() else if (drawer != null) closeDrawer() else desktop.closeFolder() }
 
+    /** The desktop (and the page button) are blurred while the drawer, the screens page or the widget sheet is open. */
+    private fun syncBlur() {
+        val on = drawer != null || catMenu != null || sheet != null
+        Blur.behind(this, desktop, on)
+        Blur.behind(this, catBar, on)
+    }
+
     fun toggleDrawer() {
         val svc = TaskbarService.instance
         if (svc != null && Modes.tablet(this) && barOn()) { svc.toggleDrawer(); return }
@@ -223,6 +230,7 @@ class LauncherActivity : Activity() {
             root.addView(d, FrameLayout.LayoutParams(MATCH, MATCH))
             drawer = d
             d.post { d.onShown() }
+            syncBlur()
         }
     }
 
@@ -234,11 +242,13 @@ class LauncherActivity : Activity() {
         val m = CatMenu(this, desktop, gap) { closeCats() }
         root.addView(m, FrameLayout.LayoutParams(MATCH, MATCH))
         catMenu = m
+        syncBlur()
     }
 
     fun closeCats() {
         catMenu?.let { root.removeView(it) }
         catMenu = null
+        syncBlur()
     }
 
     fun desktopOpenFile(file: java.io.File) { desktop.openFile(file) }
@@ -246,6 +256,7 @@ class LauncherActivity : Activity() {
     fun closeDrawer() {
         drawer?.let { root.removeView(it) }
         drawer = null
+        syncBlur()
         TaskbarService.instance?.closeDrawer()
     }
 
@@ -283,11 +294,13 @@ class LauncherActivity : Activity() {
         val sh = WidgetSheet(this, all, padTop, bottom, { w, h -> desktop.spansFor(w, h) }) { closeWidgetSheet() }
         root.addView(sh, FrameLayout.LayoutParams(MATCH, MATCH))
         sheet = sh
+        syncBlur()
     }
 
     fun closeWidgetSheet() {
         sheet?.let { root.removeView(it) }
         sheet = null
+        syncBlur()
     }
 
     /** The desktop reports the end of a widget drag: bring the sheet back if nothing was dropped. */
