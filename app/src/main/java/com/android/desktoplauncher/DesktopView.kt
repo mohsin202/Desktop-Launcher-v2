@@ -413,7 +413,10 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         if (catId != h || pageIdx != 0) goTo(h, 0)
     }
 
-    private fun canSwipe() = folderPanel == null && !dragLock && allWidgets.none { it.editing() } && allFrees.none { it.editing() }
+    /** Home screen is showing and nothing else is going on (no folder, no widget being resized, no drag). */
+    fun homeIdle() = folderPanel == null && editFolder == null && !dragLock && allWidgets.none { it.editing() } && allFrees.none { it.editing() }
+
+    private fun canSwipe() = folderPanel == null && editFolder == null && !dragLock && allWidgets.none { it.editing() } && allFrees.none { it.editing() }
 
     private fun startsSwipe(ev: MotionEvent): Boolean {
         val dx = ev.rawX - swX; val dy = ev.rawY - swY
@@ -1135,6 +1138,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         removeView(p)
         folderPanel = null
         openFolderId = null
+        blurRest(null)
         return true
     }
 
@@ -1217,7 +1221,14 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         ov.addView(card, FrameLayout.LayoutParams(cw, WRAP, Gravity.CENTER))
         addView(ov, LayoutParams(MATCH, MATCH))
         folderPanel = ov
+        blurRest(ov)
         requestLayout()
+    }
+
+    /** While a folder is open everything behind it is blurred (not the folder itself); null = clear. */
+    private fun blurRest(except: View?) {
+        for (i in 0 until childCount) { val ch = getChildAt(i); Blur.behind(context, ch, except != null && ch !== except) }
+        act.blurChrome(except != null)
     }
 
     private fun renameFolder(f: Entry.FolderE) {
@@ -1250,6 +1261,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         private var moved = false
         private var secondary = false
         private var fResize = false
+        private var blockLong = false
         private var sSx = 1
         private var sSy = 1
         private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
@@ -1273,6 +1285,12 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                         parent?.requestDisallowInterceptTouchEvent(true)
                         return true
                     }
+                    // a folder with its resize frame: pressing near the edges is for resizing only, no drag / menu
+                    blockLong = e is Entry.FolderE && editFolder == e.id && run {
+                        val z = minOf(d(40).toFloat(), minOf(v.width, v.height) / 4f)
+                        !(ev.x >= z && ev.x <= v.width - z && ev.y >= z && ev.y <= v.height - z)
+                    }
+                    if (blockLong) { dragLock = true; state = 0; parent?.requestDisallowInterceptTouchEvent(true); return true }
                     x0 = ev.rawX; y0 = ev.rawY; moved = false; state = 1
                     lastX = ev.rawX.toInt(); lastY = ev.rawY.toInt()
                     if (!mouse) v.postDelayed(longPress, android.view.ViewConfiguration.getLongPressTimeout().toLong())
@@ -1307,6 +1325,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                 MotionEvent.ACTION_UP -> {
                     dragLock = false
                     v.removeCallbacks(longPress)
+                    if (blockLong) { blockLong = false; return true }
                     if (fResize && e is Entry.FolderE) {
                         fResize = false
                         FolderStore.update(context, e.id) { it.sx = e.sx; it.sy = e.sy }
@@ -1633,6 +1652,12 @@ class WidgetBox(
         return if (i % 2 == 0) leftRoom else rightRoom
     }
 
+    /** The middle of the widget: only there a long press opens the menu. */
+    private fun inCenter(x: Float, y: Float): Boolean {
+        val z = minOf(context.dp(48).toFloat(), minOf(width, height) / 4f)
+        return x >= z && x <= width - z && y >= z && y <= height - z
+    }
+
     private fun cornerAt(x: Float, y: Float): Int {
         if (owner.widgetsLocked()) return -1
         val z = context.dp(44)
@@ -1660,6 +1685,8 @@ class WidgetBox(
 
     private val gd = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
         override fun onLongPress(e: MotionEvent) {
+            // while the frame is shown, a long press near the edges / corners is part of resizing: no menu
+            if (resizeMode && !inCenter(e.x, e.y)) return
             moving = true; moved = false
             rememberStart()
             if (!resizeMode) {

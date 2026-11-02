@@ -184,31 +184,57 @@ object Icons {
         return d
     }
 
-    /** Builds a one-colour icon for an app that has no monochrome layer. */
+    /**
+     * Themed version of an icon that has no monochrome layer: the real picture stays recognisable, only its colours
+     * are replaced by the Material You pair (light plate / dark ink in light mode, the reverse in dark mode).
+     */
     private fun makeMono(c: Context, base: Drawable): Drawable {
         val n = 216
         val bmp = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
         val cv = Canvas(bmp)
-        val src: Drawable = if (base is AdaptiveIconDrawable) (base.foreground ?: base) else base
-        if (base is AdaptiveIconDrawable) src.setBounds(0, 0, n, n)
-        else { val m = (n * 0.19f).toInt(); src.setBounds(m, m, n - m, n - m) }
-        src.draw(cv)
+        val adaptive = base is AdaptiveIconDrawable
+        if (adaptive) base.setBounds(0, 0, n, n)
+        else { val m = (n * 0.19f).toInt(); base.setBounds(m, m, n - m, n - m) }
+        base.draw(cv)
         val px = IntArray(n * n)
         bmp.getPixels(px, 0, n, 0, 0, n, n)
-        var cover = 0L
-        for (p in px) if ((p ushr 24) > 200) cover++
-        val opaque = cover > n.toLong() * n * 0.55          // a full square picture: use its dark parts as the shape
-        val col = Colors.iconFg(c) and 0x00FFFFFF
+        val lum = FloatArray(n * n)
+        val hist = IntArray(256)
+        var cnt = 0
         for (i in px.indices) {
             val p = px[i]
-            val a = p ushr 24
-            val lum = (0.299f * ((p shr 16) and 255) + 0.587f * ((p shr 8) and 255) + 0.114f * (p and 255)) / 255f
-            val out = if (opaque) (a * (1f - lum).coerceIn(0f, 1f) * 1.3f).toInt() else a
-            px[i] = (out.coerceIn(0, 255) shl 24) or col
+            val l = (0.299f * ((p shr 16) and 255) + 0.587f * ((p shr 8) and 255) + 0.114f * (p and 255))
+            lum[i] = l
+            if ((p ushr 24) > 128) { hist[l.toInt().coerceIn(0, 255)]++; cnt++ }
+        }
+        // stretch the tones so the picture uses the whole range of the two theme colours
+        var lo = 0; var hi = 255
+        if (cnt > 0) {
+            var acc = 0
+            while (lo < 254 && acc + hist[lo] < cnt * 0.03) { acc += hist[lo]; lo++ }
+            acc = 0
+            while (hi > lo + 1 && acc + hist[hi] < cnt * 0.03) { acc += hist[hi]; hi-- }
+        }
+        val span = maxOf(24f, (hi - lo).toFloat())
+        val plate = Colors.iconBg(c); val ink = Colors.iconFg(c)
+        val night = Colors.night(c)
+        // light mode: bright parts -> plate colour, dark parts -> ink; dark mode: the other way round
+        val c0 = if (night) plate else ink
+        val c1 = if (night) ink else plate
+        fun mix(a: Int, b: Int, t: Float) = (a + (b - a) * t).toInt()
+        for (i in px.indices) {
+            val a = px[i] ushr 24
+            if (a == 0) { px[i] = 0; continue }
+            var t = ((lum[i] - lo) / span).coerceIn(0f, 1f)
+            if (night) t = 1f - t
+            val r = mix((c0 shr 16) and 255, (c1 shr 16) and 255, t)
+            val g = mix((c0 shr 8) and 255, (c1 shr 8) and 255, t)
+            val bl = mix(c0 and 255, c1 and 255, t)
+            px[i] = (a shl 24) or (r shl 16) or (g shl 8) or bl
         }
         bmp.setPixels(px, 0, n, 0, 0, n, n)
-        val fg = android.graphics.drawable.BitmapDrawable(c.resources, bmp)
-        return AdaptiveIconDrawable(ColorDrawable(Colors.iconBg(c)), fg)
+        val out = android.graphics.drawable.BitmapDrawable(c.resources, bmp)
+        return if (adaptive) out else AdaptiveIconDrawable(ColorDrawable(plate), out)
     }
 
     fun file(f: File): Drawable =

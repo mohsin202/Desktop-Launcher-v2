@@ -365,6 +365,9 @@ class FreeBox(ctx: Context, val wid: Int, val clock: SpecialClockView, private v
     private val gd = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
         override fun onLongPress(e: MotionEvent) {
             if (mode == 2) return
+            // with the frame shown, only a long press in the middle opens the menu (edges are for resizing)
+            if (resizeMode && !(e.x >= minOf(context.dp(48).toFloat(), minOf(width, height) / 4f) && e.x <= width - minOf(context.dp(48).toFloat(), minOf(width, height) / 4f) &&
+                    e.y >= minOf(context.dp(48).toFloat(), minOf(width, height) / 4f) && e.y <= height - minOf(context.dp(48).toFloat(), minOf(width, height) / 4f))) return
             longDone = true
             if (!resizeMode) { resizeMode = true; owner.endWidgetEdit(this@FreeBox); invalidate() }
             else { mode = 0; owner.freeMenu(this@FreeBox, e.rawX.toInt(), e.rawY.toInt()) }

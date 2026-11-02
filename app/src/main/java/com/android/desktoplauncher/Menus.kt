@@ -25,19 +25,27 @@ class MenuItem(
 
 /** Context menu with sub menus, drawn as popup windows (works inside overlay windows too). */
 class PopupMenuX(private val ctx: Context, private val anchor: View) {
+    companion object {
+        private val active = java.util.Collections.newSetFromMap(java.util.WeakHashMap<PopupMenuX, Boolean>())
+        /** True while any menu of the launcher is open. */
+        fun anyOpen() = active.isNotEmpty()
+    }
     private val stack = ArrayList<PopupWindow>()
     /** Called when the whole menu has closed (item chosen, tapped outside, back). */
     var onClosed: (() -> Unit)? = null
     private var blurred: View? = null
 
-    fun show(x: Int, y: Int, items: List<MenuItem>, above: Boolean = false) =
+    fun show(x: Int, y: Int, items: List<MenuItem>, above: Boolean = false) {
+        active.add(this)
         level(x, y, items, 0, above, null)
+        if (stack.isEmpty()) active.remove(this)
+    }
 
     fun dismiss() = closeFrom(0)
 
     private fun closeFrom(n: Int) {
         while (stack.size > n) stack.removeAt(stack.size - 1).dismiss()
-        if (n == 0) { blurred?.let { Blur.behind(ctx, it, false) }; blurred = null; onClosed?.invoke() }
+        if (n == 0) { active.remove(this); blurred?.let { Blur.behind(ctx, it, false) }; blurred = null; onClosed?.invoke() }
     }
 
     private fun level(x: Int, y: Int, items: List<MenuItem>, lvl: Int, above: Boolean, flipX: Int?) {

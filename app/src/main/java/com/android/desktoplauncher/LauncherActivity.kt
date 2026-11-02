@@ -221,6 +221,9 @@ class LauncherActivity : Activity() {
     override fun onBackPressed() { if (catMenu != null) { if (catMenu?.back() != true) closeCats() } else if (sheet != null) closeWidgetSheet() else if (drawer != null) closeDrawer() else desktop.closeFolder() }
 
     /** The desktop (and the page button) are blurred while the drawer, the screens page or the widget sheet is open. */
+    /** Page button above the dock, blurred while a folder is open. */
+    fun blurChrome(on: Boolean) { Blur.behind(this, catBar, on || drawer != null || catMenu != null || sheet != null || extBlur) }
+
     private fun syncBlur() {
         val on = drawer != null || catMenu != null || sheet != null || extBlur
         Blur.behind(this, desktop, on)
@@ -366,14 +369,15 @@ class LauncherActivity : Activity() {
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
             if (e1 == null || Modes.tablet(this@LauncherActivity)) return false
             val dy = e1.y - e2.y
-            val verticalSwipe = Math.abs(dy) > dp(90) && Math.abs(vy) > 900f && Math.abs(vy) > Math.abs(vx)
-            if (!verticalSwipe) return false
-
-            // Swipe up on the desktop opens the app drawer.
-            if (drawer == null && dy > 0 && vy < -900f) {
+            // Swipe up on the desktop opens the app drawer: a short, light flick anywhere is enough, but only while the
+            // plain home screen is showing (not with a menu, folder, widget sheet or screens page open).
+            if (drawer == null && dy > dp(40) && vy < -450f && Math.abs(vy) > Math.abs(vx)) {
+                if (catMenu != null || sheet != null || PopupMenuX.anyOpen() || !desktop.homeIdle()) return false
                 root.post { if (drawer == null) toggleDrawer() }
                 return true
             }
+            val verticalSwipe = Math.abs(dy) > dp(90) && Math.abs(vy) > 900f && Math.abs(vy) > Math.abs(vx)
+            if (!verticalSwipe) return false
             // Swipe down closes it only when the content was already at the top before the gesture.
             if (drawer != null && dy < 0 && vy > 900f && drawerWasAtTopOnTouchDown) {
                 root.post { if (drawer != null && drawer?.isContentAtTopForSwipeDismiss() == true) closeDrawer() }

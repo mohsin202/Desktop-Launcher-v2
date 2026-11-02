@@ -155,8 +155,16 @@ class CatPill(ctx: Context, private val wDp: Int, private val hDp: Int, private 
 
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
-        bg.color = bgColor()
-        canvas.drawRoundRect(0f, 0f, w, h, h / 2f, h / 2f, bg)
+        val base = bgColor()
+        if (Colors.glassOn(context)) {
+            // frosted glass, like the other panels
+            val g = Colors.panel(context, base, h / 2f)
+            g.setBounds(0, 0, width, height)
+            g.draw(canvas)
+        } else {
+            bg.color = if (Blur.on(context)) (base and 0x00FFFFFF) or 0xA0000000.toInt() else base
+            canvas.drawRoundRect(0f, 0f, w, h, h / 2f, h / 2f, bg)
+        }
         val fg = Colors.iconFg(context)
         if (Screens.dots && Screens.pages > 0) {
             val n = Screens.pages
@@ -187,11 +195,12 @@ class CatArrow(private val act: LauncherActivity, txt: String, private val onTap
         setOnClickListener { onTap() }
         applyColors()
     }
-    private fun key() = Colors.taskbar(act) * 31 + Colors.text(act)
+    private fun key() = (Colors.taskbar(act) * 31 + Colors.text(act)) * 31 + (if (Colors.glassOn(act)) 1 else 0) + (if (Blur.on(act)) 2 else 0)
     private fun applyColors() {
         sig = key()
         setTextColor(Colors.text(act))
-        background = Colors.rounded((Colors.taskbar(act) and 0x00FFFFFF) or 0xE6000000.toInt(), act.dp(12).toFloat())
+        val base = (Colors.taskbar(act) and 0x00FFFFFF) or (if (Blur.on(act)) 0xA0000000.toInt() else 0xE6000000.toInt())
+        background = if (Colors.glassOn(act)) Colors.panel(act, base, act.dp(12).toFloat()) else Colors.rounded(base, act.dp(12).toFloat())
     }
     override fun onAttachedToWindow() { super.onAttachedToWindow(); applyColors() }
     override fun onDraw(canvas: Canvas) {
