@@ -186,7 +186,7 @@ object Icons {
 
     /**
      * Themed version of an icon that has no monochrome layer: the real picture stays recognisable, only its colours
-     * are replaced by the Material You pair (light plate / dark ink in light mode, the reverse in dark mode).
+     * are replaced by the Material You pair; the plate always follows the theme (light plate in light mode, dark plate in dark mode).
      */
     private fun makeMono(c: Context, base: Drawable): Drawable {
         val n = 216
@@ -199,37 +199,53 @@ object Icons {
         val px = IntArray(n * n)
         bmp.getPixels(px, 0, n, 0, 0, n, n)
         val lum = FloatArray(n * n)
-        val hist = IntArray(256)
-        var cnt = 0
         for (i in px.indices) {
             val p = px[i]
-            val l = (0.299f * ((p shr 16) and 255) + 0.587f * ((p shr 8) and 255) + 0.114f * (p and 255))
-            lum[i] = l
-            if ((p ushr 24) > 128) { hist[l.toInt().coerceIn(0, 255)]++; cnt++ }
+            lum[i] = (0.299f * ((p shr 16) and 255) + 0.587f * ((p shr 8) and 255) + 0.114f * (p and 255))
         }
-        // stretch the tones so the picture uses the whole range of the two theme colours
-        var lo = 0; var hi = 255
-        if (cnt > 0) {
-            var acc = 0
-            while (lo < 254 && acc + hist[lo] < cnt * 0.03) { acc += hist[lo]; lo++ }
-            acc = 0
-            while (hi > lo + 1 && acc + hist[hi] < cnt * 0.03) { acc += hist[hi]; hi-- }
-        }
-        val span = maxOf(24f, (hi - lo).toFloat())
         val plate = Colors.iconBg(c); val ink = Colors.iconFg(c)
-        val night = Colors.night(c)
-        // light mode: bright parts -> plate colour, dark parts -> ink; dark mode: the other way round
-        val c0 = if (night) plate else ink
-        val c1 = if (night) ink else plate
         fun mix(a: Int, b: Int, t: Float) = (a + (b - a) * t).toInt()
+        fun median(vals: List<Float>): Float = if (vals.isEmpty()) 128f else vals.sorted()[vals.size / 2]
+        // The plate always follows the theme (light plate in light mode, dark plate in dark mode), whatever the original
+        // background was. What differs from the icon's own background becomes the ink, so the picture stays recognisable.
+        var minX = n; var minY = n; var maxX = -1; var maxY = -1
+        for (y in 0 until n) for (x in 0 until n) if ((px[y * n + x] ushr 24) > 128) {
+            if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y
+        }
+        val border = ArrayList<Float>()
+        var ringTotal = 0
+        if (maxX > minX && maxY > minY) {
+            val bw = ((maxX - minX) * 0.1f).toInt().coerceAtLeast(2); val bh = ((maxY - minY) * 0.1f).toInt().coerceAtLeast(2)
+            for (y in minY..maxY) for (x in minX..maxX) {
+                if (x - minX < bw || maxX - x < bw || y - minY < bh || maxY - y < bh) {
+                    ringTotal++
+                    if ((px[y * n + x] ushr 24) > 200) border.add(lum[y * n + x])
+                }
+            }
+        }
+        val solidBg = ringTotal > 0 && border.size > ringTotal * 0.6f
+        val bg = median(border)
+        val tt = FloatArray(n * n)
+        if (solidBg) {
+            val d = ArrayList<Float>()
+            for (i in px.indices) if ((px[i] ushr 24) > 128) d.add(Math.abs(lum[i] - bg))
+            d.sort()
+            val dmax = maxOf(30f, if (d.isEmpty()) 30f else d[(d.size * 0.97f).toInt().coerceIn(0, d.size - 1)])
+            for (i in px.indices) tt[i] = (Math.abs(lum[i] - bg) / dmax).coerceIn(0f, 1f)
+        } else {
+            // a shape without its own background (transparent around it): solid ink with a little shading
+            val inside = ArrayList<Float>()
+            for (i in px.indices) if ((px[i] ushr 24) > 128) inside.add(lum[i])
+            val m = median(inside)
+            for (i in px.indices) tt[i] = (0.8f + 0.2f * (Math.abs(lum[i] - m) / 128f)).coerceIn(0f, 1f)
+        }
         for (i in px.indices) {
             val a = px[i] ushr 24
             if (a == 0) { px[i] = 0; continue }
-            var t = ((lum[i] - lo) / span).coerceIn(0f, 1f)
-            if (night) t = 1f - t
-            val r = mix((c0 shr 16) and 255, (c1 shr 16) and 255, t)
-            val g = mix((c0 shr 8) and 255, (c1 shr 8) and 255, t)
-            val bl = mix(c0 and 255, c1 and 255, t)
+            val t = tt[i]
+            val r = mix((plate shr 16) and 255, (ink shr 16) and 255, t)
+            val g = mix((plate shr 8) and 255, (ink shr 8) and 255, t)
+            val bl = mix(plate and 255, ink and 255, t)
             px[i] = (a shl 24) or (r shl 16) or (g shl 8) or bl
         }
         bmp.setPixels(px, 0, n, 0, 0, n, n)
