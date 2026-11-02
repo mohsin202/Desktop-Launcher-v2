@@ -63,6 +63,17 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".TrashWindowActivity"
+            android:exported="false"
+            android:label="@string/trash_name"
+            android:icon="@mipmap/ic_trash"
+            android:taskAffinity="com.android.desktoplauncher.trashwindow"
+            android:documentLaunchMode="always"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|uiMode"
+            android:theme="@style/Theme.Desktop.Window" />
+
         <service
             android:name=".TaskbarService"
             android:exported="true"
