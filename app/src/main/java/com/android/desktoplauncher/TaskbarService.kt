@@ -50,6 +50,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
     private var bar: TaskbarView? = null
     /** 0 = bar along the bottom; 1 / 2 = vertical bar over a system navigation bar on the left / right edge. */
     private var barSide = 0
+    private var barShown = true
     private var drawer: DrawerView? = null
     override val running = LinkedHashSet<String>()
     override var focused: String? = null
@@ -62,7 +63,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
     private val dismissed = HashSet<String>()
     private val handler = Handler(Looper.getMainLooper())
     private val pruneTick = object : Runnable {
-        override fun run() { pruneDead(); handler.postDelayed(this, 4000) }
+        override fun run() { pruneDead(); if (bar != null) setBarShown(systemBarsVisible()); handler.postDelayed(this, 4000) }
     }
 
     override fun onServiceConnected() {
@@ -223,7 +224,9 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
             if (!Prefs.bool(this, Prefs.K_TASKBAR, true) || !Modes.tablet(this) || keyguardLocked) {
                 removeBar(); closeDrawer(); return
             }
-            val side = navSide()
+            // While the system bars are hidden (video, fullscreen) keep the bar where it was and just hide it.
+            val vis = systemBarsVisible()
+            val side = if (vis) navSide() else barSide
             if (bar != null && barSide != side) removeBar()
             val b = bar
             if (b != null && side != 0) {
@@ -240,6 +243,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
                 }
                 if (refresh) b.refresh()
             }
+            setBarShown(vis)
         } catch (e: Exception) {
             Log.e("DesktopTaskbar", "Taskbar sync failed", e)
             removeBar()
@@ -251,6 +255,14 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
         val i = wm.currentWindowMetrics.windowInsets.getInsets(android.view.WindowInsets.Type.navigationBars())
         if (i.right > 0) 2 else if (i.left > 0) 1 else 0
     } catch (_: Exception) { 0 }
+
+    /** False while both the navigation bar and the status bar are hidden. The metrics only count bars that are showing. */
+    private fun systemBarsVisible(): Boolean = try {
+        val w = wm.currentWindowMetrics.windowInsets
+        val n = w.getInsets(android.view.WindowInsets.Type.navigationBars())
+        val st = w.getInsets(android.view.WindowInsets.Type.statusBars())
+        n.left + n.right + n.bottom + n.top + st.top > 0
+    } catch (_: Exception) { true }
 
     private fun statusTop(): Int = try {
         wm.currentWindowMetrics.windowInsets.getInsets(android.view.WindowInsets.Type.statusBars()).top
@@ -287,10 +299,30 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
             wm.addView(v, lp)
             bar = v
             barSide = side
+            barShown = true
+            // follow the system bars: hidden in video / fullscreen, back when the system buttons come back
+            v.onInsets = { handler.post { sync(false) } }
         } catch (e: Exception) {
             Log.e("DesktopTaskbar", "Could not add taskbar overlay", e)
             if (v != null) try { wm.removeView(v) } catch (_: Exception) {}
             bar = null
+        }
+    }
+
+    /** The window stays alive (so it keeps receiving inset changes) but is invisible and lets touches through while hidden. */
+    private fun setBarShown(show: Boolean) {
+        val b = bar ?: return
+        if (show == barShown) return
+        barShown = show
+        try {
+            val lp = b.layoutParams as WindowManager.LayoutParams
+            lp.flags = if (show) lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+                       else lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            b.alpha = if (show) 1f else 0f
+            wm.updateViewLayout(b, lp)
+            if (!show) closeDrawer()
+        } catch (e: Exception) {
+            Log.e("DesktopTaskbar", "Could not show/hide taskbar", e)
         }
     }
 
@@ -358,6 +390,8 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
      * Side mode: the whole bar is laid out horizontally in [body] (len x thickness) and turned 90 degrees so it lies along the
      * screen edge; the icons are turned back, so they stay upright like the system navigation buttons do.
      */
+    /** Set by the service: called when the window insets change, so it can check whether the system bars are showing. */
+    var onInsets: (() -> Unit)? = null
     private val body: FrameLayout? = if (side != 0) FrameLayout(ctx) else null
     private val host: FrameLayout get() = body ?: this
     private val center = LinearLayout(ctx)
@@ -385,6 +419,7 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
         scroll.overScrollMode = View.OVER_SCROLL_NEVER
         scroll.clipToPadding = false
         scroll.addView(appsRow, FrameLayout.LayoutParams(WRAP, MATCH))
+        if (showNav) setOnApplyWindowInsetsListener { _, ins -> onInsets?.invoke(); ins }
         host.addView(center, LayoutParams(MATCH, MATCH, Gravity.START or Gravity.CENTER_VERTICAL).also {
             it.leftMargin = ctx.dp(4)
         })
