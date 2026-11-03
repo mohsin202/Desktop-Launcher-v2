@@ -387,6 +387,50 @@ object Launch {
      * Launch options for "Open apps in freeform windows": asks for the freeform windowing mode (hidden API, may be refused by
      * the ROM) and a window rectangle, like taskbar apps do. Returns null when the setting is off and no bounds are given.
      */
+    const val ADB_GRANT = "adb shell pm grant com.android.desktoplauncher android.permission.WRITE_SECURE_SETTINGS"
+
+    fun hasSecure(c: Context) = c.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Switches on the system's freeform window support (Settings.Global enable_freeform_support / force_resizable_activities /
+     * freeform_window_management), like the Taskbar app. Needs the WRITE_SECURE_SETTINGS permission given once with adb.
+     */
+    fun ensureFreeform(c: Context): Boolean {
+        if (!hasSecure(c)) return false
+        return try {
+            val r = c.contentResolver
+            Settings.Global.putInt(r, "enable_freeform_support", 1)
+            Settings.Global.putInt(r, "force_resizable_activities", 1)
+            Settings.Global.putInt(r, "freeform_window_management", 1)
+            true
+        } catch (_: Throwable) { false }
+    }
+
+    private var hiddenOpen = false
+    /** Android hides some framework calls (here: asking for the freeform windowing mode). Lifts that restriction for this app. */
+    private fun unlockHidden() {
+        if (hiddenOpen) return
+        hiddenOpen = true
+        try {
+            val forName = Class::class.java.getDeclaredMethod("forName", String::class.java)
+            val getDeclared = Class::class.java.getDeclaredMethod("getDeclaredMethod", String::class.java, java.lang.reflect.Array.newInstance(Class::class.java, 0).javaClass)
+            val vm = forName.invoke(null, "dalvik.system.VMRuntime") as Class<*>
+            val getRuntime = getDeclared.invoke(vm, "getRuntime", arrayOfNulls<Class<*>>(0)) as java.lang.reflect.Method
+            val setEx = getDeclared.invoke(vm, "setHiddenApiExemptions", arrayOf<Class<*>>(Array<String>::class.java)) as java.lang.reflect.Method
+            setEx.invoke(getRuntime.invoke(null), arrayOf("L"))
+        } catch (_: Throwable) { }
+    }
+
+    /** Opens the invisible freeform helper window once (Taskbar's "freeform hack"), if the setting is on. */
+    private fun startHack(c: Context) {
+        if (!Prefs.bool(c, Prefs.K_FFHACK, false) || FreeformHackActivity.running()) return
+        try {
+            c.startActivity(Intent(c, FreeformHackActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION),
+                options(c, android.graphics.Rect(0, 0, 1, 1)))
+        } catch (_: Throwable) { }
+    }
+
     /** Window sizes of the "Window size" choice: 0 phone, 1 tablet, 2 desktop (in dp, clamped to the screen). */
     fun sizeRect(c: Context, size: Int): android.graphics.Rect {
         val dm = c.resources.displayMetrics
@@ -407,6 +451,7 @@ object Launch {
         if (!on && bounds == null) return null
         return try {
             val o = android.app.ActivityOptions.makeBasic()
+            if (on) unlockHidden()
             if (on) try { o.javaClass.getMethod("setLaunchWindowingMode", Int::class.javaPrimitiveType).invoke(o, 5) } catch (_: Throwable) {}
             o.setLaunchBounds(bounds ?: sizeRect(c, size ?: Prefs.getInt(c, Prefs.K_WINSIZE, 2)))
             o.toBundle()
@@ -414,6 +459,7 @@ object Launch {
     }
 
     fun start(c: Context, i: Intent, size: Int? = null) {
+        if (Prefs.bool(c, Prefs.K_FREEFORM, false) || size != null) { ensureFreeform(c); startHack(c) }
         try { c.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), options(c, null, size)) } catch (e: Exception) { c.toast("Cannot open") }
     }
 

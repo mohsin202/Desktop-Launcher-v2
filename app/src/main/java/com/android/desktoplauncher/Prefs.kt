@@ -32,6 +32,7 @@ object Prefs {
     const val K_GLASS = "glassblur"
     const val K_FREEFORM = "freeform"
     const val K_WINSIZE = "winsize"
+    const val K_FFHACK = "ffhack"
     const val K_IME = "imebtn"
     const val K_POS = "pos"
     const val K_WINKEY = "winkey"

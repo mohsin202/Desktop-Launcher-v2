@@ -234,6 +234,34 @@ class SettingsActivity : Activity() {
         wg.setOnCheckedChangeListener { _, id -> Prefs.setInt(this, Prefs.K_WINSIZE, id - 300) }
         addSetting(wg)
         note(UiText.text(this, "Window size. You can also pick a size for one app from its menu: Window size."))
+        sw(UiText.text(this, "Freeform helper window (older Android)"), Prefs.K_FFHACK, false)
+        note(UiText.text(this, "Opens an invisible 1x1 freeform window first, like the Taskbar app does, so that apps opened afterwards also open as windows."))
+        note(UiText.text(this, "Special permission (optional)") + ": " + UiText.text(this, if (Launch.hasSecure(this)) "granted" else "not granted — tap the button to copy the adb command"))
+        btn(UiText.text(this, if (Launch.hasSecure(this)) "Switch on system freeform support" else "Copy adb command for the special permission")) {
+            if (Launch.hasSecure(this)) toast(UiText.text(this, if (Launch.ensureFreeform(this)) "Freeform support is on" else "Could not change the system setting"))
+            else {
+                (getSystemService(android.content.ClipboardManager::class.java)).setPrimaryClip(android.content.ClipData.newPlainText("adb", Launch.ADB_GRANT))
+                toast(UiText.text(this, "Copied. Run it from a computer with adb, then reopen the settings."))
+            }
+        }
+
+        head("PERMISSIONS")
+        note(UiText.text(this, "Special accesses the launcher can use. Each button opens the system screen where you turn it on."))
+        val usageOn = try {
+            val ao = getSystemService(android.app.AppOpsManager::class.java)
+            ao.unsafeCheckOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName) == android.app.AppOpsManager.MODE_ALLOWED
+        } catch (_: Throwable) { false }
+        val pkgUri = Uri.parse("package:$packageName")
+        fun perm(name: String, on: Boolean, open: () -> Unit) {
+            note(UiText.text(this, name) + ": " + UiText.text(this, if (on) "granted" else "not granted"))
+            if (!on) btn(UiText.text(this, "Allow") + " — " + UiText.text(this, name)) { open() }
+        }
+        perm("Usage access", usageOn) { go(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, pkgUri)) }
+        perm("Display over other apps", Settings.canDrawOverlays(this)) { go(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, pkgUri)) }
+        perm("Modify system settings", Settings.System.canWrite(this)) { go(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, pkgUri)) }
+        perm("All files access", Environment.isExternalStorageManager()) { go(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, pkgUri)) }
+        perm("Accessibility (taskbar)", TaskbarService.instance != null) { go(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        perm("Notification access", notifOn) { go(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
 
         head("TASKBAR / DOCK")
         val sw600 = resources.configuration.smallestScreenWidthDp
