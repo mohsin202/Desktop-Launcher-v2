@@ -35,6 +35,8 @@ interface TaskbarHost {
     val running: Collection<String>
     val focused: String?
     fun global(action: Int)
+    /** Long press on Back (0), Home (1) or Recents (2). */
+    fun navLong(kind: Int) {}
     fun hideRunning(pkg: String)
     fun toggleDrawer()
     fun openSearch()
@@ -213,6 +215,25 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
 
     override fun hideRunning(pkg: String) { running.remove(pkg); dismissed.add(pkg); bar?.refresh() }
     override fun global(action: Int) { performGlobalAction(action) }
+
+    override fun navLong(kind: Int) {
+        val key = when (kind) { 0 -> Prefs.K_LP_BACK; 1 -> Prefs.K_LP_HOME; else -> Prefs.K_LP_RECENTS }
+        try {
+            when (Prefs.getInt(this, key, if (kind == 1) NavActions.ASSIST else NavActions.NONE)) {
+                NavActions.ASSIST -> startActivity(Intent(Intent.ACTION_ASSIST).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                NavActions.SPLIT -> performGlobalAction(GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN)
+                NavActions.SHOT -> performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
+                NavActions.LOCK -> performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+                NavActions.POWER -> performGlobalAction(GLOBAL_ACTION_POWER_DIALOG)
+                NavActions.NOTIF -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+                NavActions.QS -> performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+                NavActions.DRAWER -> toggleDrawer()
+                NavActions.BACK -> performGlobalAction(GLOBAL_ACTION_BACK)
+                NavActions.HOME -> performGlobalAction(GLOBAL_ACTION_HOME)
+                NavActions.RECENTS -> performGlobalAction(GLOBAL_ACTION_RECENTS)
+            }
+        } catch (e: Exception) { Log.e("DesktopTaskbar", "Long-press action failed", e) }
+    }
     override fun openSearch() {
         if (drawer == null) openDrawer()
         drawer?.post { drawer?.focusSearch() }
@@ -602,12 +623,15 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
         if (showNav && Prefs.bool(ctx, Prefs.K_NAV, true)) {
             right.addView(NavButton(ctx, 0).also { b ->
                 b.background = ripple(); b.setOnClickListener { svc.global(AccessibilityService.GLOBAL_ACTION_BACK) }
+                b.setOnLongClickListener { it.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); svc.navLong(0); true }
             }, LinearLayout.LayoutParams(cell, MATCH))
             right.addView(NavButton(ctx, 1).also { b ->
                 b.background = ripple(); b.setOnClickListener { svc.global(AccessibilityService.GLOBAL_ACTION_HOME) }
+                b.setOnLongClickListener { it.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); svc.navLong(1); true }
             }, LinearLayout.LayoutParams(cell, MATCH))
             right.addView(NavButton(ctx, 2).also { b ->
                 b.background = ripple(); b.setOnClickListener { svc.global(AccessibilityService.GLOBAL_ACTION_RECENTS) }
+                b.setOnLongClickListener { it.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); svc.navLong(2); true }
             }, LinearLayout.LayoutParams(cell, MATCH))
         }
         if (showNav && body == null) {
@@ -761,22 +785,99 @@ class SnapScroll(c: Context, private val cell: () -> Int) : android.widget.Horiz
     }
 }
 
+/** What a long press on Back / Home / Recents can do. */
+object NavActions {
+    const val NONE = 0; const val ASSIST = 1; const val SPLIT = 2; const val SHOT = 3; const val LOCK = 4
+    const val POWER = 5; const val NOTIF = 6; const val QS = 7; const val DRAWER = 8
+    const val BACK = 9; const val HOME = 10; const val RECENTS = 11
+    val names = listOf("None", "Assistant (Circle to Search where the system allows)", "Split screen", "Screenshot", "Lock screen",
+        "Power menu", "Notifications", "Quick settings", "App drawer", "Back", "Home", "Recents")
+}
+
+/** Look of the Back / Home / Recents buttons. 0 = follows the phone's make. */
+object NavStyle {
+    const val SYSTEM = 0; const val LAUNCHER = 1; const val SAMSUNG = 2; const val PIXEL = 3; const val VIVO = 4; const val OPPO = 5; const val XIAOMI = 6
+    val names = listOf("System (like this phone)", "Desktop Launcher", "Samsung", "Pixel", "Vivo", "Oppo", "Xiaomi")
+
+    fun resolve(c: Context): Int {
+        val v = Prefs.getInt(c, Prefs.K_NAVSTYLE, SYSTEM)
+        if (v != SYSTEM) return v
+        val m = (android.os.Build.MANUFACTURER + " " + android.os.Build.BRAND).lowercase()
+        return when {
+            m.contains("xiaomi") || m.contains("redmi") || m.contains("poco") -> XIAOMI
+            m.contains("samsung") -> SAMSUNG
+            m.contains("vivo") || m.contains("iqoo") -> VIVO
+            m.contains("oppo") || m.contains("realme") || m.contains("oneplus") -> OPPO
+            else -> PIXEL
+        }
+    }
+}
+
 class NavButton(c: Context, private val kind: Int) : View(c) {
-    private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeJoin = Paint.Join.ROUND }
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND }
+
+    private fun stroke(w: Float) { p.style = Paint.Style.STROKE; p.strokeWidth = w }
+    private fun fill(w: Float = 0f) { p.style = if (w > 0f) Paint.Style.FILL_AND_STROKE else Paint.Style.FILL; p.strokeWidth = w }
+
+    /** Triangle pointing left; filled ones get softly rounded corners from a round-joined outline of the same colour. */
+    private fun tri(cv: Canvas, cx: Float, cy: Float, r: Float, filled: Boolean, w: Float) {
+        val pad = if (filled) w / 2f else 0f
+        val path = Path()
+        path.moveTo(cx + r * 0.85f - pad, cy - r + pad); path.lineTo(cx - r * 0.85f + pad, cy); path.lineTo(cx + r * 0.85f - pad, cy + r - pad); path.close()
+        if (filled) fill(w) else stroke(w)
+        cv.drawPath(path, p)
+    }
+
+    private fun chevron(cv: Canvas, cx: Float, cy: Float, r: Float, w: Float) {
+        val path = Path()
+        path.moveTo(cx + r * 0.45f, cy - r * 0.95f); path.lineTo(cx - r * 0.45f, cy); path.lineTo(cx + r * 0.45f, cy + r * 0.95f)
+        stroke(w); cv.drawPath(path, p)
+    }
+
+    private fun square(cv: Canvas, cx: Float, cy: Float, r: Float, filled: Boolean, w: Float, corner: Float) {
+        val pad = if (filled) w / 2f else 0f
+        val rc = RectF(cx - r + pad, cy - r + pad, cx + r - pad, cy + r - pad)
+        if (filled) fill(w) else stroke(w)
+        cv.drawRoundRect(rc, corner, corner, p)
+    }
+
     override fun onDraw(canvas: Canvas) {
         p.color = barFg()
-        p.strokeWidth = context.dp(2).toFloat()
         val cx = width / 2f
         val cy = height / 2f
-        val r = minOf(width, height) * 0.17f
-        when (kind) {
-            0 -> {
-                val path = Path()
-                path.moveTo(cx + r, cy - r); path.lineTo(cx - r, cy); path.lineTo(cx + r, cy + r); path.close()
-                canvas.drawPath(path, p)
+        val r = minOf(width, height) * 0.17f      // same size as before: the shapes are about 0.34 of the cell
+        val dp2 = context.dp(2).toFloat()
+        when (NavStyle.resolve(context)) {
+            NavStyle.LAUNCHER -> when (kind) {
+                0 -> tri(canvas, cx, cy, r, false, dp2)
+                1 -> { stroke(dp2); canvas.drawCircle(cx, cy, r, p) }
+                else -> square(canvas, cx, cy, r, false, dp2, r * 0.35f)
             }
-            1 -> canvas.drawCircle(cx, cy, r, p)
-            else -> canvas.drawRoundRect(RectF(cx - r, cy - r, cx + r, cy + r), r * 0.35f, r * 0.35f, p)
+            NavStyle.XIAOMI -> when (kind) {
+                0 -> tri(canvas, cx, cy, r, true, r * 0.45f)
+                1 -> { stroke(r * 0.3f); canvas.drawCircle(cx, cy, r * 0.95f - r * 0.15f, p); fill(); canvas.drawCircle(cx, cy, r * 0.36f, p) }
+                else -> square(canvas, cx, cy, r * 0.95f, true, r * 0.3f, r * 0.4f)
+            }
+            NavStyle.PIXEL -> when (kind) {
+                0 -> tri(canvas, cx, cy, r, true, r * 0.5f)
+                1 -> { fill(); canvas.drawCircle(cx, cy, r, p) }
+                else -> square(canvas, cx, cy, r * 0.92f, true, r * 0.4f, r * 0.5f)
+            }
+            NavStyle.SAMSUNG -> when (kind) {
+                0 -> chevron(canvas, cx, cy, r, r * 0.3f)
+                1 -> { stroke(r * 0.28f); canvas.drawRoundRect(RectF(cx - r * 1.2f, cy - r * 0.8f, cx + r * 1.2f, cy + r * 0.8f), r * 0.8f, r * 0.8f, p) }
+                else -> { stroke(r * 0.28f); for (i in -1..1) canvas.drawLine(cx + i * r * 0.85f, cy - r * 0.9f, cx + i * r * 0.85f, cy + r * 0.9f, p) }
+            }
+            NavStyle.VIVO -> when (kind) {
+                0 -> chevron(canvas, cx, cy, r, r * 0.24f)
+                1 -> { stroke(r * 0.24f); canvas.drawCircle(cx, cy, r, p) }
+                else -> { stroke(r * 0.24f); for (i in -1..1) canvas.drawLine(cx - r * 0.9f, cy + i * r * 0.7f, cx + r * 0.9f, cy + i * r * 0.7f, p) }
+            }
+            else -> when (kind) {   // OPPO
+                0 -> tri(canvas, cx, cy, r, false, r * 0.24f)
+                1 -> { stroke(r * 0.24f); canvas.drawCircle(cx, cy, r, p) }
+                else -> square(canvas, cx, cy, r, false, r * 0.24f, r * 0.3f)
+            }
         }
     }
 }

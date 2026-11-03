@@ -276,6 +276,32 @@ class SettingsActivity : Activity() {
         sw(UiText.text(this, "Show taskbar / dock"), Prefs.K_TASKBAR, true)
         sw(UiText.text(this, "Show Back / Home / Recents buttons"), Prefs.K_NAV, true)
         sw(UiText.text(this, "Taskbar takes the colour of the open app (experimental)"), Prefs.K_APPCOLOR, false)
+        note(UiText.text(this, "Look of the Back / Home / Recents buttons on the taskbar"))
+        val ng = RadioGroup(this)
+        NavStyle.names.forEachIndexed { i, n ->
+            val r = RadioButton(this)
+            r.text = UiText.text(this, n)
+            r.id = 400 + i
+            r.setTextColor(Colors.text(this))
+            r.setPadding(dp(2), dp(7), dp(2), dp(7))
+            ng.addView(r)
+        }
+        ng.check(400 + Prefs.getInt(this, Prefs.K_NAVSTYLE, NavStyle.SYSTEM))
+        ng.setOnCheckedChangeListener { _, id -> Prefs.setInt(this, Prefs.K_NAVSTYLE, id - 400) }
+        addSetting(ng)
+        for ((label, key, def) in listOf(
+            Triple("Long press Back", Prefs.K_LP_BACK, NavActions.NONE),
+            Triple("Long press Home", Prefs.K_LP_HOME, NavActions.ASSIST),
+            Triple("Long press Recents", Prefs.K_LP_RECENTS, NavActions.NONE))) {
+            val cur = Prefs.getInt(this, key, def).coerceIn(0, NavActions.names.size - 1)
+            val title = UiText.text(this, label)
+            btn(title + ": " + UiText.text(this, NavActions.names[cur])) {
+                android.app.AlertDialog.Builder(this).setTitle(title)
+                    .setSingleChoiceItems(NavActions.names.map { UiText.text(this, it) }.toTypedArray(), cur) { d, which ->
+                        Prefs.setInt(this, key, which); d.dismiss(); recreate()
+                    }.setNegativeButton("OK", null).show()
+            }
+        }
         sw(UiText.text(this, "Show language switch icon while typing"), Prefs.K_IME, true)
         sw(UiText.text(this, "Windows key opens the app drawer"), Prefs.K_WINKEY, true)
         val h = TextView(this)
