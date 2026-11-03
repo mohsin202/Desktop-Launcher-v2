@@ -476,7 +476,8 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
     private val center = LinearLayout(ctx)
     private val right = LinearLayout(ctx)
     private val appsRow = LinearLayout(ctx)
-    private val scroll = android.widget.HorizontalScrollView(ctx)
+    private var curCell = 0
+    private val scroll = SnapScroll(ctx) { curCell }
     private var menu: PopupMenuX? = null
     private var lastFocused: String? = null
 
@@ -541,6 +542,7 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
         appsRow.removeAllViews()
         val h = ctx.dp(Prefs.tbDp(ctx))
         val cell = minOf(h, ctx.dp(52))
+        curCell = cell
         right.visibility = if (showNav) View.VISIBLE else View.GONE
 
         center.addView(StartButton(ctx).also {
@@ -564,7 +566,7 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
         val unpinned = svc.running.filter { it !in shownPk }.mapNotNull { pkg -> AppRepo.byPkg(ctx, pkg)?.let { pkg to it.comp } }
         if (unpinned.isNotEmpty() && pinned.isNotEmpty()) {
             val divider = View(ctx)
-            divider.setBackgroundColor(Colors.text(ctx) and 0x55FFFFFF)
+            divider.setBackgroundColor((fg ?: Colors.text(ctx)) and 0x55FFFFFF)
             appsRow.addView(divider, LinearLayout.LayoutParams(ctx.dp(1), (h * 0.58f).toInt()).also {
                 it.leftMargin = ctx.dp(5); it.rightMargin = ctx.dp(5)
             })
@@ -610,7 +612,7 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
         }
         if (showNav && body == null) {
             // taskbar mode: the category button takes the place of the time
-            val pill = CatPill(ctx, 68, 22) { (Colors.iconBg(ctx) and 0x00FFFFFF) or 0xCC000000.toInt() }
+            val pill = CatPill(ctx, 68, 22, outline = { fg ?: Colors.accent(ctx) }, ink = { fg }) { (Colors.iconBg(ctx) and 0x00FFFFFF) or 0xCC000000.toInt() }
             pill.setOnClickListener {
                 Launch.start(ctx, android.content.Intent(ctx, LauncherActivity::class.java).setAction(LauncherActivity.ACTION_CATEGORIES))
             }
@@ -649,7 +651,7 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
         f.addView(ic, FrameLayout.LayoutParams(s, s, Gravity.CENTER))
         if (running) {
             val line = View(ctx)
-            line.background = Colors.rounded(Colors.accent(ctx), ctx.dp(2).toFloat())
+            line.background = Colors.rounded(fg ?: Colors.accent(ctx), ctx.dp(2).toFloat())
             f.addView(line, FrameLayout.LayoutParams(ctx.dp(if (active) 18 else 6), ctx.dp(3), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
                 .also { it.bottomMargin = ctx.dp(3) })
         }
@@ -682,7 +684,7 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
 class StartButton(c: Context) : View(c) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     override fun onDraw(canvas: Canvas) {
-        p.color = Colors.accent(context)
+        p.color = tintFg() ?: Colors.accent(context)
         val s = minOf(width, height) * 0.38f
         val step = s / 2f
         val r = s * 0.11f
@@ -709,10 +711,54 @@ class ImeButton(c: Context) : View(c) {
 
 /** kind: 0 back, 1 home, 2 recents */
 /** Icon colour of a taskbar button: follows the bar's tint when it has one. */
-fun View.barFg(): Int {
+fun View.tintFg(): Int? {
     var p = parent
-    while (p != null) { if (p is TaskbarView) return p.fg ?: Colors.text(context); p = p.parent }
-    return Colors.text(context)
+    while (p != null) { if (p is TaskbarView) return p.fg; p = p.parent }
+    return null
+}
+
+fun View.barFg(): Int = tintFg() ?: Colors.text(context)
+
+/**
+ * The app strip: only whole icons are visible at rest. The strip is as wide as a whole number of icons and, after a drag or
+ * mouse-wheel scroll, glides to the nearest icon edge, so no icon is ever cut in half at either end.
+ */
+class SnapScroll(c: Context, private val cell: () -> Int) : android.widget.HorizontalScrollView(c) {
+    private var touching = false
+    private val snap = Runnable {
+        val row = getChildAt(0) as? android.view.ViewGroup ?: return@Runnable
+        var best = scrollX
+        var bd = Int.MAX_VALUE
+        for (i in 0 until row.childCount) {
+            val d = Math.abs(row.getChildAt(i).left - scrollX)
+            if (d < bd) { bd = d; best = row.getChildAt(i).left }
+        }
+        val max = (row.width - width).coerceAtLeast(0)
+        best = best.coerceIn(0, max)
+        if (Math.abs(best - scrollX) > 1) smoothScrollTo(best, 0)
+    }
+
+    override fun onMeasure(w: Int, h: Int) {
+        val cw = cell()
+        val size = MeasureSpec.getSize(w)
+        if (cw > 0 && MeasureSpec.getMode(w) != MeasureSpec.UNSPECIFIED && size >= cw) {
+            super.onMeasure(MeasureSpec.makeMeasureSpec(size / cw * cw, MeasureSpec.EXACTLY), h)
+        } else super.onMeasure(w, h)
+    }
+
+    override fun onScrollChanged(l: Int, t: Int, ol: Int, ot: Int) {
+        super.onScrollChanged(l, t, ol, ot)
+        removeCallbacks(snap)
+        if (!touching) postDelayed(snap, 140)
+    }
+
+    override fun onTouchEvent(ev: android.view.MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> { touching = true; removeCallbacks(snap) }
+            android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> { touching = false; removeCallbacks(snap); postDelayed(snap, 160) }
+        }
+        return super.onTouchEvent(ev)
+    }
 }
 
 class NavButton(c: Context, private val kind: Int) : View(c) {

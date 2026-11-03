@@ -201,8 +201,12 @@ object Screens {
 }
 
 /** Rounded button: category name, or dots (current page dark). */
-class CatPill(ctx: Context, private val wDp: Int, private val hDp: Int, private val bgColor: () -> Int) : View(ctx) {
+class CatPill(ctx: Context, private val wDp: Int, private val hDp: Int,
+              /** Thin outline colour, or null for none. */ private val outline: (() -> Int)? = null,
+              /** Text colour override, or null for the normal one. */ private val ink: (() -> Int?)? = null,
+              private val bgColor: () -> Int) : View(ctx) {
     private val bg = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val ol = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val l: () -> Unit = { invalidate() }
@@ -225,6 +229,12 @@ class CatPill(ctx: Context, private val wDp: Int, private val hDp: Int, private 
             bg.color = if (Blur.on(context)) (base and 0x00FFFFFF) or 0xA0000000.toInt() else base
             canvas.drawRoundRect(0f, 0f, w, h, h / 2f, h / 2f, bg)
         }
+        outline?.let {
+            ol.color = it()
+            ol.strokeWidth = context.dp(1).toFloat() * 1.4f
+            val half = ol.strokeWidth / 2f
+            canvas.drawRoundRect(half, half, w - half, h - half, h / 2f, h / 2f, ol)
+        }
         val fg = Colors.iconFg(context)
         if (Screens.dots && Screens.pages > 0) {
             val n = Screens.pages
@@ -237,7 +247,7 @@ class CatPill(ctx: Context, private val wDp: Int, private val hDp: Int, private 
                 x += step
             }
         } else {
-            tp.color = Colors.text(context)
+            tp.color = ink?.invoke() ?: Colors.text(context)
             tp.textSize = h * 0.5f
             val s = TextUtils.ellipsize(Screens.name, android.text.TextPaint(tp), w - h * 0.6f, TextUtils.TruncateAt.END).toString()
             canvas.drawText(s, w / 2f, h / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
