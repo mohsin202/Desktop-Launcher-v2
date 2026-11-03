@@ -51,7 +51,9 @@ class Result(
  * an icon grid, and universal search (apps, settings, shortcuts, contacts, files, web).
  * Used both inside the launcher activity and inside the taskbar overlay window.
  */
-class DrawerView(private val c: Context, private val bottomMargin: Int, private val wide: Boolean = false, private val onClose: () -> Unit) : FrameLayout(c) {
+class DrawerView(private val c: Context, private val bottomMargin: Int, private val wide: Boolean = false,
+                 /** 0 = normal; 1 / 2 = a vertical taskbar sits on the left / right edge and the panel hugs it. */
+                 private val barSide: Int = 0, private val onClose: () -> Unit) : FrameLayout(c) {
     val search = EditText(c)
     private val panel = LinearLayout(c)
     private val grid = GridView(c)
@@ -178,14 +180,21 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         panel.isClickable = true
         // Portrait (and phone mode): centred. Landscape desktop: starts near the drawer button.
         val portrait = dm.heightPixels > dm.widthPixels
-        val centred = wide || portrait
+        val centred = (wide || portrait) && barSide == 0
         centredMode = centred
         setWillNotDraw(false)
-        val lp = LayoutParams(pw, ph, if (centred) Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL else Gravity.BOTTOM or Gravity.START)
+        val lp = LayoutParams(pw, ph, when {
+            barSide != 0 -> Gravity.BOTTOM or (if (barSide == 2) Gravity.RIGHT else Gravity.LEFT)
+            centred -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            else -> Gravity.BOTTOM or Gravity.START
+        })
         // keep clear of the punch hole / side navigation bar in landscape
         val si = Insets.safe(c)
         lp.leftMargin = si.left; lp.rightMargin = si.right
-        if (!centred) lp.marginStart = c.dp(8) + (if (Prefs.direction(c) == 2) si.right else si.left)
+        if (barSide != 0) {
+            // the window already stops at the taskbar, so only a small gap on that side
+            if (barSide == 1) lp.leftMargin = c.dp(8) else lp.rightMargin = c.dp(8)
+        } else if (!centred) lp.marginStart = c.dp(8) + (if (Prefs.direction(c) == 2) si.right else si.left)
         lp.bottomMargin = bottomMargin
         addView(panel, lp)
 
@@ -292,7 +301,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         }
     }
 
-    private fun onLeftCorner() = !centredMode && layoutDirection == LAYOUT_DIRECTION_RTL
+    private fun onLeftCorner() = if (barSide != 0) barSide == 2 else !centredMode && layoutDirection == LAYOUT_DIRECTION_RTL
 
     /** -1 = top left handle, +1 = top right handle, 0 = none. Centred drawers have both, side drawers only the far one. */
     private fun handleSide(x: Float, y: Float): Int {

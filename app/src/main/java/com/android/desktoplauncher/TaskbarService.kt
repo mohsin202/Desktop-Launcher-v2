@@ -50,6 +50,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
     private var bar: TaskbarView? = null
     /** 0 = bar along the bottom; 1 / 2 = vertical bar over a system navigation bar on the left / right edge. */
     private var barSide = 0
+    private var barShown = true
     private var drawer: DrawerView? = null
     override val running = LinkedHashSet<String>()
     override var focused: String? = null
@@ -262,8 +263,8 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
             val side = navSide()
             val thick = uctx.dp(Prefs.tbDp(this))
             val top = if (side != 0) statusTop() else 0
-            val len = wm.currentWindowMetrics.bounds.height() - top
-            v = TaskbarView(uctx, this, true, false, side, len)
+            val len = wm.currentWindowMetrics.bounds.height()
+            v = TaskbarView(uctx, this, true, false, side, len, top)
             val lp = WindowManager.LayoutParams(
                 if (side != 0) thick else MATCH, if (side != 0) len else thick,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
@@ -276,7 +277,6 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
             lp.gravity = if (side == 0) Gravity.BOTTOM else Gravity.TOP or (if (side == 2) Gravity.END else Gravity.START)
             lp.setFitInsetsTypes(0)
             lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            if (side != 0) lp.y = top
             // not under the punch hole or a side navigation bar in landscape
             val si = Insets.safe(uctx)
             if (side == 0 && si.left + si.right > 0) {
@@ -288,10 +288,30 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
             wm.addView(v, lp)
             bar = v
             barSide = side
+            barShown = true
+            // follow the system bars: hidden in video / fullscreen, back when the system buttons come back
+            v.onSystemBars = { visible -> setBarShown(visible) }
         } catch (e: Exception) {
             Log.e("DesktopTaskbar", "Could not add taskbar overlay", e)
             if (v != null) try { wm.removeView(v) } catch (_: Exception) {}
             bar = null
+        }
+    }
+
+    /** The window stays alive (so it keeps receiving inset changes) but is invisible and lets touches through while hidden. */
+    private fun setBarShown(show: Boolean) {
+        val b = bar ?: return
+        if (show == barShown) return
+        barShown = show
+        try {
+            val lp = b.layoutParams as WindowManager.LayoutParams
+            lp.flags = if (show) lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+                       else lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            b.alpha = if (show) 1f else 0f
+            wm.updateViewLayout(b, lp)
+            if (!show) closeDrawer()
+        } catch (e: Exception) {
+            Log.e("DesktopTaskbar", "Could not show/hide taskbar", e)
         }
     }
 
@@ -307,9 +327,9 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
         val barH = if (bar != null && barSide == 0) uctx.dp(Prefs.tbDp(this)) else 0
         val barW = if (bar != null && barSide != 0) uctx.dp(Prefs.tbDp(this)) else 0
         val screenH = wm.currentWindowMetrics.bounds.height()
-        val d = DrawerView(uctx, uctx.dp(8)) { closeDrawer() }
+        val d = DrawerView(uctx, uctx.dp(8), false, if (barW > 0) barSide else 0) { closeDrawer() }
         val lp = WindowManager.LayoutParams(
-            if (barW > 0) wm.currentWindowMetrics.bounds.width() - barW else MATCH, screenH - barH,
+            if (barW > 0) wm.currentWindowMetrics.bounds.width() - barW else MATCH, screenH - barH - (if (barW > 0) statusTop() else 0),
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
@@ -317,6 +337,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
             PixelFormat.TRANSLUCENT
         )
         lp.gravity = Gravity.TOP or (if (barSide == 1) Gravity.END else Gravity.START)
+        if (barW > 0) lp.y = statusTop()
         lp.setFitInsetsTypes(0)
         lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
         lp.title = "DesktopDrawer"
@@ -353,11 +374,13 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
 }
 
 class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, private val showNav: Boolean, private val pill: Boolean,
-                  private val side: Int = 0, private val len: Int = 0) : FrameLayout(ctx) {
+                  private val side: Int = 0, private val len: Int = 0, private val inset: Int = 0) : FrameLayout(ctx) {
     /**
      * Side mode: the whole bar is laid out horizontally in [body] (len x thickness) and turned 90 degrees so it lies along the
      * screen edge; the icons are turned back, so they stay upright like the system navigation buttons do.
      */
+    /** Set by the service: called with false when the system bars are hidden (video, fullscreen) and true when they return. */
+    var onSystemBars: ((Boolean) -> Unit)? = null
     private val body: FrameLayout? = if (side != 0) FrameLayout(ctx) else null
     private val host: FrameLayout get() = body ?: this
     private val center = LinearLayout(ctx)
@@ -385,6 +408,11 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
         scroll.overScrollMode = View.OVER_SCROLL_NEVER
         scroll.clipToPadding = false
         scroll.addView(appsRow, FrameLayout.LayoutParams(WRAP, MATCH))
+        if (showNav) setOnApplyWindowInsetsListener { _, ins ->
+            // hidden only when neither the navigation bar nor the status bar is visible
+            onSystemBars?.invoke(ins.isVisible(android.view.WindowInsets.Type.navigationBars()) || ins.isVisible(android.view.WindowInsets.Type.statusBars()))
+            ins
+        }
         host.addView(center, LayoutParams(MATCH, MATCH, Gravity.START or Gravity.CENTER_VERTICAL).also {
             it.leftMargin = ctx.dp(4)
         })
@@ -392,8 +420,11 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
         if (body != null) {
             val thick = ctx.dp(Prefs.tbDp(ctx))
             body.pivotX = 0f; body.pivotY = 0f
-            body.rotation = 90f
-            body.translationX = thick.toFloat()
+            // Left edge (device top to the right): the bar reads top to bottom. Right edge: bottom to top, like the system buttons.
+            if (side == 1) { body.rotation = 90f; body.translationX = thick.toFloat() }
+            else { body.rotation = -90f; body.translationY = len.toFloat() }
+            // keep the icons clear of the status bar area, which is now part of the bar
+            body.setPadding(if (side == 1) inset else 0, 0, if (side == 2) inset else 0, 0)
             addView(body, LayoutParams(len, thick))
         }
         refresh()
@@ -517,7 +548,7 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
         for (i in 0 until g.childCount) {
             val v = g.getChildAt(i)
             if (v is android.view.ViewGroup) uprightIcons(v)
-            else if (v is android.widget.ImageView || v is NavButton || v is SearchButton || v is StartButton || v is ImeButton) v.rotation = -90f
+            else if (v is android.widget.ImageView || v is NavButton || v is SearchButton || v is StartButton || v is ImeButton) v.rotation = if (side == 1) -90f else 90f
         }
     }
 
