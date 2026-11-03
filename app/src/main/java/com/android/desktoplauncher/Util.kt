@@ -407,6 +407,7 @@ object Launch {
     }
 
     private var hiddenOpen = false
+    private var hiddenErr: String? = null
     /** Android hides some framework calls (here: asking for the freeform windowing mode). Lifts that restriction for this app. */
     private fun unlockHidden() {
         if (hiddenOpen) return
@@ -418,7 +419,39 @@ object Launch {
             val getRuntime = getDeclared.invoke(vm, "getRuntime", arrayOfNulls<Class<*>>(0)) as java.lang.reflect.Method
             val setEx = getDeclared.invoke(vm, "setHiddenApiExemptions", arrayOf<Class<*>>(Array<String>::class.java)) as java.lang.reflect.Method
             setEx.invoke(getRuntime.invoke(null), arrayOf("L"))
-        } catch (_: Throwable) { }
+        } catch (e: Throwable) { hiddenErr = e.toString() }
+    }
+
+    /** Plain-text report of everything the freeform launch depends on (shown in Settings > Windows). */
+    fun diagnose(c: Context): String {
+        val sb = StringBuilder()
+        fun line(k: String, v: Any?) { sb.append(k).append(": ").append(v).append('\n') }
+        line("Android SDK", Build.VERSION.SDK_INT)
+        line("Device", Build.MANUFACTURER + " " + Build.MODEL)
+        val pm = c.packageManager
+        line("Feature freeform windows", pm.hasSystemFeature("android.software.freeform_window_management"))
+        line("Feature picture-in-picture", pm.hasSystemFeature("android.software.picture_in_picture"))
+        for (k in listOf("enable_freeform_support", "force_resizable_activities", "freeform_window_management", "enable_non_resizable_multi_window", "force_desktop_mode_on_external_displays"))
+            line("Global $k", try { Settings.Global.getString(c.contentResolver, k) } catch (_: Throwable) { "?" })
+        line("WRITE_SECURE_SETTINGS", hasSecure(c))
+        line("Setting: open apps in freeform", Prefs.bool(c, Prefs.K_FREEFORM, false))
+        line("Setting: helper window", Prefs.bool(c, Prefs.K_FFHACK, false))
+        line("Helper window running", FreeformHackActivity.running())
+        hiddenOpen = false; hiddenErr = null
+        unlockHidden()
+        line("Hidden API unlock", if (hiddenErr == null) "no error" else hiddenErr)
+        try {
+            val o = android.app.ActivityOptions.makeBasic()
+            val m = o.javaClass.getMethod("setLaunchWindowingMode", Int::class.javaPrimitiveType)
+            m.invoke(o, 5)
+            line("setLaunchWindowingMode(5)", "worked")
+        } catch (e: Throwable) { line("setLaunchWindowingMode(5)", e.toString()) }
+        try {
+            val o = android.app.ActivityOptions.makeBasic()
+            o.setLaunchBounds(sizeRect(c, 2))
+            line("setLaunchBounds", "worked, " + sizeRect(c, 2))
+        } catch (e: Throwable) { line("setLaunchBounds", e.toString()) }
+        return sb.toString()
     }
 
     /** Opens the invisible freeform helper window once (Taskbar's "freeform hack"), if the setting is on. */

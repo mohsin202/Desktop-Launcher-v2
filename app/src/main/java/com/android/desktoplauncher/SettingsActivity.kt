@@ -237,6 +237,13 @@ class SettingsActivity : Activity() {
         sw(UiText.text(this, "Freeform helper window (older Android)"), Prefs.K_FFHACK, false)
         note(UiText.text(this, "Opens an invisible 1x1 freeform window first, like the Taskbar app does, so that apps opened afterwards also open as windows."))
         note(UiText.text(this, "Special permission (optional)") + ": " + UiText.text(this, if (Launch.hasSecure(this)) "granted" else "not granted — tap the button to copy the adb command"))
+        btn(UiText.text(this, "Freeform test (show details)")) {
+            val report = Launch.diagnose(this)
+            android.app.AlertDialog.Builder(this).setTitle(UiText.text(this, "Freeform test (show details)")).setMessage(report)
+                .setPositiveButton(UiText.text(this, "Copy")) { _, _ ->
+                    getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("freeform", report))
+                }.setNegativeButton("OK", null).show()
+        }
         btn(UiText.text(this, if (Launch.hasSecure(this)) "Switch on system freeform support" else "Copy adb command for the special permission")) {
             if (Launch.hasSecure(this)) toast(UiText.text(this, if (Launch.ensureFreeform(this)) "Freeform support is on" else "Could not change the system setting"))
             else {
