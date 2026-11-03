@@ -50,7 +50,6 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
     private var bar: TaskbarView? = null
     /** 0 = bar along the bottom; 1 / 2 = vertical bar over a system navigation bar on the left / right edge. */
     private var barSide = 0
-    private var barShown = true
     private var drawer: DrawerView? = null
     override val running = LinkedHashSet<String>()
     override var focused: String? = null
@@ -288,30 +287,10 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
             wm.addView(v, lp)
             bar = v
             barSide = side
-            barShown = true
-            // follow the system bars: hidden in video / fullscreen, back when the system buttons come back
-            v.onSystemBars = { visible -> setBarShown(visible) }
         } catch (e: Exception) {
             Log.e("DesktopTaskbar", "Could not add taskbar overlay", e)
             if (v != null) try { wm.removeView(v) } catch (_: Exception) {}
             bar = null
-        }
-    }
-
-    /** The window stays alive (so it keeps receiving inset changes) but is invisible and lets touches through while hidden. */
-    private fun setBarShown(show: Boolean) {
-        val b = bar ?: return
-        if (show == barShown) return
-        barShown = show
-        try {
-            val lp = b.layoutParams as WindowManager.LayoutParams
-            lp.flags = if (show) lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-                       else lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-            b.alpha = if (show) 1f else 0f
-            wm.updateViewLayout(b, lp)
-            if (!show) closeDrawer()
-        } catch (e: Exception) {
-            Log.e("DesktopTaskbar", "Could not show/hide taskbar", e)
         }
     }
 
@@ -379,8 +358,6 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
      * Side mode: the whole bar is laid out horizontally in [body] (len x thickness) and turned 90 degrees so it lies along the
      * screen edge; the icons are turned back, so they stay upright like the system navigation buttons do.
      */
-    /** Set by the service: called with false when the system bars are hidden (video, fullscreen) and true when they return. */
-    var onSystemBars: ((Boolean) -> Unit)? = null
     private val body: FrameLayout? = if (side != 0) FrameLayout(ctx) else null
     private val host: FrameLayout get() = body ?: this
     private val center = LinearLayout(ctx)
@@ -408,11 +385,6 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
         scroll.overScrollMode = View.OVER_SCROLL_NEVER
         scroll.clipToPadding = false
         scroll.addView(appsRow, FrameLayout.LayoutParams(WRAP, MATCH))
-        if (showNav) setOnApplyWindowInsetsListener { _, ins ->
-            // hidden only when neither the navigation bar nor the status bar is visible
-            onSystemBars?.invoke(ins.isVisible(android.view.WindowInsets.Type.navigationBars()) || ins.isVisible(android.view.WindowInsets.Type.statusBars()))
-            ins
-        }
         host.addView(center, LayoutParams(MATCH, MATCH, Gravity.START or Gravity.CENTER_VERTICAL).also {
             it.leftMargin = ctx.dp(4)
         })
