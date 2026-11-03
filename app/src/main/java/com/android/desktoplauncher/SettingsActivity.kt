@@ -275,6 +275,7 @@ class SettingsActivity : Activity() {
         note(UiText.text(this, "Smallest width") + ": $sw600 dp — " + UiText.text(this, if (sw600 >= 600) "tablet mode: the dock is merged into the taskbar (over all apps)." else "phone mode: normal dock on the home screen. At 600 dp or more the dock becomes the taskbar."))
         sw(UiText.text(this, "Show taskbar / dock"), Prefs.K_TASKBAR, true)
         sw(UiText.text(this, "Show Back / Home / Recents buttons"), Prefs.K_NAV, true)
+        sw(UiText.text(this, "Taskbar takes the colour of the open app (experimental)"), Prefs.K_APPCOLOR, false)
         sw(UiText.text(this, "Show language switch icon while typing"), Prefs.K_IME, true)
         sw(UiText.text(this, "Windows key opens the app drawer"), Prefs.K_WINKEY, true)
         val h = TextView(this)

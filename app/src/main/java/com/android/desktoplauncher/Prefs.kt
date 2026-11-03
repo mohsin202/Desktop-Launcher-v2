@@ -21,6 +21,7 @@ object Prefs {
     const val K_THEMED_ALL = "themed_all"
     const val K_TASKBAR = "taskbar"
     const val K_NAV = "nav"
+    const val K_APPCOLOR = "tbAppColor"
     const val K_TBH = "tbh"
     const val K_PINNED = "pinned"
     const val K_DESKAPPS = "deskApps"

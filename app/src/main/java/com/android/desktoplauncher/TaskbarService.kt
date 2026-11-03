@@ -22,7 +22,9 @@ import android.widget.TextClock
 import android.view.ContextThemeWrapper
 import android.util.Log
 import android.app.ActivityManager
+import android.graphics.Bitmap
 import android.os.Handler
+import android.os.SystemClock
 import android.os.Looper
 
 /**
@@ -51,6 +53,9 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
     /** 0 = bar along the bottom; 1 / 2 = vertical bar over a system navigation bar on the left / right edge. */
     private var barSide = 0
     private var barShown = true
+    private var tintReq: Runnable? = null
+    private var lastShot = 0L
+    private var tintKey: String? = null
     private var drawer: DrawerView? = null
     override val running = LinkedHashSet<String>()
     override var focused: String? = null
@@ -103,6 +108,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
                 scan()
             }
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                requestTint()
                 if (e.packageName?.toString() != editPkg && e.className?.toString()?.contains("InputMethod") != true) editing = false
                 scan()
             }
@@ -215,6 +221,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         sync()
+        requestTint(700)
     }
 
     /** Re-reads preferences: adds/removes the bar and updates its size. */
@@ -244,6 +251,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
                 if (refresh) b.refresh()
             }
             setBarShown(vis)
+            requestTint(300)
         } catch (e: Exception) {
             Log.e("DesktopTaskbar", "Taskbar sync failed", e)
             removeBar()
@@ -326,6 +334,67 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
         }
     }
 
+    /** Experimental: asks for a screenshot shortly after the app changes and tints the bar with the colour of the system navigation strip. */
+    private fun requestTint(delay: Long = 500) {
+        tintReq?.let { handler.removeCallbacks(it) }
+        val r = Runnable { sampleTint() }
+        tintReq = r
+        handler.postDelayed(r, delay)
+    }
+
+    private fun sampleTint() {
+        val b = bar ?: return
+        if (!Prefs.bool(this, Prefs.K_APPCOLOR, false)) { b.tint = null; tintKey = null; return }
+        if (!barShown || focused == null || focused == packageName) { b.tint = null; tintKey = null; return }
+        // only look again when the app or the screen direction changed (the bar flickers for a moment while it is sampled)
+        val key = "$focused|$barSide|${resources.configuration.orientation}"
+        if (key == tintKey) return
+        val now = SystemClock.uptimeMillis()
+        if (now - lastShot < 1100) { requestTint(1150 - (now - lastShot)); return }
+        lastShot = now
+        tintKey = key
+        fun restore() { b.alpha = if (barShown) 1f else 0f }
+        b.alpha = 0f   // so the bar itself is not in the picture
+        handler.postDelayed({
+            try {
+                takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : AccessibilityService.TakeScreenshotCallback {
+                    override fun onSuccess(r: AccessibilityService.ScreenshotResult) {
+                        restore()
+                        b.tint = try { stripColor(r) } catch (e: Exception) { Log.e("DesktopTaskbar", "colour sample failed", e); null }
+                    }
+                    override fun onFailure(code: Int) { restore() }
+                })
+            } catch (e: Exception) { restore() }
+        }, 90)
+    }
+
+    /** Average colour of a few points on the strip where the system navigation bar sits, or null when they differ too much. */
+    private fun stripColor(r: AccessibilityService.ScreenshotResult): Int? {
+        val hb = r.hardwareBuffer
+        val hw = Bitmap.wrapHardwareBuffer(hb, r.colorSpace) ?: run { hb.close(); return null }
+        val bmp = hw.copy(Bitmap.Config.ARGB_8888, false)
+        hb.close()
+        if (bmp == null) return null
+        val w = bmp.width; val h = bmp.height
+        val pts = ArrayList<Pair<Int, Int>>()
+        when (barSide) {
+            0 -> for (f in floatArrayOf(0.04f, 0.1f, 0.9f, 0.96f)) pts += Pair((w * f).toInt(), h - 3)
+            2 -> for (f in floatArrayOf(0.25f, 0.45f, 0.65f, 0.85f)) pts += Pair(w - 3, (h * f).toInt())
+            else -> for (f in floatArrayOf(0.25f, 0.45f, 0.65f, 0.85f)) pts += Pair(2, (h * f).toInt())
+        }
+        val cols = pts.map { bmp.getPixel(it.first.coerceIn(0, w - 1), it.second.coerceIn(0, h - 1)) }
+        bmp.recycle()
+        for (a in cols) for (c in cols) {
+            if (Math.abs(android.graphics.Color.red(a) - android.graphics.Color.red(c)) > 36 ||
+                Math.abs(android.graphics.Color.green(a) - android.graphics.Color.green(c)) > 36 ||
+                Math.abs(android.graphics.Color.blue(a) - android.graphics.Color.blue(c)) > 36) return null
+        }
+        val rr = cols.sumOf { android.graphics.Color.red(it) } / cols.size
+        val gg = cols.sumOf { android.graphics.Color.green(it) } / cols.size
+        val bb = cols.sumOf { android.graphics.Color.blue(it) } / cols.size
+        return android.graphics.Color.rgb(rr, gg, bb)
+    }
+
     private fun removeBar() {
         bar?.let { try { wm.removeView(it) } catch (_: Exception) {} }
         bar = null
@@ -392,6 +461,16 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
      */
     /** Set by the service: called when the window insets change, so it can check whether the system bars are showing. */
     var onInsets: (() -> Unit)? = null
+
+    /** Colour taken from the open app (null = normal Material You colour). Set by the service when the option is on. */
+    var tint: Int? = null
+        set(v) { if (field != v) { field = v; refresh() } }
+
+    /** Icon colour that reads well on the tint. */
+    val fg: Int? get() = tint?.let { t ->
+        val lum = (0.299f * android.graphics.Color.red(t) + 0.587f * android.graphics.Color.green(t) + 0.114f * android.graphics.Color.blue(t)) / 255f
+        if (lum < 0.55f) 0xFFFFFFFF.toInt() else 0xFF1B1B1F.toInt()
+    }
     private val body: FrameLayout? = if (side != 0) FrameLayout(ctx) else null
     private val host: FrameLayout get() = body ?: this
     private val center = LinearLayout(ctx)
@@ -452,7 +531,8 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
         RippleDrawable(ColorStateList.valueOf(0x33000000), null, Colors.rounded(0xFFFFFFFF.toInt(), ctx.dp(10).toFloat()))
 
     fun refresh() {
-        val bg = if (pill) Colors.panel(ctx, Colors.taskbar(ctx), ctx.dp(28).toFloat()) else android.graphics.drawable.ColorDrawable(Colors.taskbar(ctx))
+        val barCol = tint?.let { Colors.glass(ctx, it) } ?: Colors.taskbar(ctx)
+        val bg = if (pill) Colors.panel(ctx, barCol, ctx.dp(28).toFloat()) else android.graphics.drawable.ColorDrawable(barCol)
         if (body != null) body.background = bg else background = bg
         // Keep the scroll position across rebuilds (the strip used to jump back to the start).
         val keepX = scroll.scrollX
@@ -616,7 +696,7 @@ class StartButton(c: Context) : View(c) {
 class ImeButton(c: Context) : View(c) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     override fun onDraw(canvas: Canvas) {
-        p.color = Colors.text(context)
+        p.color = barFg()
         p.strokeWidth = context.dp(2).toFloat() * 0.8f
         val cx = width / 2f
         val cy = height / 2f
@@ -628,10 +708,17 @@ class ImeButton(c: Context) : View(c) {
 }
 
 /** kind: 0 back, 1 home, 2 recents */
+/** Icon colour of a taskbar button: follows the bar's tint when it has one. */
+fun View.barFg(): Int {
+    var p = parent
+    while (p != null) { if (p is TaskbarView) return p.fg ?: Colors.text(context); p = p.parent }
+    return Colors.text(context)
+}
+
 class NavButton(c: Context, private val kind: Int) : View(c) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeJoin = Paint.Join.ROUND }
     override fun onDraw(canvas: Canvas) {
-        p.color = Colors.text(context)
+        p.color = barFg()
         p.strokeWidth = context.dp(2).toFloat()
         val cx = width / 2f
         val cy = height / 2f
@@ -654,7 +741,7 @@ class SearchButton(c: Context) : View(c) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        p.color = Colors.text(context)
+        p.color = barFg()
         p.strokeWidth = context.dp(2).toFloat()
         val r = minOf(width, height) * 0.17f
         val cx = width / 2f - r * 0.18f
