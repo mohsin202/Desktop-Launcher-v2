@@ -855,7 +855,11 @@ class NavButton(c: Context, private val kind: Int) : View(c) {
             }
             NavStyle.XIAOMI -> when (kind) {
                 0 -> tri(canvas, cx, cy, r, true, r * 0.45f)
-                1 -> { stroke(r * 0.3f); canvas.drawCircle(cx, cy, r * 0.95f - r * 0.15f, p); fill(); canvas.drawCircle(cx, cy, r * 0.36f, p) }
+                1 -> {   // thin ring, a gap, then a solid disc; a little larger than Back and Recents
+                    val big = r * 1.22f
+                    stroke(r * 0.15f); canvas.drawCircle(cx, cy, big - r * 0.075f, p)
+                    fill(); canvas.drawCircle(cx, cy, big * 0.66f, p)
+                }
                 else -> square(canvas, cx, cy, r * 0.95f, true, r * 0.3f, r * 0.4f)
             }
             NavStyle.PIXEL -> when (kind) {
@@ -865,7 +869,7 @@ class NavButton(c: Context, private val kind: Int) : View(c) {
             }
             NavStyle.SAMSUNG -> when (kind) {
                 0 -> chevron(canvas, cx, cy, r, r * 0.3f)
-                1 -> { stroke(r * 0.28f); canvas.drawRoundRect(RectF(cx - r * 1.2f, cy - r * 0.8f, cx + r * 1.2f, cy + r * 0.8f), r * 0.8f, r * 0.8f, p) }
+                1 -> { stroke(r * 0.26f); canvas.drawRoundRect(RectF(cx - r, cy - r, cx + r, cy + r), r * 0.6f, r * 0.6f, p) }   // rounded square
                 else -> { stroke(r * 0.28f); for (i in -1..1) canvas.drawLine(cx + i * r * 0.85f, cy - r * 0.9f, cx + i * r * 0.85f, cy + r * 0.9f, p) }
             }
             NavStyle.VIVO -> when (kind) {
