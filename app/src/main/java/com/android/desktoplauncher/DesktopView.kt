@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetHostView
 import android.content.ComponentName
 import android.content.Context
 import android.graphics.Color
+import android.graphics.RectF
 import android.os.Bundle
 import android.view.Gravity
 import android.view.GestureDetector
@@ -78,14 +79,14 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             if (DeskDrag.ours(event.clipDescription) || (event.action == android.view.DragEvent.ACTION_DRAG_ENDED && extDrag)) {
                 return@setOnDragListener when (event.action) {
                     android.view.DragEvent.ACTION_DRAG_STARTED -> { extDrag = true; true }
-                    android.view.DragEvent.ACTION_DRAG_LOCATION -> { edgeHover(event.x); true }
-                    android.view.DragEvent.ACTION_DRAG_EXITED -> { edgeStop(); true }
+                    android.view.DragEvent.ACTION_DRAG_LOCATION -> { edgeHover(event.x); showHover(event.x, event.y, null); true }
+                    android.view.DragEvent.ACTION_DRAG_EXITED -> { edgeStop(); showHover(-1f, -1f, null); true }
                     android.view.DragEvent.ACTION_DROP -> {
-                        edgeStop(); extDrag = false
+                        edgeStop(); extDrag = false; showHover(-1f, -1f, null)
                         val p = DeskDrag.parse(event.clipData)
                         p != null && dropExternal(p, event.x, event.y)
                     }
-                    android.view.DragEvent.ACTION_DRAG_ENDED -> { extDrag = false; edgeStop(); true }
+                    android.view.DragEvent.ACTION_DRAG_ENDED -> { extDrag = false; edgeStop(); showHover(-1f, -1f, null); true }
                     else -> true
                 }
             }
@@ -215,6 +216,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         val g = ghost ?: return
         val w = g.bounds.width(); val h = g.bounds.height()
         g.setBounds((x - w / 2f).toInt(), (y - h / 2f).toInt(), (x + w / 2f).toInt(), (y + h / 2f).toInt())
+        showHover(x, y, carry)
         invalidate()
     }
 
@@ -225,6 +227,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         dragLock = false
         ghost?.let { overlay.remove(it) }
         ghost = null
+        showHover(-1f, -1f, null)
         if (x >= 0f && y >= 0f && placeAt(e.key, x, y, e)) {
             if (e is Entry.FolderE) FolderStore.update(context, e.id) { it.sx = 1; it.sy = 1 }
             reload()
@@ -251,7 +254,40 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
      * or the nearest free cell. False when this screen cannot take manual places.
      */
     private fun placeAt(key: String, x: Float, y: Float, skip: Entry?): Boolean {
-        if (!manualScreen() || gCw <= 0 || gCh <= 0) return false
+        val spot = spotFor(x, y, skip) ?: return false
+        Cats.assign(context, key, if (Cats.isCustom(catId)) catId else null)
+        savePosHere(mapOf(key to spot))
+        return true
+    }
+
+    private var hover: IntArray? = null
+    private val hoverPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+    /** Outline of the cell where the dragged icon would land. */
+    private fun showHover(x: Float, y: Float, skip: Entry?) {
+        val n = if (x < 0f) null else spotFor(x, y, skip)
+        if (n?.toList() == hover?.toList()) return
+        hover = n
+        invalidate()
+    }
+
+    override fun dispatchDraw(canvas: android.graphics.Canvas) {
+        super.dispatchDraw(canvas)
+        val h = hover ?: return
+        val l = paddingLeft + d(8) + h[0] * gCw + d(4)
+        val t = paddingTop + h[1] * gCh + d(2)
+        val r = RectF(l.toFloat(), t.toFloat(), (l + gCw - d(8)).toFloat(), (t + gCh - d(4)).toFloat())
+        hoverPaint.style = android.graphics.Paint.Style.FILL
+        hoverPaint.color = (Colors.accent(context) and 0x00FFFFFF) or 0x26000000
+        canvas.drawRoundRect(r, d(14).toFloat(), d(14).toFloat(), hoverPaint)
+        hoverPaint.style = android.graphics.Paint.Style.STROKE
+        hoverPaint.strokeWidth = d(2).toFloat()
+        hoverPaint.color = Colors.accent(context)
+        canvas.drawRoundRect(r, d(14).toFloat(), d(14).toFloat(), hoverPaint)
+    }
+
+    private fun spotFor(x: Float, y: Float, skip: Entry?): IntArray? {
+        if (!manualScreen() || gCw <= 0 || gCh <= 0) return null
         val c0 = ((x - paddingLeft - d(8)) / gCw).toInt().coerceIn(0, gCols - 1)
         val r0 = ((y - paddingTop) / gCh).toInt().coerceIn(0, gRows - 1)
         var best: IntArray? = null
@@ -261,10 +297,34 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             val dd = (cc - c0) * (cc - c0) + (rr - r0) * (rr - r0)
             if (dd < bestD) { bestD = dd; best = intArrayOf(cc, rr) }
         }
-        val spot = best ?: return false
-        Cats.assign(context, key, if (Cats.isCustom(catId)) catId else null)
-        savePosHere(mapOf(key to spot))
-        return true
+        return best
+    }
+
+    /** A file / folder dropped from the drawer: copy it here, move it here or only make a shortcut. */
+    private fun askFileDrop(f: File, x: Float, y: Float) {
+        val c = context
+        val loc = IntArray(2); getLocationOnScreen(loc)
+        fun finish(dest: File?) {
+            if (dest == null) { c.toast(UiText.text(c, "Could not create shortcut")); return }
+            placeAt("file:" + dest.absolutePath, x, y, null)
+            Bus.fire()
+            reload()
+        }
+        fun transfer(move: Boolean) {
+            Thread {
+                val dest = try {
+                    val d0 = Files.unique(Files.root(c), f.name)
+                    if (f.isDirectory && d0.absolutePath.startsWith(f.absolutePath + "/")) null
+                    else { if (move) Files.move(f, d0) else Files.copyRec(f, d0); d0.takeIf { it.exists() } }
+                } catch (_: Exception) { null }
+                post { finish(dest) }
+            }.start()
+        }
+        PopupMenuX(c, this).show(loc[0] + x.toInt(), loc[1] + y.toInt(), listOf(
+            MenuItem("Copy here") { transfer(false) },
+            MenuItem("Move here") { transfer(true) },
+            MenuItem("Create shortcut") { finish(DeskDrag.makeShortcut(c, f)) }
+        ))
     }
 
     /** An app or file dropped from the drawer / search. */
@@ -282,8 +342,8 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             DeskDrag.FILE -> {
                 val f = File(p.value)
                 if (!f.exists()) return false
-                val dest = DeskDrag.makeShortcut(c, f) ?: return false
-                key = "file:" + dest.absolutePath
+                askFileDrop(f, x, y)
+                return true
             }
             else -> return false
         }
@@ -375,9 +435,15 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     // ------------------------------------------------------------ screens (categories and pages)
 
     fun refresh() { rebuild() }
-    fun catOrder(): List<String> = order
+    fun catOrder(): List<String> = order.filter { Cats.shownInMode(context, it) }
     /** The screens that are reachable by swiping / the page buttons: hidden ones are left out. */
-    private fun navOrder(): List<String> = order.filter { !Cats.isHidden(context, it) }
+    private fun navOrder(): List<String> = order.filter { !Cats.isHidden(context, it) && Cats.shownInMode(context, it) }
+
+    /** One screen mode on / off. Leaving a hidden screen goes to All. */
+    fun setOneScreen(on: Boolean) {
+        Prefs.setBool(context, "oneScreen", on)
+        if (on && !Cats.shownInMode(context, catId)) goTo(Cats.ALL, 0) else rebuild()
+    }
     fun pageCount(cat: String): Int = layouts[cat]?.count ?: 1
     fun widgetsLocked() = catId != Cats.ALL && catId != Cats.WIDGETS
 
@@ -401,6 +467,45 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         val used = (allWidgets.map { pageOfW(it.wid) } + allFrees.map { pageOfW(it.wid) }).maxOrNull() ?: -1
         return maxOf(1, stored, used + 1)
     }
+    /** Deletes the user's own layout page of All together with every icon, folder and widget that is on it. */
+    fun deleteFreePage() {
+        val c = context
+        val onPage = ArrayList<Entry>()
+        val pos = layouts[Cats.ALL]?.pos
+        for (e in allEntries) if (pos?.get(e.key)?.get(0) == 0) onPage += e
+        val hidden = Prefs.list(c, Prefs.K_HIDDEN).toMutableList()
+        val apps = Prefs.list(c, Prefs.K_DESKAPPS).toMutableList()
+        val folders = FolderStore.load(c)
+        for (e in onPage) when (e) {
+            is Entry.AppE -> apps.remove(e.info.comp.flattenToString())
+            is Entry.FileE -> {
+                if (e.file.extension == "desktoplink") try { e.file.delete() } catch (_: Exception) {}
+                else hidden += e.file.absolutePath
+            }
+            is Entry.FolderE -> folders.removeAll { it.id == e.id }
+        }
+        Prefs.setList(c, Prefs.K_HIDDEN, hidden, fire = false)
+        Prefs.setList(c, Prefs.K_DESKAPPS, apps, fire = false)
+        FolderStore.save(c, folders)
+        for (b in allWidgets.filter { pageOfW(it.wid) < 0 }) removeWidget(b)
+        for (f in allFrees.filter { pageOfW(it.wid) < 0 }) removeFree(f)
+        Cats.deleteFree(c)
+        reload()
+    }
+
+    /** Deletes one page of the Widgets screen with its widgets; the pages after it move up. */
+    fun deleteWidgetPage(page: Int) {
+        val n = widgetPageCount()
+        if (n <= 1) return
+        for (b in allWidgets.filter { pageOfW(it.wid) == page }) removeWidget(b)
+        for (f in allFrees.filter { pageOfW(it.wid) == page }) removeFree(f)
+        for (k in wPageOf.keys.toList()) { val v = wPageOf[k] ?: continue; if (v > page) wPageOf[k] = v - 1 }
+        saveWPages(true)
+        Prefs.setStr(context, "wpages", (n - 1).toString(), fire = false)
+        pageIdx = pageIdx.coerceAtMost(n - 2)
+        rebuild()
+    }
+
     /** The "+" of the Widgets screen: one more (empty) page. */
     fun addWidgetPage() {
         Prefs.setStr(context, "wpages", (widgetPageCount() + 1).toString(), fire = false)
@@ -467,8 +572,8 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         val valid = customs.map { it.id }.toSet()
         layouts.clear()
         val ord = ArrayList<String>()
-        ord += Cats.DISCOVER; ord += Cats.ALL
-        ord += Cats.WIDGETS
+        ord += Cats.DISCOVER; ord += Cats.WIDGETS
+        ord += Cats.ALL
         for (cat in listOf(Cats.APPS, Cats.MEDIA, Cats.SHORTCUTS, Cats.FOLDERS, Cats.FILES))
             if (allEntries.any { Cats.matches(cat, it, assign[it.key], valid) }) ord += cat
         for (cu in customs) ord += cu.id
@@ -591,7 +696,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     }
 
     fun goHome() {
-        val h = Cats.home(context).let { if (it in order) it else Cats.ALL }
+        val h = Cats.home(context).let { if (it in order && Cats.shownInMode(context, it)) it else Cats.ALL }
         if (catId != h || pageIdx != 0) goTo(h, 0)
     }
 
@@ -678,7 +783,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
         if (cat == Cats.DISCOVER) {
             p.color = Color.WHITE; p.textAlign = android.graphics.Paint.Align.CENTER; p.textSize = tw * 0.16f
-            cv.drawText(UiText.text(context, "Discover"), tw / 2f, th / 2f, p)
+            cv.drawText(UiText.text(context, "Feed"), tw / 2f, th / 2f, p)
             return bmp
         }
         fun box(l: Int, t: Int, r: Int, b: Int) {

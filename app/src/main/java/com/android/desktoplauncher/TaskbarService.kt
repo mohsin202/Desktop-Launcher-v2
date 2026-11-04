@@ -429,8 +429,6 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
         val barW = if (bar != null && barSide != 0) uctx.dp(Prefs.tbDp(this)) else 0
         val screenH = wm.currentWindowMetrics.bounds.height()
         val d = DrawerView(uctx, uctx.dp(8), false, if (barW > 0) barSide else 0) { closeDrawer() }
-        // dragging an icon to the desktop is only possible while our launcher is the app behind the drawer
-        d.canDrag = { focused == packageName }
         d.dragHook = { on ->
             // while an icon is carried, the drawer window lets touches / drops through to the desktop
             try {
