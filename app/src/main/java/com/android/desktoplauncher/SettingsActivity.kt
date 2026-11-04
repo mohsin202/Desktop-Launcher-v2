@@ -84,6 +84,21 @@ class M3Switch(c: Context) : View(c) {
     }
 }
 
+/** Thin back arrow: points right in right-to-left layouts, left otherwise. */
+class BackArrow(c: Context, private val rtl: Boolean) : View(c) {
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    override fun onMeasure(w: Int, h: Int) { setMeasuredDimension(context.dp(44), context.dp(44)) }
+    override fun onDraw(cv: Canvas) {
+        p.color = Colors.text(context)
+        p.strokeWidth = context.dp(2).toFloat() * 1.1f
+        val cx = width / 2f; val cy = height / 2f; val r = context.dp(10).toFloat()
+        val d = if (rtl) 1f else -1f
+        cv.drawLine(cx - d * r, cy, cx + d * r, cy, p)
+        cv.drawLine(cx + d * r, cy, cx + d * r * 0.4f, cy - r * 0.6f, p)
+        cv.drawLine(cx + d * r, cy, cx + d * r * 0.4f, cy + r * 0.6f, p)
+    }
+}
+
 class SettingsActivity : Activity() {
     private class Pg(val id: String, val title: String, val sub: String, val sym: String, val build: () -> Unit)
 
@@ -124,11 +139,16 @@ class SettingsActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)   // no "Desktop Launcher Settings" bar
         window.setDecorFitsSystemWindows(false)
         currentPage = b?.getString("page")
         root = FrameLayout(this)
         root.setBackgroundColor(Colors.surfaceSolid(this))
         setContentView(root)
+        actionBar?.hide()
+        // dark status bar icons on the light background
+        if (!Colors.night(this)) window.insetsController?.setSystemBarsAppearance(
+            android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS, android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)
         root.setOnApplyWindowInsetsListener { v, ins ->
             val bars = Insets.of(ins)
             v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
@@ -181,7 +201,7 @@ class SettingsActivity : Activity() {
         title.text = UiText.text(this, "Settings")
         title.textSize = 30f
         title.setTypeface(null, android.graphics.Typeface.BOLD)
-        title.setTextColor(Colors.text(this))
+        title.setTextColor(Colors.accent(this))
         title.setPadding(dp(8), dp(8), dp(8), dp(18))
         c.addView(title)
         val box = LinearLayout(this)
@@ -205,7 +225,7 @@ class SettingsActivity : Activity() {
             val t = TextView(this)
             t.text = pgTitle(pg.title)
             t.textSize = 17f
-            t.setTextColor(Colors.text(this))
+            t.setTextColor(if (pg.id == selected) Colors.iconFg(this) else Colors.accent(this))
             tb.addView(t)
             val s = TextView(this)
             s.text = UiText.text(this, pg.sub)
@@ -236,11 +256,7 @@ class SettingsActivity : Activity() {
         c.orientation = LinearLayout.VERTICAL
         c.setPadding(dp(16), dp(12), dp(16), dp(30))
         if (withBack) {
-            val back = TextView(this)
-            back.text = if (isRtl()) "→" else "←"
-            back.textSize = 26f
-            back.setTextColor(Colors.text(this))
-            back.setPadding(dp(8), dp(6), dp(8), dp(6))
+            val back = BackArrow(this, isRtl())
             back.setOnClickListener { currentPage = null; render() }
             c.addView(back, LinearLayout.LayoutParams(-2, -2))
         }
@@ -248,7 +264,7 @@ class SettingsActivity : Activity() {
         title.text = pgTitle(pg.title)
         title.textSize = 32f
         title.setTypeface(null, android.graphics.Typeface.BOLD)
-        title.setTextColor(Colors.text(this))
+        title.setTextColor(Colors.accent(this))
         title.setPadding(dp(8), dp(if (withBack) 18 else 28), dp(8), dp(18))
         c.addView(title)
         col = c
@@ -472,6 +488,8 @@ class SettingsActivity : Activity() {
         chips(listOf(UiText.text(this, "Small"), UiText.text(this, "Normal"), UiText.text(this, "Large")), Prefs.iconMode(this)) { i ->
             Prefs.setIconMode(this, i); render()
         }
+        note(UiText.text(this, "Icon shape"))
+        shapeRow()
         card("Themed icons")
         sw(UiText.text(this, "Enable themed icons"), Prefs.K_THEMED, false) { refreshPreview?.invoke() }
         sw(UiText.text(this, "Themed icon on unsupported icons"), Prefs.K_THEMED_ALL, false) { refreshPreview?.invoke() }
@@ -480,6 +498,44 @@ class SettingsActivity : Activity() {
         sw(UiText.text(this, "Show notification dots"), Prefs.K_DOTS, true)
         val notifOn = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")?.contains(packageName) == true
         permSw(UiText.text(this, "Notification access (needed for dots)"), notifOn) { go(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+    }
+
+    /** Row of icon shapes, each with its name below; the chosen one has an accent outline. The row scrolls sideways. */
+    private fun shapeRow() {
+        val cur = Prefs.getInt(this, Prefs.K_ICONSHAPE, 0)
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.setPadding(0, dp(6), 0, dp(10))
+        IconShapes.names.forEachIndexed { i, n ->
+            val cell = LinearLayout(this)
+            cell.orientation = LinearLayout.VERTICAL
+            cell.gravity = Gravity.CENTER_HORIZONTAL
+            val sv = object : View(this) {
+                private val fillP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() }
+                private val lineP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+                private val path = android.graphics.Path()
+                override fun onDraw(cv: Canvas) {
+                    val pad = dp(5).toFloat()
+                    IconShapes.build(i, RectF(pad, pad, width - pad, height - pad), path)
+                    cv.drawPath(path, fillP)
+                    if (i == cur) { lineP.color = Colors.accent(context); lineP.strokeWidth = dp(3).toFloat(); cv.drawPath(path, lineP) }
+                }
+            }
+            sv.setOnClickListener { Prefs.setInt(this, Prefs.K_ICONSHAPE, i); render() }
+            cell.addView(sv, LinearLayout.LayoutParams(dp(60), dp(60)))
+            val lb = TextView(this)
+            lb.text = UiText.text(this, n)
+            lb.textSize = 12f
+            lb.gravity = Gravity.CENTER
+            lb.setTextColor(Colors.accent(this))
+            lb.setPadding(0, dp(4), 0, 0)
+            cell.addView(lb, LinearLayout.LayoutParams(-2, -2))
+            row.addView(cell, LinearLayout.LayoutParams(dp(78), -2))
+        }
+        val hs = android.widget.HorizontalScrollView(this)
+        hs.isHorizontalScrollBarEnabled = false
+        hs.addView(row)
+        addSetting(hs)
     }
 
     private fun secAppearance() {

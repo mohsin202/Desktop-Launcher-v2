@@ -23,6 +23,7 @@ object Prefs {
     const val K_NAV = "nav"
     const val K_APPCOLOR = "tbAppColor"
     const val K_NAVSTYLE = "navStyle"
+    const val K_ICONSHAPE = "iconShape"
     const val K_LP_BACK = "lpBack"
     const val K_LP_HOME = "lpHome"
     const val K_LP_RECENTS = "lpRecents"

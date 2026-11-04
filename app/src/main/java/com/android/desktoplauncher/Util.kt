@@ -164,7 +164,8 @@ object Icons {
     fun app(c: Context, comp: ComponentName, @Suppress("UNUSED_PARAMETER") themed: Boolean = false): Drawable {
         val on = Prefs.bool(c, Prefs.K_THEMED, false)
         val all = on && Prefs.bool(c, Prefs.K_THEMED_ALL, false)
-        val key = comp.flattenToString() + (if (on) (if (all) "#ta" else "#t") else "") + (if (Colors.night(c)) "n" else "d")
+        val shape = Prefs.getInt(c, Prefs.K_ICONSHAPE, 0)
+        val key = comp.flattenToString() + (if (on) (if (all) "#ta" else "#t") else "") + (if (Colors.night(c)) "n" else "d") + (if (shape != 0) "#s$shape" else "")
         cache[key]?.let { return it.newDrawable().mutate() }
         val d: Drawable = try {
             val base = c.packageManager.getActivityIcon(comp)
@@ -180,8 +181,9 @@ object Icons {
         } catch (e: Exception) {
             c.packageManager.defaultActivityIcon
         }
-        d.constantState?.let { cache[key] = it }
-        return d
+        val out = if (shape != 0) IconShapes.wrap(d, shape) else d
+        out.constantState?.let { cache[key] = it }
+        return out
     }
 
     /**
@@ -553,4 +555,111 @@ object Insets {
         c.getSystemService(android.view.WindowManager::class.java).currentWindowMetrics.windowInsets
             .getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
     } catch (_: Exception) { android.graphics.Insets.NONE }
+}
+
+
+/** Icon shapes the user can pick: the adaptive icon's two layers are drawn through the chosen outline. */
+object IconShapes {
+    const val SYSTEM = 0
+    val names = listOf("System", "Circle", "Squircle", "Rounded square", "Square", "Teardrop", "Diamond", "Hexagon", "Flower", "Arch")
+
+    private fun roundedPolygon(pts: List<android.graphics.PointF>, radius: Float, out: android.graphics.Path) {
+        val n = pts.size
+        for (i in 0 until n) {
+            val p0 = pts[(i + n - 1) % n]; val p1 = pts[i]; val p2 = pts[(i + 1) % n]
+            fun toward(a: android.graphics.PointF, b: android.graphics.PointF): android.graphics.PointF {
+                val dx = b.x - a.x; val dy = b.y - a.y
+                val len = Math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+                val t = minOf(radius, len / 2f) / len
+                return android.graphics.PointF(a.x + dx * t, a.y + dy * t)
+            }
+            val s = toward(p1, p0); val e = toward(p1, p2)
+            if (i == 0) out.moveTo(s.x, s.y) else out.lineTo(s.x, s.y)
+            out.quadTo(p1.x, p1.y, e.x, e.y)
+        }
+        out.close()
+    }
+
+    /** Draws shape [id] filling [r] into [out]. 0 (system) is drawn as a squircle where a preview is needed. */
+    fun build(id: Int, r: android.graphics.RectF, out: android.graphics.Path) {
+        out.reset()
+        val w = r.width(); val h = r.height(); val cx = r.centerX(); val cy = r.centerY()
+        when (id) {
+            1 -> out.addOval(r, android.graphics.Path.Direction.CW)
+            4 -> out.addRoundRect(r, w * 0.08f, h * 0.08f, android.graphics.Path.Direction.CW)
+            3 -> out.addRoundRect(r, w * 0.27f, h * 0.27f, android.graphics.Path.Direction.CW)
+            5 -> { val q = w / 2f; out.addRoundRect(r, floatArrayOf(q, q, 0f, 0f, q, q, q, q), android.graphics.Path.Direction.CW) }
+            6 -> roundedPolygon(listOf(android.graphics.PointF(cx, r.top), android.graphics.PointF(r.right, cy),
+                android.graphics.PointF(cx, r.bottom), android.graphics.PointF(r.left, cy)), w * 0.22f, out)
+            7 -> roundedPolygon((0 until 6).map { i ->
+                val a = Math.toRadians(60.0 * i - 90.0)
+                android.graphics.PointF(cx + (w / 2f) * Math.cos(a).toFloat(), cy + (h / 2f) * Math.sin(a).toFloat())
+            }, w * 0.12f, out)
+            8 -> {
+                for (i in 0..180) {
+                    val a = Math.PI * 2 * i / 180
+                    val k = 0.88f + 0.12f * Math.cos(8 * a).toFloat()
+                    val x = cx + (w / 2f) * k * Math.cos(a).toFloat(); val y = cy + (h / 2f) * k * Math.sin(a).toFloat()
+                    if (i == 0) out.moveTo(x, y) else out.lineTo(x, y)
+                }
+                out.close()
+            }
+            9 -> { val q = w / 2f; val s = w * 0.14f; out.addRoundRect(r, floatArrayOf(q, q, q, q, s, s, s, s), android.graphics.Path.Direction.CW) }
+            else -> {   // squircle (superellipse)
+                for (i in 0..120) {
+                    val a = Math.PI * 2 * i / 120
+                    val cs = Math.cos(a); val sn = Math.sin(a)
+                    val x = cx + (w / 2f) * Math.signum(cs).toFloat() * Math.pow(Math.abs(cs), 0.5).toFloat()
+                    val y = cy + (h / 2f) * Math.signum(sn).toFloat() * Math.pow(Math.abs(sn), 0.5).toFloat()
+                    if (i == 0) out.moveTo(x, y) else out.lineTo(x, y)
+                }
+                out.close()
+            }
+        }
+    }
+
+    fun wrap(d: android.graphics.drawable.Drawable, id: Int): android.graphics.drawable.Drawable {
+        if (d is android.graphics.drawable.AdaptiveIconDrawable) return ShapedIcon(d.background, d.foreground, id)
+        if (d is android.graphics.drawable.BitmapDrawable && d.intrinsicWidth == 216) return d   // a ready-made themed picture
+        // an old-style icon: a white plate in the chosen shape with the picture on it
+        val inset = android.graphics.drawable.InsetDrawable(d, 0.29f)
+        return ShapedIcon(android.graphics.drawable.ColorDrawable(0xFFFFFFFF.toInt()), inset, id)
+    }
+}
+
+class ShapedIcon(private val bg: android.graphics.drawable.Drawable, private val fg: android.graphics.drawable.Drawable, private val id: Int) :
+    android.graphics.drawable.Drawable() {
+    private val path = android.graphics.Path()
+
+    override fun onBoundsChange(b: android.graphics.Rect) {
+        // adaptive layers are 1.5 times the visible area
+        val dx = (b.width() * 0.25f).toInt(); val dy = (b.height() * 0.25f).toInt()
+        val r = android.graphics.Rect(b.left - dx, b.top - dy, b.right + dx, b.bottom + dy)
+        bg.bounds = r; fg.bounds = r
+        IconShapes.build(id, android.graphics.RectF(b), path)
+    }
+
+    override fun draw(c: android.graphics.Canvas) {
+        val s = c.save()
+        c.clipPath(path)
+        bg.draw(c); fg.draw(c)
+        c.restoreToCount(s)
+    }
+
+    override fun setAlpha(a: Int) { bg.alpha = a; fg.alpha = a }
+    override fun setColorFilter(f: android.graphics.ColorFilter?) { bg.colorFilter = f; fg.colorFilter = f }
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
+    override fun getIntrinsicWidth() = (108 * android.content.res.Resources.getSystem().displayMetrics.density).toInt()
+    override fun getIntrinsicHeight() = intrinsicWidth
+
+    override fun getConstantState(): ConstantState? {
+        val b = bg.constantState ?: return null
+        val f = fg.constantState ?: return null
+        val shape = id
+        return object : ConstantState() {
+            override fun newDrawable(): android.graphics.drawable.Drawable = ShapedIcon(b.newDrawable(), f.newDrawable(), shape)
+            override fun getChangingConfigurations() = 0
+        }
+    }
 }
