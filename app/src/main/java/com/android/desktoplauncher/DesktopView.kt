@@ -1481,7 +1481,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                 val iv = android.widget.ImageView(c)
                 val label: String
                 if (en is Entry.AppE) { iv.setImageDrawable(Icons.app(c, en.info.comp, false)); label = en.info.label }
-                else if (en is Entry.FileE) { Thumbs.bind(iv, en.file, d(56)); label = en.file.name } else label = ""
+                else if (en is Entry.FileE) { Thumbs.bind(iv, en.file, d(56)); label = en.file.shown() } else label = ""
                 cell.addView(iv, LinearLayout.LayoutParams(d(56), d(56)))
                 val t = TextView(c)
                 t.text = label
@@ -1676,7 +1676,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
             }
             is Entry.FileE -> {
                 Thumbs.bind(ic, e.file, sz)
-                label = e.file.name
+                label = e.file.shown()
                 if (Clip.cut && Clip.files.contains(e.file)) ic.alpha = 0.45f
             }
             is Entry.FolderE -> label = e.name

@@ -869,7 +869,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
             out += Result(true, "Files")
             val dirs = fs.filter { it.isDirectory }; val plain = fs.filter { !it.isDirectory }
             val visibleFiles = if (showAllFiles) fs else dirs.take(4) + plain.take(5)
-            for (f in visibleFiles) out += Result(false, f.name, f.parent ?: "", Icons.file(f), f, action = {
+            for (f in visibleFiles) out += Result(false, f.shown(), f.parent ?: "", Icons.file(f), f, action = {
                 if (f.extension == "desktoplink") {
                     try {
                         val target = f.readLines().getOrNull(1)?.let { File(it) }

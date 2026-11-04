@@ -663,3 +663,6 @@ class ShapedIcon(private val bg: android.graphics.drawable.Drawable, private val
         }
     }
 }
+
+/** Name to show for a file: a shortcut (.desktoplink) is shown without its ending. */
+fun File.shown(): String = if (extension == "desktoplink") name.removeSuffix(".desktoplink") else name
