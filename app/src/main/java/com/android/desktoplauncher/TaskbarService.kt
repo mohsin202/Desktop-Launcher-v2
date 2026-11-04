@@ -70,7 +70,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
     private val dismissed = HashSet<String>()
     private val handler = Handler(Looper.getMainLooper())
     private val pruneTick = object : Runnable {
-        override fun run() { pruneDead(); if (bar != null) setBarShown(systemBarsVisible()); handler.postDelayed(this, 4000) }
+        override fun run() { pruneDead(); if (bar != null) { navWin = detectNavWin(); setBarShown(systemBarsVisible() || navWin) }; handler.postDelayed(this, 4000) }
     }
 
     override fun onServiceConnected() {
@@ -209,6 +209,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
         val ime = imeWin || editing
         if (ime != imeShown) { imeShown = ime; changed = true }
         if (changed) bar?.refresh()
+        navWin = detectNavWin()
         // Accessibility events also arrive when the keyguard is shown/hidden.
         sync(false)
     }
@@ -253,8 +254,9 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
                 removeBar(); closeDrawer(); return
             }
             // While the system bars are hidden (video, fullscreen) keep the bar where it was and just hide it.
-            val vis = systemBarsVisible()
-            val side = if (vis) navSide() else barSide
+            val insetVis = systemBarsVisible()
+            val vis = insetVis || navWin
+            val side = if (insetVis) navSide() else barSide
             if (bar != null && barSide != side) removeBar()
             val b = bar
             if (b != null && side != 0) {
@@ -292,6 +294,26 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
         val st = w.getInsets(android.view.WindowInsets.Type.statusBars())
         n.left + n.right + n.bottom + n.top + st.top > 0
     } catch (_: Exception) { true }
+
+    /**
+     * The buttons that swipe up from the edge (or appear when the mouse touches the edge) are the system's own navigation bar
+     * window; it only exists while they are showing. The insets do not report these short-lived ("transient") bars.
+     */
+    private var navWin = false
+
+    private fun detectNavWin(): Boolean = try {
+        val b = wm.currentWindowMetrics.bounds
+        val sw = b.width(); val sh = b.height()
+        val r = android.graphics.Rect()
+        windows.any { w ->
+            if (w.type != AccessibilityWindowInfo.TYPE_SYSTEM) return@any false
+            w.getBoundsInScreen(r)
+            if (r.left < 0 || r.top < 0 || r.right > sw || r.bottom > sh || r.isEmpty) return@any false
+            val bottomStrip = r.bottom >= sh - 2 && r.height() <= sh / 4 && r.width() >= sw / 2
+            val sideStrip = (r.left <= 2 || r.right >= sw - 2) && r.width() <= sw / 4 && r.height() >= sh / 2
+            bottomStrip || sideStrip
+        }
+    } catch (_: Exception) { false }
 
     private fun statusTop(): Int = try {
         wm.currentWindowMetrics.windowInsets.getInsets(android.view.WindowInsets.Type.statusBars()).top
