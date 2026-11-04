@@ -75,6 +75,20 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         setOnLongClickListener { desktopMenu(lastX, lastY); true }
         setSecondaryClick { x, y -> desktopMenu(x, y) }
         setOnDragListener { _, event ->
+            if (DeskDrag.ours(event.clipDescription) || (event.action == android.view.DragEvent.ACTION_DRAG_ENDED && extDrag)) {
+                return@setOnDragListener when (event.action) {
+                    android.view.DragEvent.ACTION_DRAG_STARTED -> { extDrag = true; true }
+                    android.view.DragEvent.ACTION_DRAG_LOCATION -> { edgeHover(event.x); true }
+                    android.view.DragEvent.ACTION_DRAG_EXITED -> { edgeStop(); true }
+                    android.view.DragEvent.ACTION_DROP -> {
+                        edgeStop(); extDrag = false
+                        val p = DeskDrag.parse(event.clipData)
+                        p != null && dropExternal(p, event.x, event.y)
+                    }
+                    android.view.DragEvent.ACTION_DRAG_ENDED -> { extDrag = false; edgeStop(); true }
+                    else -> true
+                }
+            }
             val ls = event.localState
             if (ls is WidgetDrag) {
                 return@setOnDragListener when (event.action) {
@@ -122,8 +136,164 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (carry != null) {
+            val loc = IntArray(2); getLocationOnScreen(loc)
+            val x = ev.rawX - loc[0]; val y = ev.rawY - loc[1]
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_MOVE -> { moveGhost(x, y); edgeHover(x) }
+                MotionEvent.ACTION_UP -> finishCarry(x, y)
+                MotionEvent.ACTION_CANCEL -> finishCarry(-1f, -1f)
+            }
+            return true
+        }
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) { lastX = ev.rawX.toInt(); lastY = ev.rawY.toInt() }
         return super.dispatchTouchEvent(ev)
+    }
+
+    // ------------------------------------------------ dragging to / between screens
+
+    private var extDrag = false          // an app / file is being dragged in from the drawer
+    private var dragEntry: Entry? = null // a home icon is being dragged
+    private var dragView: View? = null
+    private var carry: Entry? = null     // the dragged home icon is now carried over the screens
+    private var ghost: android.graphics.drawable.BitmapDrawable? = null
+    private var edgeDir = 0
+    private val edgeFlip = Runnable { edgeFired() }
+
+    private fun logicalDir(dir: Int) = if (layoutDirection == LAYOUT_DIRECTION_RTL) -dir else dir
+
+    /** Finger near the left (-1) / right (+1) edge for a moment: go to the next screen. */
+    private fun edgeHover(x: Float) {
+        val z = d(28)
+        val dir = if (x < z) -1 else if (x > width - z) 1 else 0
+        if (dir == edgeDir) return
+        edgeDir = dir
+        removeCallbacks(edgeFlip)
+        if (dir != 0) postDelayed(edgeFlip, 550)
+    }
+
+    private fun edgeStop() { edgeDir = 0; removeCallbacks(edgeFlip) }
+
+    private fun edgeFired() {
+        if (edgeDir == 0) return
+        val ld = logicalDir(edgeDir)
+        if (stepTarget(ld) == null) return
+        val de = dragEntry; val dv = dragView
+        if (carry == null && de != null && dv != null) beginCarry(de, dv)
+        if (carry != null || extDrag) {
+            step(ld)
+            postDelayed(edgeFlip, 750)
+        }
+    }
+
+    /** Called by the icon touch handler while a home icon is being dragged. */
+    private fun trackEdge(e: Entry, v: View, rawX: Float) {
+        dragEntry = e; dragView = v
+        val loc = IntArray(2); getLocationOnScreen(loc)
+        edgeHover(rawX - loc[0])
+    }
+
+    private fun endTrack() { dragEntry = null; dragView = null; if (carry == null) edgeStop() }
+
+    private fun beginCarry(e: Entry, v: View) {
+        if (v.width <= 0 || v.height <= 0) return
+        val bmp = android.graphics.Bitmap.createBitmap(v.width, v.height, android.graphics.Bitmap.Config.ARGB_8888)
+        v.draw(android.graphics.Canvas(bmp))
+        val g = android.graphics.drawable.BitmapDrawable(resources, bmp)
+        ghost = g
+        val cx = v.left + v.width / 2f + v.translationX
+        val cy = v.top + v.height / 2f + v.translationY
+        g.setBounds((cx - v.width / 2f).toInt(), (cy - v.height / 2f).toInt(), (cx + v.width / 2f).toInt(), (cy + v.height / 2f).toInt())
+        overlay.add(g)
+        carry = e
+        dragEntry = null; dragView = null
+        dragLock = true
+        performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+    }
+
+    private fun moveGhost(x: Float, y: Float) {
+        val g = ghost ?: return
+        val w = g.bounds.width(); val h = g.bounds.height()
+        g.setBounds((x - w / 2f).toInt(), (y - h / 2f).toInt(), (x + w / 2f).toInt(), (y + h / 2f).toInt())
+        invalidate()
+    }
+
+    private fun finishCarry(x: Float, y: Float) {
+        val e = carry ?: return
+        carry = null
+        edgeStop()
+        dragLock = false
+        ghost?.let { overlay.remove(it) }
+        ghost = null
+        if (x >= 0f && y >= 0f && placeAt(e.key, x, y, e)) {
+            if (e is Entry.FolderE) FolderStore.update(context, e.id) { it.sx = 1; it.sy = 1 }
+            reload()
+        } else {
+            if (x >= 0f) context.toast(UiText.text(context, "Open All or your own screen to place icons"))
+            rebuild()
+        }
+    }
+
+    private fun manualScreen() = catId == Cats.ALL || Cats.isCustom(catId)
+
+    private fun cellTaken(col: Int, row: Int, skip: Entry?): Boolean {
+        for ((en, _) in items) {
+            if (en === skip) continue
+            val c = cells[en.key] ?: continue
+            val sp = spanOf(en)
+            if (col >= c[0] && col < c[0] + sp[0] && row >= c[1] && row < c[1] + sp[1]) return true
+        }
+        return false
+    }
+
+    /**
+     * Puts the item at the screen point (x, y) of this view on the screen that is showing: the cell under the finger,
+     * or the nearest free cell. False when this screen cannot take manual places.
+     */
+    private fun placeAt(key: String, x: Float, y: Float, skip: Entry?): Boolean {
+        if (!manualScreen() || gCw <= 0 || gCh <= 0) return false
+        val c0 = ((x - paddingLeft - d(8)) / gCw).toInt().coerceIn(0, gCols - 1)
+        val r0 = ((y - paddingTop) / gCh).toInt().coerceIn(0, gRows - 1)
+        var best: IntArray? = null
+        var bestD = Int.MAX_VALUE
+        for (cc in 0 until gCols) for (rr in 0 until gRows) {
+            if (blockedByWidget(cc, rr) || cellTaken(cc, rr, skip)) continue
+            val dd = (cc - c0) * (cc - c0) + (rr - r0) * (rr - r0)
+            if (dd < bestD) { bestD = dd; best = intArrayOf(cc, rr) }
+        }
+        val spot = best ?: return false
+        Cats.assign(context, key, if (Cats.isCustom(catId)) catId else null)
+        savePosHere(mapOf(key to spot))
+        return true
+    }
+
+    /** An app or file dropped from the drawer / search. */
+    private fun dropExternal(p: DeskDrag.Payload, x: Float, y: Float): Boolean {
+        val c = context
+        val key: String
+        when (p.kind) {
+            DeskDrag.APP -> {
+                val cn = ComponentName.unflattenFromString(p.value) ?: return false
+                if (AppRepo.find(c, cn) == null) return false
+                val l = Prefs.list(c, Prefs.K_DESKAPPS)
+                if (p.value !in l) Prefs.setList(c, Prefs.K_DESKAPPS, l + p.value, fire = false)
+                key = "app:" + p.value
+            }
+            DeskDrag.FILE -> {
+                val f = File(p.value)
+                if (!f.exists()) return false
+                val dest = DeskDrag.makeShortcut(c, f) ?: return false
+                key = "file:" + dest.absolutePath
+            }
+            else -> return false
+        }
+        // an app that sat inside a folder leaves it
+        for (fd in FolderStore.load(c)) if (key in fd.members) FolderStore.update(c, fd.id) { it.members.remove(key) }
+        if (!placeAt(key, x, y, null)) {
+            c.toast(UiText.text(c, "Added to the desktop. Open All or your own screen to choose its place"))
+        }
+        reload()
+        return true
     }
 
     private fun d(v: Int) = context.dp(v)
@@ -400,13 +570,18 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
 
     /** One page further (+1) or back (-1) through all screens; false at the very first / last page. */
     fun step(dir: Int): Boolean {
+        val t = stepTarget(dir) ?: return false
+        goTo(t.first, t.second, dir)
+        return true
+    }
+
+    private fun stepTarget(dir: Int): Pair<String, Int>? {
         val nav = navOrder().let { if (catId in it) it else order }
         var ci = nav.indexOf(catId); if (ci < 0) ci = 0
         var p = pageIdx + dir
-        if (p < 0) { if (ci == 0) return false; ci--; p = pageCount(nav[ci]) - 1 }
-        else if (p >= pageCount(catId)) { if (ci >= nav.lastIndex) return false; ci++; p = 0 }
-        goTo(nav[ci], p, dir)
-        return true
+        if (p < 0) { if (ci == 0) return null; ci--; p = pageCount(nav[ci]) - 1 }
+        else if (p >= pageCount(catId)) { if (ci >= nav.lastIndex) return null; ci++; p = 0 }
+        return nav[ci] to p
     }
 
     fun nextCategory() {
@@ -431,7 +606,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         return false
     }
 
-    fun homeIdle() = catId != Cats.DISCOVER && folderPanel == null && editFolder == null && !dragLock && allWidgets.none { it.editing() } && allFrees.none { it.editing() }
+    fun homeIdle() = carry == null && catId != Cats.DISCOVER && folderPanel == null && editFolder == null && !dragLock && allWidgets.none { it.editing() } && allFrees.none { it.editing() }
 
     private fun canSwipe() = folderPanel == null && editFolder == null && !dragLock && allWidgets.none { it.editing() } && allFrees.none { it.editing() }
 
@@ -1330,11 +1505,13 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                     if (state == 2) {
                         if (far) moved = true
                         v.translationX = dx; v.translationY = dy
+                        trackEdge(e, v, ev.rawX)
                     }
                     return true
                 }
                 MotionEvent.ACTION_UP -> {
-                    dragLock = false
+                    if (carry == null) dragLock = false
+                    endTrack()
                     v.removeCallbacks(longPress)
                     if (blockLong) { blockLong = false; return true }
                     if (fResize && e is Entry.FolderE) {
@@ -1357,7 +1534,8 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                     return true
                 }
                 MotionEvent.ACTION_CANCEL -> {
-                    dragLock = false
+                    if (carry == null) dragLock = false
+                    endTrack()
                     v.removeCallbacks(longPress)
                     if (fResize && e is Entry.FolderE) { fResize = false; FolderStore.update(context, e.id) { it.sx = e.sx; it.sy = e.sy } }
                     state = 0; secondary = false

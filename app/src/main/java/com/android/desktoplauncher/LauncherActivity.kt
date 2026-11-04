@@ -236,8 +236,10 @@ class LauncherActivity : Activity() {
         } catch (_: Throwable) {}
     }
 
+    private var drawerDragging = false
+
     private fun syncBlur() {
-        val on = drawer != null || catMenu != null || sheet != null || extBlur
+        val on = (drawer != null && !drawerDragging) || catMenu != null || sheet != null || extBlur
         Blur.behind(this, desktop, on)
         Blur.behind(this, catBar, on)
     }
@@ -248,6 +250,7 @@ class LauncherActivity : Activity() {
         if (drawer != null) closeDrawer() else {
             val bm = if (!Modes.tablet(this) && barOn()) padBottom + dockH + dp(16) else padBottom + dp(8)
             val d = DrawerView(this, bm, !Modes.tablet(this)) { closeDrawer() }
+            d.dragHook = { on -> drawerDragging = on; syncBlur() }
             root.addView(d, FrameLayout.LayoutParams(MATCH, MATCH))
             drawer = d
             d.post { d.onShown() }
@@ -277,6 +280,7 @@ class LauncherActivity : Activity() {
     fun closeDrawer() {
         drawer?.let { root.removeView(it) }
         drawer = null
+        drawerDragging = false
         syncBlur()
         TaskbarService.instance?.closeDrawer()
     }

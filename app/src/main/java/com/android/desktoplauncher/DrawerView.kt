@@ -55,6 +55,15 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
                  /** 0 = normal; 1 / 2 = a vertical taskbar sits on the left / right edge and the panel hugs it. */
                  private val barSide: Int = 0, private val onClose: () -> Unit) : FrameLayout(c) {
     val search = EditText(c)
+    /** Set by the host: may a drag to the desktop start now (the desktop must be showing behind the drawer)? */
+    var canDrag: () -> Boolean = { true }
+    /** Called with true when a drag starts (the host should uncover the desktop) and false when it is over. */
+    var dragHook: ((Boolean) -> Unit)? = null
+    private var pend: DeskDrag.Payload? = null
+    private var pendIcon: android.graphics.drawable.Drawable? = null
+    private var downX = 0f
+    private var downY = 0f
+    private var dragging = false
     private val panel = LinearLayout(c)
     private val grid = GridView(c)
     private val list = ListView(c)
@@ -96,7 +105,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
             val cell = (cv as? AppCell) ?: AppCell(c)
             val a = apps[p]
             cell.bind(a)
-            cell.setSecondaryClick { x, y -> showAppMenu(a, x, y, cell) }
+            cell.setSecondaryClick { x, y -> showAppMenu(a, x, y, cell, false) }
             return cell
         }
     }
@@ -197,6 +206,16 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         } else if (!centred) lp.marginStart = c.dp(8) + (if (Prefs.direction(c) == 2) si.right else si.left)
         lp.bottomMargin = bottomMargin
         addView(panel, lp)
+        // a tiny view that only exists to hear when a drag is over
+        val sink = View(c)
+        sink.setOnDragListener { _, ev ->
+            when (ev.action) {
+                android.view.DragEvent.ACTION_DRAG_STARTED -> dragging
+                android.view.DragEvent.ACTION_DRAG_ENDED -> { dragEnded(ev.result); true }
+                else -> false
+            }
+        }
+        addView(sink, LayoutParams(1, 1))
 
         search.hint = UiText.text(c, "Search")
         search.setSingleLine()
@@ -241,7 +260,11 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
                     c.toast("Shortcut created on Desktop")
                 } catch (_: Exception) { c.toast("Could not create shortcut") }
             } }
-            PopupMenuX(c, this).also { it.spotlight = v }.show(loc[0], loc[1] + v.height, items)
+            menu?.dismiss()
+            r.file?.let { f -> armDrag(DeskDrag.Payload(DeskDrag.FILE, f.absolutePath), Icons.file(f)) }
+            val pm = PopupMenuX(c, this).also { it.spotlight = v }
+            menu = pm
+            pm.show(loc[0], loc[1] + v.height, items)
             true
         }
         panel.addView(list, LinearLayout.LayoutParams(MATCH, 0, 1f).also { it.topMargin = c.dp(6) })
@@ -391,6 +414,14 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         if (!wide && (resizing || ev.actionMasked == android.view.MotionEvent.ACTION_DOWN)) {
             if (resizeTouch(ev)) return true
         }
+        when (ev.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> { pend = null; downX = ev.rawX; downY = ev.rawY }
+            android.view.MotionEvent.ACTION_MOVE -> if (pend != null && !dragging &&
+                Math.hypot((ev.rawX - downX).toDouble(), (ev.rawY - downY).toDouble()) > c.dp(12) && canDrag()) {
+                beginDrag(); return true
+            }
+            android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> pend = null
+        }
         if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
             val loc = IntArray(2)
             search.getLocationOnScreen(loc)
@@ -422,8 +453,31 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
 
     private fun launch(a: AppInfo) { Launch.app(c, a.comp); onClose() }
 
-    private fun showAppMenu(a: AppInfo, x: Int, y: Int, target: View? = null) {
+    /** Long press on an icon: if the finger now moves, the menu goes away and the icon is carried to the desktop. */
+    private fun armDrag(p: DeskDrag.Payload, icon: android.graphics.drawable.Drawable?) { pend = p; pendIcon = icon }
+
+    private fun beginDrag() {
+        val p = pend ?: return
+        pend = null
         menu?.dismiss()
+        hideKeyboardIfVisible()
+        if (DeskDrag.start(this, p, pendIcon)) {
+            dragging = true
+            alpha = 0f
+            dragHook?.invoke(true)
+        }
+    }
+
+    private fun dragEnded(dropped: Boolean) {
+        if (!dragging) return
+        dragging = false
+        dragHook?.invoke(false)
+        if (dropped) onClose() else alpha = 1f
+    }
+
+    private fun showAppMenu(a: AppInfo, x: Int, y: Int, target: View? = null, drag: Boolean = true) {
+        menu?.dismiss()
+        if (drag) armDrag(DeskDrag.Payload(DeskDrag.APP, a.comp.flattenToString()), Icons.app(c, a.comp, false))
         val pinned = Prefs.list(c, Prefs.K_PINNED).contains(a.comp.flattenToString())
         val m = PopupMenuX(c, this)
         m.spotlight = target
@@ -562,7 +616,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
                     val cell = AppCell(c)
                     cell.bind(a)
                     cell.setOnClickListener { remember(); launch(a) }
-                    cell.setSecondaryClick { x, y -> showAppMenu(a, x, y, cell) }
+                    cell.setSecondaryClick { x, y -> showAppMenu(a, x, y, cell, false) }
                     cell.setOnLongClickListener { v ->
                         val loc = IntArray(2); v.getLocationOnScreen(loc)
                         showAppMenu(a, loc[0] + v.width / 2, loc[1] + v.height / 2, v); true
@@ -668,7 +722,11 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
             row.setOnClickListener { Files.open(c, f); onClose() }
             row.setOnLongClickListener { v ->
                 val loc = IntArray(2); v.getLocationOnScreen(loc)
-                PopupMenuX(c, this).also { it.spotlight = v }.show(loc[0], loc[1] + v.height, listOf(
+                menu?.dismiss()
+                armDrag(DeskDrag.Payload(DeskDrag.FILE, f.absolutePath), Icons.file(f))
+                val pm = PopupMenuX(c, this).also { it.spotlight = v }
+                menu = pm
+                pm.show(loc[0], loc[1] + v.height, listOf(
                     MenuItem("Open") { Files.open(c, f); onClose() },
                     MenuItem("Create shortcut on Desktop") {
                         if (Downloads.createShortcut(c, f)) {
