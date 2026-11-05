@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Folder with the blue "stand" (File Explorer style), drawn inside the adaptive icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- back tab -->
+    <path android:pathData="M22,36 L22,30 Q22,26 26,26 L42,26 Q45,26 47,28.5 L52,34 L52,36 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="0" android:startY="26" android:endX="0" android:endY="36" android:type="linear">
+                <item android:offset="0" android:color="#FFE8A200"/>
+                <item android:offset="1" android:color="#FFC98600"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- body -->
+    <path android:pathData="M22,38 Q22,34 26,34 L50,34 L55,38 L84,38 Q88,38 88,42 L88,76 Q88,80 84,80 L26,80 Q22,80 22,76 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="0" android:startY="34" android:endX="0" android:endY="80" android:type="linear">
+                <item android:offset="0" android:color="#FFFFD970"/>
+                <item android:offset="1" android:color="#FFFFC22A"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- blue stand -->
+    <path android:pathData="M36,58 Q36,53 41,53 L69,53 Q74,53 74,58 L74,78 Q74,83 70,83 L66,83 Q62,83 62,79 L62,68 L48,68 L48,79 Q48,83 44,83 L40,83 Q36,83 36,79 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="0" android:startY="53" android:endX="0" android:endY="83" android:type="linear">
+                <item android:offset="0" android:color="#FF2B9CF0"/>
+                <item android:offset="1" android:color="#FF0B6CC9"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#40FFFFFF" android:pathData="M41,53 L69,53 Q74,53 74,58 L74,60 L36,60 L36,58 Q36,53 41,53 Z"/>
+</vector>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single colour version for themed icons: the folder is lighter, the stand is solid. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#99000000" android:pathData="M22,36 L22,30 Q22,26 26,26 L42,26 Q45,26 47,28.5 L52,34 L52,36 Z"/>
+    <path android:fillColor="#99000000" android:pathData="M22,38 Q22,34 26,34 L50,34 L55,38 L84,38 Q88,38 88,42 L88,76 Q88,80 84,80 L26,80 Q22,80 22,76 Z"/>
+    <path android:fillColor="#FF000000" android:pathData="M36,58 Q36,53 41,53 L69,53 Q74,53 74,58 L74,78 Q74,83 70,83 L66,83 Q62,83 62,79 L62,68 L48,68 L48,79 Q48,83 44,83 L40,83 Q36,83 36,79 Z"/>
+</vector>
