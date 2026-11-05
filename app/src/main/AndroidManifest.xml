@@ -61,30 +61,6 @@
             android:theme="@style/Theme.Desktop.Settings" />
 
         <activity
-            android:name=".TrashActivity"
-            android:exported="true"
-            android:icon="@mipmap/ic_trash"
-            android:label="@string/trash_name"
-            android:taskAffinity="com.android.desktoplauncher.trash"
-            android:theme="@style/Theme.Desktop.Floating">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-
-        <activity
-            android:name=".TrashWindowActivity"
-            android:exported="false"
-            android:label="@string/trash_name"
-            android:icon="@mipmap/ic_trash"
-            android:taskAffinity="com.android.desktoplauncher.trashwindow"
-            android:documentLaunchMode="always"
-            android:resizeableActivity="true"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|uiMode"
-            android:theme="@style/Theme.Desktop.Window" />
-
-        <activity
             android:name=".FreeformHackActivity"
             android:exported="false"
             android:excludeFromRecents="true"
