@@ -41,7 +41,7 @@ open class MainActivity : Activity(), Host {
     private val tabs = ArrayList<Tab>()
     private var cur = 0
     private var page: Page? = null
-    private var p: Pal = Ui.pal(this)
+    private lateinit var p: Pal
     private var content: FrameLayout? = null
     private var sidebar: View? = null
     private var sideOpen = false
