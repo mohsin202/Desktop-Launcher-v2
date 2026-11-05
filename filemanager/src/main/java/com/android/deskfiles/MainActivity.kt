@@ -141,18 +141,36 @@ class MainActivity : Activity() {
         copyBtn.isEnabled = any; cutBtn.isEnabled = any
         copyBtn.alpha = if (any) 1f else 0.4f; cutBtn.alpha = if (any) 1f else 0.4f
         val has = hasClip()
-        pasteBtn.isEnabled = has; pasteBtn.alpha = if (has) 1f else 0.4f
+        pasteBtn.isEnabled = true; pasteBtn.alpha = if (has) 1f else 0.6f
     }
 
     // ---- clipboard (shared with the launcher)
-    private fun hasClip(): Boolean = try {
+    // Same file the launcher writes: some systems hide the clipboard from an app that is not in front yet.
+    private val shareFile: File get() = File(Environment.getExternalStorageDirectory(), ".deskclip")
+    private fun fileFresh(): Boolean = try { shareFile.exists() && System.currentTimeMillis() - shareFile.lastModified() < 60 * 60 * 1000L } catch (_: Exception) { false }
+
+    private fun hasClip(): Boolean = (try {
         getSystemService(ClipboardManager::class.java).primaryClipDescription?.label?.toString() == LABEL
-    } catch (_: Exception) { false }
+    } catch (_: Exception) { false }) || fileFresh()
+
+    private fun clipText(): String? {
+        try {
+            val clip = getSystemService(ClipboardManager::class.java).primaryClip
+            if (clip != null && clip.description.label?.toString() == LABEL) clip.getItemAt(0).text?.toString()?.let { return it }
+        } catch (_: Exception) {}
+        return if (fileFresh()) try { shareFile.readText() } catch (_: Exception) { null } else null
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && ::pasteBtn.isInitialized) refresh()
+    }
 
     private fun setClip(cut: Boolean) {
         if (selected.isEmpty()) return
         val text = MAGIC + "\n" + (if (cut) "cut" else "copy") + "\n" + selected.joinToString("\n")
-        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(LABEL, text))
+        try { getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(LABEL, text)) } catch (_: Exception) {}
+        try { shareFile.writeText(text) } catch (_: Exception) {}
         toast(if (cut) "Cut" else "Copied")
         selected.clear()
         refresh()
@@ -160,8 +178,7 @@ class MainActivity : Activity() {
 
     private fun paste() {
         val cm = getSystemService(ClipboardManager::class.java)
-        val txt = try { cm.primaryClip?.takeIf { it.description.label?.toString() == LABEL }?.getItemAt(0)?.text?.toString() } catch (_: Exception) { null }
-        val lines = txt?.lines() ?: return toast("Nothing to paste")
+        val lines = clipText()?.lines() ?: return toast("Nothing to paste")
         if (lines.size < 3 || lines[0] != MAGIC) return toast("Nothing to paste")
         val cut = lines[1] == "cut"
         val paths = lines.drop(2).filter { it.isNotBlank() }
@@ -180,7 +197,7 @@ class MainActivity : Activity() {
                 } catch (_: Exception) {}
             }
             runOnUiThread {
-                if (cut && n > 0) try { cm.clearPrimaryClip() } catch (_: Exception) {}
+                if (cut && n > 0) { try { cm.clearPrimaryClip() } catch (_: Exception) {}; try { shareFile.delete() } catch (_: Exception) {} }
                 toast(if (n > 0) "Pasted" else "Nothing pasted")
                 refresh()
             }
