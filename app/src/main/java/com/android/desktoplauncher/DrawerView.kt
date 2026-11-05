@@ -346,6 +346,28 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         return super.dispatchGenericMotionEvent(ev)
     }
 
+    private fun statusBarPx(): Int {
+        val id = c.resources.getIdentifier("status_bar_height", "dimen", "android")
+        return if (id > 0) c.resources.getDimensionPixelSize(id) else 0
+    }
+
+    /** Tallest the panel may be: it stays below the status bar (a side bar's window already starts below it). */
+    private fun maxPanelH(total: Int): Int {
+        val lp = panel.layoutParams as LayoutParams
+        return total - lp.bottomMargin - c.dp(8) - (if (barSide == 0 && !wide) statusBarPx() else 0)
+    }
+
+    /** A height chosen in portrait can be taller than landscape allows: shrink it for this window only. */
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val total = MeasureSpec.getSize(heightMeasureSpec)
+        val lp = panel.layoutParams as? LayoutParams
+        if (lp != null && !wide && total > 0 && lp.height > 0) {
+            val max = maxOf(c.dp(200), maxPanelH(total))
+            if (lp.height > max) lp.height = max
+        }
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    }
+
     private fun resizeTouch(ev: android.view.MotionEvent): Boolean {
         val lp = panel.layoutParams as LayoutParams
         when (ev.actionMasked) {
@@ -367,7 +389,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
                 val dy = ev.rawY - ry0
                 val factor = if (centredMode) 2 else 1
                 val w = (rw0 + (if (activeSide < 0) -dx else dx) * factor).toInt().coerceIn(c.dp(280), dm.widthPixels - c.dp(16))
-                val maxH = (if (height > 0) height else dm.heightPixels) - lp.bottomMargin - c.dp(8)
+                val maxH = maxPanelH(if (height > 0) height else dm.heightPixels)
                 val h = (rh0 - dy).toInt().coerceIn(c.dp(320), maxOf(c.dp(320), maxH))
                 if (w != lp.width || h != lp.height) {
                     lp.width = w; lp.height = h

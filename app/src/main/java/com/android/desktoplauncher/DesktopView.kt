@@ -1167,9 +1167,9 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         val avail = h - paddingTop - paddingBottom
         gRows = maxOf(1, avail / ch)
         gCols = maxOf(1, availW / cw0)
-        // Phone: columns share the width evenly. Desktop: fixed-width columns on the left.
-        gCw = if (Modes.tablet(context)) cw0 else maxOf(cw0, availW / gCols)
-        gCh = ch
+        // The leftover strip at the right / bottom (less than one cell) is shared out, so every part of the screen can hold icons.
+        gCw = maxOf(cw0, availW / gCols)
+        gCh = maxOf(ch, avail / gRows)
     }
 
     private fun posTag() = if (Modes.tablet(context)) "t" else "p"

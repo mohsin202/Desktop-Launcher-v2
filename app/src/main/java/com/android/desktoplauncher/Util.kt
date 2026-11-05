@@ -255,7 +255,10 @@ object Icons {
         return if (adaptive) out else AdaptiveIconDrawable(ColorDrawable(plate), out)
     }
 
-    fun file(f: File): Drawable =
+    /** The icon of a file; a shortcut (.desktoplink) carries the small arrow. */
+    fun file(f: File): Drawable = fileOf(f).let { if (f.extension == "desktoplink") ShortcutBadged(it) else it }
+
+    fun fileOf(f: File): Drawable =
         if (f.isDirectory) FolderIcon() else {
             val ext = f.extension.lowercase()
             val col = when (ext) {
@@ -666,3 +669,40 @@ class ShapedIcon(private val bg: android.graphics.drawable.Drawable, private val
 
 /** Name to show for a file: a shortcut (.desktoplink) is shown without its ending. */
 fun File.shown(): String = if (extension == "desktoplink") name.removeSuffix(".desktoplink") else name
+
+/** Draws [inner] with the "shortcut" arrow badge in the bottom-left corner. */
+class ShortcutBadged(private val inner: Drawable) : Drawable() {
+    private val bg = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val fg = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    private val path = android.graphics.Path()
+
+    override fun onBoundsChange(b: android.graphics.Rect) { inner.bounds = b }
+    override fun getIntrinsicWidth() = inner.intrinsicWidth
+    override fun getIntrinsicHeight() = inner.intrinsicHeight
+
+    override fun draw(c: Canvas) {
+        inner.draw(c)
+        val b = bounds
+        val s = minOf(b.width(), b.height()).toFloat()
+        val r = s * 0.17f
+        val cx = b.left + r + s * 0.05f
+        val cy = b.bottom - r - s * 0.05f
+        bg.style = Paint.Style.FILL
+        bg.color = 0x40000000
+        c.drawCircle(cx, cy + s * 0.012f, r + s * 0.012f, bg)
+        bg.color = 0xFFFFFFFF.toInt()
+        c.drawCircle(cx, cy, r, bg)
+        fg.color = 0xFF263238.toInt()
+        fg.strokeWidth = s * 0.05f
+        val a = r * 0.5f
+        path.reset()
+        path.moveTo(cx - a, cy + a); path.lineTo(cx + a, cy - a)
+        path.moveTo(cx - a * 0.05f, cy - a); path.lineTo(cx + a, cy - a); path.lineTo(cx + a, cy + a * 0.05f)
+        c.drawPath(path, fg)
+    }
+
+    override fun setAlpha(alpha: Int) { inner.alpha = alpha }
+    override fun setColorFilter(cf: android.graphics.ColorFilter?) { inner.colorFilter = cf }
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+}
