@@ -6,15 +6,15 @@ plugins {
 val sdkVer = (project.findProperty("desktop.sdk") as String).toInt()
 
 android {
-    namespace = "com.android.deskfiles"
+    namespace = "com.android.desktopfiles"
     compileSdk = sdkVer
 
     defaultConfig {
-        applicationId = "com.android.deskfiles"
+        applicationId = "com.android.desktopfiles"
         minSdk = 31
         targetSdk = sdkVer
         versionCode = 1
-        versionName = "0.1"
+        versionName = "1.0"
     }
 
     // The same fixed signing key as the launcher, so both apps are signed alike and update in place.
