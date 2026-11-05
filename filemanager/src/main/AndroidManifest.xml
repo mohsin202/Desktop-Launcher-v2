@@ -4,23 +4,57 @@
 
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <application
         android:allowBackup="false"
-        android:label="Desk Files"
+        android:icon="@mipmap/ic_launcher"
+        android:label="Desktop Files"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+        android:theme="@style/Theme.Files">
 
+        <!-- Every launch opens a new window (its own task), so any number of windows can be open. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:documentLaunchMode="always"
             android:resizeableActivity="true"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|uiMode|keyboard|keyboardHidden"
-            android:windowSoftInputMode="adjustNothing">
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|uiMode|keyboard|keyboardHidden|navigation"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- The launcher opens folders here: extra "path". -->
+            <intent-filter>
+                <action android:name="com.android.desktopfiles.OPEN" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- The Trash (moved here from the launcher): its own icon, opens the Recycle Bin. -->
+        <activity
+            android:name=".TrashActivity"
+            android:exported="true"
+            android:icon="@mipmap/ic_trash"
+            android:label="@string/trash_name"
+            android:documentLaunchMode="always"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|uiMode|keyboard|keyboardHidden|navigation"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <provider
+            android:name=".FileProv"
+            android:authorities="com.android.desktopfiles.files"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>
