@@ -35,5 +35,5 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: DeskFiles
+          name: DesktopFiles
           path: filemanager/build/outputs/apk/debug/*.apk
