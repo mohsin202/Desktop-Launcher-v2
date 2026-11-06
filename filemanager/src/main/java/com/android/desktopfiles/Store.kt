@@ -55,6 +55,8 @@ sealed class Loc {
     data class Dir(val path: String, val only: String = "") : Loc()
     data class Search(val base: String, val q: String) : Loc()
     object Trash : Loc()
+    /** Everything that carries a colour tag. */
+    data class Tag(val id: String) : Loc()
     /** Reserved for the next part (Documents / Pictures / Music / Videos grouped by folder, Apps). */
     data class Special(val kind: String) : Loc()
 }
