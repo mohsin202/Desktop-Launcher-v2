@@ -39,7 +39,7 @@ object Dialogs {
 }
 
 /** A folder (or search results) as Details list or Grid. */
-class FilePage(private val host: Host, private val loc: Loc) : Page {
+class FilePage(private val host: Host, private val loc: Loc, private val pane: Int = 0) : Page {
     private val c: Context = host.act
     private val p = Ui.pal(c)
     private val dir: File? = (loc as? Loc.Dir)?.let { File(it.path) }
@@ -334,7 +334,7 @@ class FilePage(private val host: Host, private val loc: Loc) : Page {
     // ---------- selection ----------
     private fun selFiles(): List<File> = items.filter { it.absolutePath in sel }
 
-    private fun changed() { adapter.notifyDataSetChanged(); updateStatus(); buildBar() }
+    private fun changed() { adapter.notifyDataSetChanged(); updateStatus(); buildBar(); host.selectionChanged(selFiles()) }
 
     private fun toggle(i: Int) {
         val k = items[i].absolutePath
@@ -407,6 +407,26 @@ class FilePage(private val host: Host, private val loc: Loc) : Page {
         host.showStatus()
     }
 
+    private fun transferTo(files: List<File>, d: File, move: Boolean) {
+        Jobs.start(Job((if (move) "Moving " else "Copying ") + files.size + " item(s) to " + d.name), { Ops.transfer(files, d, move, it) }) { host.refreshAll() }
+        host.showStatus()
+    }
+
+    private fun compress(files: List<File>) {
+        val parent = files[0].parentFile ?: return
+        val name = if (files.size == 1) files[0].nameWithoutExtension.ifEmpty { files[0].name } else "Archive"
+        val out = Fs.unique(parent, "$name.zip")
+        Jobs.start(Job("Compressing " + files.size + " item(s) to " + out.name), { Ops.zip(files, out, it) }) { sel.clear(); host.refreshAll() }
+        host.showStatus()
+    }
+
+    private fun extract(zip: File, intoFolder: Boolean) {
+        val parent = zip.parentFile ?: return
+        val dest = if (intoFolder) Fs.unique(parent, zip.nameWithoutExtension) else parent
+        Jobs.start(Job("Extracting " + zip.name), { Ops.unzip(zip, dest, it) }) { host.refreshAll() }
+        host.showStatus()
+    }
+
     private fun shortcuts(files: List<File>) {
         var n = 0
         for (f in files) if (Fs.makeShortcut(Fs.target(f) ?: f) != null) n++
@@ -455,6 +475,17 @@ class FilePage(private val host: Host, private val loc: Loc) : Page {
             menu += MenuItem("Rename", one) { rename(fs[0]) }
             menu += MenuItem("Delete", danger = true) { delete(fs, false) }
             menu += MenuItem("Delete permanently", danger = true) { delete(fs, true) }
+            menu += null
+            menu += MenuItem("Compress to ZIP", dir != null || loc is Loc.Search) { compress(fs) }
+            if (one && target != null && target.isFile && target.extension.equals("zip", true)) {
+                menu += MenuItem("Extract to folder") { extract(target, true) }
+                menu += MenuItem("Extract here") { extract(target, false) }
+            }
+            val od = host.otherPaneDir(pane)
+            if (od != null) {
+                menu += MenuItem("Copy to other pane") { transferTo(fs, od, false) }
+                menu += MenuItem("Move to other pane") { transferTo(fs, od, true) }
+            }
             menu += null
             menu += MenuItem("Share", fs.any { it.isFile }) { Fs.share(c, fs) }
             if (one && target != null && target.isDirectory) menu += MenuItem("Pin to Quick access") { Store.pin(c, "dir:" + target.absolutePath); host.pinsChanged(); c.toast("Pinned") }

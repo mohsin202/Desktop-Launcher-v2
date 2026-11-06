@@ -41,6 +41,10 @@ open class MainActivity : Activity(), Host {
     private val tabs = ArrayList<Tab>()
     private var cur = 0
     private var page: Page? = null
+    private var page2: Page? = null
+    private var details: DetailsPane? = null
+    private var activePane = 0
+    private var splitX = 0
     private lateinit var p: Pal
     private var content: FrameLayout? = null
     private var sidebar: View? = null
@@ -84,7 +88,7 @@ open class MainActivity : Activity(), Host {
         buildUi()
     }
 
-    override fun onDestroy() { super.onDestroy(); Jobs.unlisten(jobListener); page?.destroy() }
+    override fun onDestroy() { super.onDestroy(); Jobs.unlisten(jobListener); page?.destroy(); page2?.destroy() }
 
     override fun onResume() {
         super.onResume()
@@ -117,7 +121,7 @@ open class MainActivity : Activity(), Host {
 
     private fun buildUi() {
         p = Ui.pal(this)
-        page?.destroy(); page = null
+        page?.destroy(); page = null; page2?.destroy(); page2 = null
         window.decorView.setBackgroundColor(p.bg)
         window.insetsController?.setSystemBarsAppearance(
             if (p.dark) 0 else WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
@@ -223,6 +227,15 @@ open class MainActivity : Activity(), Host {
             searchBox = null
             bar.addView(Ui.glyphButton(this, p, "⌕", 20f) { Dialogs.ask(this, "Search", "", "Search") { search(it) } })
         }
+        if (widthDp() >= 900) {
+            fun toggle(glyph: String, key: String) {
+                val on = Store.bool(this, key, false)
+                val b = Ui.glyphButton(this, p, glyph, 17f) { Store.setBool(this, key, !Store.bool(this, key, false)); showTab() }
+                if (on) b.background = Ui.ripple(this, p, Ui.rounded(p.accentSoft, dpf(8f)), dpf(8f))
+                bar.addView(b)
+            }
+            toggle("◫", "dual"); toggle("ⓘ", "pane")
+        }
         val sb = StatusBtn(this, p) { if (StatusPanel.showing()) StatusPanel.hide() else showStatus() }
         statusBtn = sb
         bar.addView(sb, LinearLayout.LayoutParams(dp(40), dp(40)))
@@ -238,6 +251,8 @@ open class MainActivity : Activity(), Host {
             MenuItem("Single click to open", checked = Store.bool(this, "openSingle", true)) { Store.setBool(this, "openSingle", !Store.bool(this, "openSingle", true)) },
             MenuItem("Show hidden files", checked = Store.bool(this, "showHidden", false)) { Store.setBool(this, "showHidden", !Store.bool(this, "showHidden", false)); refreshAll() },
             null,
+            MenuItem("Details pane (Alt+P)", checked = Store.bool(this, "pane", false)) { Store.setBool(this, "pane", !Store.bool(this, "pane", false)); showTab() },
+            MenuItem("Dual pane", checked = Store.bool(this, "dual", false)) { Store.setBool(this, "dual", !Store.bool(this, "dual", false)); showTab() },
             MenuItem("New window") { newWindow(Loc.Home) },
             MenuItem("Desktop Files 1.0", enabled = false))
     }
@@ -354,6 +369,13 @@ open class MainActivity : Activity(), Host {
     }
 
     // ---------- navigation ----------
+    /** Host of the second pane: its folder changes are kept in tab.right. */
+    private inner class PaneHost(val m: MainActivity) : Host by m {
+        override fun go(loc: Loc) {
+            if (loc is Loc.Dir || loc is Loc.Search) { tabs[cur].right = loc; showTab() } else m.go(loc)
+        }
+    }
+
     private fun makePage(l: Loc): Page = when (l) {
         is Loc.Home -> HomePage(this)
         is Loc.Dir, is Loc.Search -> FilePage(this, l)
@@ -365,8 +387,33 @@ open class MainActivity : Activity(), Host {
         val cnt = content ?: return
         page?.destroy()
         val t = tabs[cur]
+        page2?.destroy(); page2 = null; details = null
         val pg = makePage(t.loc); page = pg
-        cnt.removeAllViews(); cnt.addView(pg.view, FrameLayout.LayoutParams(MATCH, MATCH))
+        cnt.removeAllViews()
+        val row = LinearLayout(this)
+        val panes = LinearLayout(this)
+        val dual = Store.bool(this, "dual", false) && widthDp() >= 900 && t.loc is Loc.Dir
+        if (dual) {
+            panes.addView(pg.view, LinearLayout.LayoutParams(0, MATCH, 1f))
+            val sep = View(this); sep.setBackgroundColor(p.line)
+            panes.addView(sep, LinearLayout.LayoutParams(dp(1), MATCH))
+            var rl = t.right
+            if (rl !is Loc.Dir && rl !is Loc.Search) rl = Loc.Dir((t.loc as Loc.Dir).path)
+            t.right = rl
+            val pg2 = FilePage(PaneHost(this), rl, 1); page2 = pg2
+            val right = LinearLayout(this); right.orientation = LinearLayout.VERTICAL
+            right.addView(rightHeader(rl), LinearLayout.LayoutParams(MATCH, dp(36)))
+            right.addView(pg2.view, LinearLayout.LayoutParams(MATCH, 0, 1f))
+            panes.addView(right, LinearLayout.LayoutParams(0, MATCH, 1f))
+        } else panes.addView(pg.view, LinearLayout.LayoutParams(MATCH, MATCH))
+        row.addView(panes, LinearLayout.LayoutParams(0, MATCH, 1f))
+        if (Store.bool(this, "pane", false) && widthDp() >= 900) {
+            val d = DetailsPane(this); details = d; d.show(emptyList())
+            val sep = View(this); sep.setBackgroundColor(p.line)
+            row.addView(sep, LinearLayout.LayoutParams(dp(1), MATCH))
+            row.addView(d.view, LinearLayout.LayoutParams(dp(280), MATCH))
+        }
+        cnt.addView(row, FrameLayout.LayoutParams(MATCH, MATCH))
         editing = false
         fillTabs(); fillAddress()
         navBack?.alpha = if (t.back.isEmpty()) 0.4f else 1f
@@ -420,7 +467,37 @@ open class MainActivity : Activity(), Host {
         try { startActivity(i) } catch (_: Exception) { toast("Could not open a new window") }
     }
 
-    override fun refreshAll() { page?.refresh() }
+    override fun refreshAll() { page?.refresh(); page2?.refresh() }
+    override fun selectionChanged(files: List<File>) { details?.show(files) }
+    override fun otherPaneDir(pane: Int): File? {
+        if (page2 == null) return null
+        val l = if (pane == 0) tabs[cur].right else tabs[cur].loc
+        return (l as? Loc.Dir)?.path?.let { File(it) }
+    }
+
+    private fun rightHeader(l: Loc): View {
+        val h = LinearLayout(this); h.gravity = Gravity.CENTER_VERTICAL; h.setBackgroundColor(p.card)
+        h.addView(Ui.glyphButton(this, p, "↑", 15f, 32, 32) {
+            ((tabs[cur].right as? Loc.Dir)?.path)?.let { pa -> File(pa).parentFile?.let { par -> tabs[cur].right = Loc.Dir(par.absolutePath); showTab() } }
+        })
+        val path = if (l is Loc.Dir) l.path else if (l is Loc.Search) "Search: " + l.q else ""
+        val t = Ui.text(this, path, 12f, p.text); t.maxLines = 1; t.ellipsize = android.text.TextUtils.TruncateAt.START; t.isClickable = true
+        t.setOnClickListener { v ->
+            val items = Store.recents(this).map { r -> MenuItem(r) { tabs[cur].right = Loc.Dir(r); showTab() } }
+            if (items.isNotEmpty()) Pop(this).showBelow(v, items)
+        }
+        h.addView(t, LinearLayout.LayoutParams(0, WRAP, 1f))
+        h.addView(Ui.glyphButton(this, p, "×", 16f, 32, 32) { Store.setBool(this, "dual", false); showTab() })
+        return h
+    }
+
+    override fun dispatchTouchEvent(e: android.view.MotionEvent): Boolean {
+        if (e.actionMasked == android.view.MotionEvent.ACTION_DOWN && page2 != null) {
+            val v2 = page2!!.view; val xy = IntArray(2); v2.getLocationOnScreen(xy)
+            activePane = if (e.rawX >= xy[0]) 1 else 0
+        }
+        return super.dispatchTouchEvent(e)
+    }
     override fun pinsChanged() { showTab() }
     override fun showStatus() { statusBtn?.let { StatusPanel.show(this, it) } }
     override fun contentWidthDp(): Int = content?.width?.let { (it / resources.displayMetrics.density).toInt() } ?: widthDp()
@@ -447,7 +524,8 @@ open class MainActivity : Activity(), Host {
                 alt && e.keyCode == KeyEvent.KEYCODE_DPAD_UP -> { up(); return true }
                 e.keyCode == KeyEvent.KEYCODE_F5 -> { refreshAll(); return true }
                 !typing && e.keyCode == KeyEvent.KEYCODE_DEL -> { back(); return true }
-                !typing && page?.onKey(e.keyCode, ctrl, shift) == true -> return true
+                alt && e.keyCode == KeyEvent.KEYCODE_P -> { Store.setBool(this, "pane", !Store.bool(this, "pane", false)); showTab(); return true }
+                !typing && (if (activePane == 1 && page2 != null) page2 else page)?.onKey(e.keyCode, ctrl, shift) == true -> return true
             }
         }
         return super.dispatchKeyEvent(e)

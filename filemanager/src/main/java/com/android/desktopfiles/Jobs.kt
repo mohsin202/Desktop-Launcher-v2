@@ -105,6 +105,50 @@ object Ops {
         }
     }
 
+    /** Packs [files] into the zip file [out]. */
+    fun zip(files: List<File>, out: File, job: Job) {
+        job.total = files.sumOf { sizeOf(it) }
+        java.util.zip.ZipOutputStream(out.outputStream().buffered()).use { zo ->
+            val buf = ByteArray(256 * 1024)
+            fun add(f: File, name: String) {
+                if (job.cancelled) return
+                if (f.isDirectory) {
+                    val kids = f.listFiles()
+                    if (kids.isNullOrEmpty()) { zo.putNextEntry(java.util.zip.ZipEntry("$name/")); zo.closeEntry() }
+                    else for (k in kids) add(k, name + "/" + k.name)
+                } else {
+                    job.detail = f.name
+                    val e = java.util.zip.ZipEntry(name); e.time = f.lastModified()
+                    zo.putNextEntry(e)
+                    f.inputStream().use { i -> while (true) { if (job.cancelled) break; val n = i.read(buf); if (n < 0) break; zo.write(buf, 0, n); job.done += n } }
+                    zo.closeEntry()
+                }
+            }
+            for (f in files) add(f, f.name)
+        }
+        if (job.cancelled) out.delete()
+    }
+
+    /** Unpacks [zip] into [dest] (entries that would leave the folder are skipped). */
+    fun unzip(zip: File, dest: File, job: Job) {
+        dest.mkdirs()
+        val base = dest.canonicalPath
+        java.util.zip.ZipFile(zip).use { zf ->
+            job.total = zf.entries().asSequence().sumOf { maxOf(0L, it.size) }
+            val buf = ByteArray(256 * 1024)
+            for (e in zf.entries()) {
+                if (job.cancelled) return
+                val t = File(dest, e.name)
+                if (!t.canonicalPath.startsWith(base + File.separator)) { job.failed++; continue }
+                job.detail = t.name
+                if (e.isDirectory) { t.mkdirs(); continue }
+                t.parentFile?.mkdirs()
+                zf.getInputStream(e).use { i -> t.outputStream().use { o -> while (true) { if (job.cancelled) break; val n = i.read(buf); if (n < 0) break; o.write(buf, 0, n); job.done += n } } }
+                if (e.time > 0) t.setLastModified(e.time)
+            }
+        }
+    }
+
     fun deleteForever(files: List<File>, job: Job) {
         job.total = files.size.toLong()
         for (f in files) {

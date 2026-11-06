@@ -60,6 +60,8 @@ sealed class Loc {
 }
 
 class Tab(var loc: Loc) {
+    /** Second pane (dual pane view) */
+    var right: Loc? = null
     val back = ArrayList<Loc>()
     val fwd = ArrayList<Loc>()
 }
@@ -83,4 +85,8 @@ interface Host {
     fun showStatus()
     fun contentWidthDp(): Int
     fun openFile(f: File)
+    /** The page tells which items are selected (the Details pane shows them). */
+    fun selectionChanged(files: List<File>) {}
+    /** Dual pane: the folder shown by the other pane, or null. */
+    fun otherPaneDir(pane: Int): File? = null
 }
