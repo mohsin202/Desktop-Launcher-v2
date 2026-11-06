@@ -359,7 +359,13 @@ object Files {
         try { c.startActivity(i, Launch.options(c)) } catch (e: Exception) { c.toast("No app can open this file") }
     }
 
+    /** Folders open in Desktop Files (a new window each time); the system file picker is only the fallback. */
     fun openFolder(c: Context, f: File) {
+        try {
+            val i = Intent("com.android.desktopfiles.OPEN").setPackage("com.android.desktopfiles").putExtra("path", f.absolutePath)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+            c.startActivity(i, Launch.options(c)); return
+        } catch (_: Exception) {}
         val ext = Environment.getExternalStorageDirectory().absolutePath
         if (!f.absolutePath.startsWith(ext)) { c.toast("Folder is private to the launcher: ${f.absolutePath}"); return }
         val rel = f.absolutePath.removePrefix(ext).trimStart('/')

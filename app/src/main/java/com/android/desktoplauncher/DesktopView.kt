@@ -373,6 +373,27 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     private fun selectedFile(): File? =
         items.firstOrNull { it.first.key == selectedKey }?.first.let { (it as? Entry.FileE)?.file }
 
+    private var deskObserver: android.os.FileObserver? = null
+    private val deskReload = Runnable { if (isAttachedToWindow) reload() }
+
+    /** Watches the Desktop folder, so files made from Desktop Files (shortcuts, copies) appear without reopening the launcher. */
+    private fun startWatch() {
+        stopWatch()
+        try {
+            val mask = android.os.FileObserver.CREATE or android.os.FileObserver.DELETE or android.os.FileObserver.MOVED_FROM or
+                android.os.FileObserver.MOVED_TO or android.os.FileObserver.CLOSE_WRITE
+            val o = object : android.os.FileObserver(Files.root(context), mask) {
+                override fun onEvent(event: Int, path: String?) { removeCallbacks(deskReload); postDelayed(deskReload, 400) }
+            }
+            o.startWatching(); deskObserver = o
+        } catch (_: Exception) {}
+    }
+
+    private fun stopWatch() { try { deskObserver?.stopWatching() } catch (_: Exception) {}; deskObserver = null }
+
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); startWatch() }
+    override fun onDetachedFromWindow() { stopWatch(); removeCallbacks(deskReload); super.onDetachedFromWindow() }
+
     fun reload() {
         val c = context
         val hidden = Prefs.list(c, Prefs.K_HIDDEN).toSet()
