@@ -1,0 +1,128 @@
+package com.android.desktopfiles
+
+import java.util.Locale
+
+/** Interface language. Texts are written in English in the code; when Urdu is on, [t] gives the Urdu text (unknown texts stay as they are). */
+object T {
+    @Volatile var ur = false
+
+    /** [setting]: "system", "en" or "ur". */
+    fun init(setting: String) { ur = when (setting) { "ur" -> true; "en" -> false; else -> Locale.getDefault().language == "ur" } }
+
+    private const val IT = "(?:items?|item\\(s\\))"
+
+    private val words = mapOf(
+        "Home" to "ہوم", "Quick access" to "فوری رسائی", "Drives" to "ڈرائیوز", "Recent files" to "حالیہ فائلیں",
+        "Internal storage" to "اندرونی اسٹوریج", "Root" to "روٹ", "Trash" to "ٹریش", "Documents" to "دستاویزات",
+        "Pictures" to "تصاویر", "Music" to "موسیقی", "Videos" to "ویڈیوز", "Download" to "ڈاؤن لوڈز", "Downloads" to "ڈاؤن لوڈز",
+        "Desktop" to "ڈیسک ٹاپ", "Movies" to "فلمیں", "Apps" to "ایپس", "Tags" to "ٹیگز", "Tag" to "ٹیگ",
+        "documents" to "دستاویزات", "pictures" to "تصاویر", "music" to "موسیقی", "videos" to "ویڈیوز",
+        "Network locations (SMB) will come in a later update." to "نیٹ ورک مقامات (SMB) بعد کی اپڈیٹ میں آئیں گے۔",
+        "Disable" to "بند کریں",
+        "Get root access for the root directory" to "روٹ ڈائریکٹری کے لیے روٹ رسائی حاصل کریں",
+        "Checking root access…" to "روٹ رسائی جانچی جا رہی ہے…", "Root access available" to "روٹ رسائی دستیاب ہے",
+        "Files you open will appear here." to "آپ کی کھولی ہوئی فائلیں یہاں نظر آئیں گی۔",
+        "+ New ▾" to "+ نیا ▾", "Cut" to "کاٹیں", "Copy" to "کاپی", "Paste" to "پیسٹ", "Rename" to "نام بدلیں", "Share" to "شیئر",
+        "Delete" to "ڈیلیٹ", "Sort ▾" to "ترتیب ▾", "View ▾" to "ویو ▾", "Show all files" to "تمام فائلیں دکھائیں",
+        "Name" to "نام", "Date modified" to "تبدیلی کی تاریخ", "Size" to "سائز", "Type" to "قسم", "Modified" to "تبدیلی",
+        "Ascending" to "صعودی", "Descending" to "نزولی", "Details" to "تفصیلات", "Grid" to "گرڈ", "Columns" to "کالمز",
+        "Group by" to "گروپ بنائیں", "None" to "کوئی نہیں", "Show hidden files" to "چھپی فائلیں دکھائیں",
+        "Folders" to "فولڈرز", "Today" to "آج", "Yesterday" to "کل", "Earlier this week" to "اس ہفتے پہلے",
+        "Earlier this month" to "اس مہینے پہلے", "Earlier this year" to "اس سال پہلے", "A long time ago" to "بہت پہلے",
+        "Empty" to "خالی", "Tiny (under 16 KB)" to "بہت چھوٹی (16 KB سے کم)", "Small (under 1 MB)" to "چھوٹی (1 MB سے کم)",
+        "Medium (under 128 MB)" to "درمیانی (128 MB سے کم)", "Large (under 1 GB)" to "بڑی (1 GB سے کم)", "Huge (1 GB and more)" to "بہت بڑی (1 GB یا زیادہ)",
+        "Open" to "کھولیں", "Open with…" to "اس کے ساتھ کھولیں…", "Open in new tab" to "نئے ٹیب میں کھولیں", "Open in new window" to "نئی ونڈو میں کھولیں",
+        "Open all files" to "تمام فائلیں کھولیں", "Paste into folder" to "فولڈر میں پیسٹ کریں", "Delete permanently" to "ہمیشہ کے لیے ڈیلیٹ",
+        "Compress to ZIP" to "ZIP میں سمیٹیں", "Extract to folder" to "فولڈر میں نکالیں", "Extract here" to "یہیں نکالیں",
+        "Copy to other pane" to "دوسرے پین میں کاپی", "Move to other pane" to "دوسرے پین میں منتقل", "New tag…" to "نیا ٹیگ…", "New tag" to "نیا ٹیگ",
+        "Create shortcut on Desktop" to "ڈیسک ٹاپ پر شارٹ کٹ بنائیں", "Copy to Desktop" to "ڈیسک ٹاپ پر کاپی کریں", "Move to Desktop" to "ڈیسک ٹاپ پر منتقل کریں",
+        "Permissions…" to "اجازتیں…", "Properties" to "خصوصیات", "Pin to Quick access" to "فوری رسائی میں پن کریں",
+        "Pin this folder to Quick access" to "یہ فولڈر فوری رسائی میں پن کریں", "Select all" to "سب منتخب کریں", "Refresh" to "تازہ کریں",
+        "New" to "نیا", "Folder" to "فولڈر", "Text file" to "ٹیکسٹ فائل", "New folder" to "نیا فولڈر", "New text file" to "نئی ٹیکسٹ فائل",
+        "Unpin" to "ان پن", "Unpin from Quick access" to "فوری رسائی سے ہٹائیں", "Pinned" to "پن ہو گیا",
+        "Rename tag" to "ٹیگ کا نام بدلیں", "Delete tag" to "ٹیگ ڈیلیٹ کریں", "Cancel" to "منسوخ", "OK" to "ٹھیک ہے", "Create" to "بنائیں",
+        "Apply" to "لاگو کریں", "Restore" to "بحال کریں", "Empty Trash" to "ٹریش خالی کریں", "Allow access" to "رسائی کی اجازت دیں",
+        "Allow access to all files so Desktop Files can show and manage your folders." to "Desktop Files کو آپ کے فولڈر دکھانے اور سنبھالنے کے لیے تمام فائلوں تک رسائی کی اجازت دیں۔",
+        "Theme" to "تھیم", "System" to "سسٹم", "Light" to "روشن", "Dark" to "تاریک", "Language" to "زبان",
+        "Single click to open" to "ایک کلک سے کھولیں", "Details pane (Alt+P)" to "تفصیلی پین (Alt+P)", "Dual pane" to "دوہرا پین",
+        "New window" to "نئی ونڈو", "Search" to "تلاش", "Status Center" to "اسٹیٹس سینٹر", "No running operations" to "کوئی کام نہیں چل رہا",
+        "Cancelled" to "منسوخ ہوا", "Done" to "مکمل",
+        "Select a file to see its details" to "تفصیل دیکھنے کے لیے فائل منتخب کریں", "Total size" to "کل سائز", "Location" to "مقام",
+        "Preview" to "پری ویو", "calculating…" to "حساب ہو رہا ہے…", "The Trash is empty" to "ٹریش خالی ہے", "Loading…" to "لوڈ ہو رہا ہے…",
+        "That name already exists" to "یہ نام پہلے سے موجود ہے", "Could not rename" to "نام نہیں بدلا جا سکا", "Could not create it" to "بنایا نہیں جا سکا",
+        "Nothing to paste" to "پیسٹ کرنے کے لیے کچھ نہیں", "Only files can be shared" to "صرف فائلیں شیئر ہو سکتی ہیں", "Could not share" to "شیئر نہیں ہو سکا",
+        "No app can open this file" to "کوئی ایپ یہ فائل نہیں کھول سکتی", "This folder cannot be opened" to "یہ فولڈر کھولا نہیں جا سکتا",
+        "This folder is empty" to "یہ فولڈر خالی ہے", "Root access is needed to read this folder" to "یہ فولڈر پڑھنے کے لیے روٹ رسائی درکار ہے",
+        "The shortcut's target no longer exists" to "شارٹ کٹ کا ہدف اب موجود نہیں", "Shortcut created on Desktop" to "ڈیسک ٹاپ پر شارٹ کٹ بن گیا",
+        "Could not create the shortcut" to "شارٹ کٹ نہیں بن سکا", "That path does not exist" to "یہ راستہ موجود نہیں", "No history yet" to "ابھی کوئی ہسٹری نہیں",
+        "Could not open a new window" to "نئی ونڈو نہیں کھل سکی", "Could not read the file" to "فائل پڑھی نہیں جا سکی",
+        "Could not read the permissions" to "اجازتیں پڑھی نہیں جا سکیں", "Permissions changed" to "اجازتیں بدل گئیں",
+        "Could not change the permissions" to "اجازتیں نہیں بدلی جا سکیں", "This app has no screen to open" to "اس ایپ کی کوئی اسکرین نہیں جو کھولی جا سکے",
+        "Could not open it" to "کھولا نہیں جا سکا", "Could not uninstall" to "ان انسٹال نہیں ہو سکا", "No items have this tag yet" to "ابھی کسی آئٹم پر یہ ٹیگ نہیں",
+        "Filter apps" to "ایپس فلٹر کریں", "App info" to "ایپ کی معلومات", "Share APK" to "APK شیئر کریں",
+        "Copy APK to Downloads" to "APK کو ڈاؤن لوڈز میں کاپی کریں", "Uninstall" to "ان انسٹال کریں", "Tag name" to "ٹیگ کا نام",
+        "Read" to "پڑھنا", "Write" to "لکھنا", "Execute" to "چلانا", "Owner" to "مالک", "Group" to "گروپ", "Others" to "دیگر",
+        "Apply to everything inside" to "اندر کی ہر چیز پر لاگو کریں", "File folder" to "فائل فولڈر", "Shortcut" to "شارٹ کٹ", "File" to "فائل",
+        "These items are outside your storage and cannot go to the Trash." to "یہ آئٹم آپ کی اسٹوریج سے باہر ہیں اور ٹریش میں نہیں جا سکتے۔",
+        "Copy here" to "یہاں کاپی کریں", "Move here" to "یہاں منتقل کریں", "Create shortcut here" to "یہاں شارٹ کٹ بنائیں",
+        "A folder cannot be dropped into itself" to "فولڈر کو اسی میں نہیں ڈالا جا سکتا", "Done, nothing to do" to "مکمل، کچھ کرنا نہیں تھا",
+        "Enabled" to "فعال", "English" to "English", "Urdu" to "اردو")
+
+    private class Rule(val re: Regex, val f: (MatchResult) -> String)
+
+    private fun r(p: String, f: (MatchResult) -> String) = Rule(Regex(p, RegexOption.DOT_MATCHES_ALL), f)
+    private fun g(m: MatchResult, i: Int) = m.groupValues[i]
+
+    private val rules: List<Rule> = listOf(
+        r("^(\\d+) $IT$") { g(it, 1) + " آئٹم" },
+        r("^(\\d+) selected(.*)$") { g(it, 1) + " منتخب" + g(it, 2) },
+        r("^kept for (\\d+) days$") { g(it, 1) + " دن تک محفوظ" },
+        r("^(\\d+) days? left$") { g(it, 1) + " دن باقی" },
+        r("^(\\d+) $IT selected$") { g(it, 1) + " آئٹم منتخب" },
+        r("^(\\d+) operations running$") { g(it, 1) + " کام چل رہے ہیں" },
+        r("^Moving (\\d+) $IT to Trash$") { g(it, 1) + " آئٹم ٹریش میں منتقل ہو رہے ہیں" },
+        r("^Moving (\\d+) $IT to Desktop$") { g(it, 1) + " آئٹم ڈیسک ٹاپ پر منتقل ہو رہے ہیں" },
+        r("^Copying (\\d+) $IT to Desktop$") { g(it, 1) + " آئٹم ڈیسک ٹاپ پر کاپی ہو رہے ہیں" },
+        r("^Moving (.+) to Trash$") { g(it, 1) + " ٹریش میں منتقل ہو رہا ہے" },
+        r("^Copying (.+) to Desktop$") { g(it, 1) + " ڈیسک ٹاپ پر کاپی ہو رہا ہے" },
+        r("^Copying (\\d+) $IT to (.+)$") { g(it, 1) + " آئٹم " + g(it, 2) + " میں کاپی ہو رہے ہیں" },
+        r("^Moving (\\d+) $IT to (.+)$") { g(it, 1) + " آئٹم " + g(it, 2) + " میں منتقل ہو رہے ہیں" },
+        r("^Compressing (\\d+) $IT to (.+)$") { g(it, 1) + " آئٹم " + g(it, 2) + " میں سمیٹے جا رہے ہیں" },
+        r("^Extracting (.+)$") { g(it, 1) + " نکالا جا رہا ہے" },
+        r("^Deleting (\\d+) $IT permanently$") { g(it, 1) + " آئٹم ہمیشہ کے لیے ڈیلیٹ ہو رہے ہیں" },
+        r("^Deleting (\\d+) $IT$") { g(it, 1) + " آئٹم ڈیلیٹ ہو رہے ہیں" },
+        r("^Restoring (\\d+) $IT$") { g(it, 1) + " آئٹم بحال ہو رہے ہیں" },
+        r("^Preparing (.+)$") { g(it, 1) + " تیار کیا جا رہا ہے" },
+        r("^Copying APK of (.+)$") { g(it, 1) + " کی APK کاپی ہو رہی ہے" },
+        r("^Cut (\\d+)$") { g(it, 1) + " کاٹے گئے" },
+        r("^Copied (\\d+)$") { g(it, 1) + " کاپی ہوئے" },
+        r("^Saved: (.+)$") { "محفوظ: " + g(it, 1) },
+        r("^Delete (\\d+) $IT permanently\\? This cannot be undone\\.$") { "کیا " + g(it, 1) + " آئٹم ہمیشہ کے لیے ڈیلیٹ کریں؟ یہ واپس نہیں ہو سکتا۔" },
+        r("^Delete the tag \"(.+)\"\\? The files themselves stay\\.$") { "ٹیگ «" + g(it, 1) + "» ڈیلیٹ کریں؟ فائلیں محفوظ رہیں گی۔" },
+        r("^Search: (.+)$") { "تلاش: " + g(it, 1) },
+        r("^No results for \"(.+)\"$") { "«" + g(it, 1) + "» کے لیے کوئی نتیجہ نہیں" },
+        r("^Permissions: (.+)$") { "اجازتیں: " + g(it, 1) },
+        r("^Deleted from (.+)$") { "یہاں سے ڈیلیٹ ہوا: " + g(it, 1) },
+        r("^No (documents|pictures|music|videos) found$") { "کوئی " + t(g(it, 1)) + " نہیں ملا" },
+        r("^Folders on this device that contain (.+)$") { "اس ڈیوائس کے وہ فولڈر جن میں " + t(g(it, 1)) + " ہیں" },
+        r("^Remounted (.+) as (rw|ro)$") { g(it, 1) + " کو " + g(it, 2) + " کے طور پر ری ماؤنٹ کر دیا" },
+        r("^Remount failed: (.*)$") { "ری ماؤنٹ ناکام: " + g(it, 1) },
+        r("^Done, (\\d+) could not be processed$") { "مکمل، " + g(it, 1) + " پر کارروائی نہ ہو سکی" },
+        r("^(.+) free of (.+)$") { g(it, 2) + " میں سے " + g(it, 1) + " خالی" },
+        r("^(.+)  ·  system$") { g(it, 1) + "  ·  سسٹم" },
+        r("^Type: (.+)$") { "قسم: " + t(g(it, 1)) },
+        r("^Location: (.+)$") { "مقام: " + g(it, 1) },
+        r("^Size: (.+)$") { "سائز: " + t(g(it, 1)) },
+        r("^Modified: (.+)$") { "تبدیلی: " + g(it, 1) },
+        r("^(\\S+) File$") { g(it, 1) + " فائل" }
+    )
+
+    fun t(s: String): String {
+        if (!ur || s.isEmpty()) return s
+        words[s]?.let { return it }
+        if (s.contains('\n')) return s.split('\n').joinToString("\n") { t(it) }
+        if (s.contains("   |   ")) return s.split("   |   ").joinToString("   |   ") { t(it.trim()) }
+        for (ru in rules) { val m = ru.re.matchEntire(s) ?: continue; return ru.f(m) }
+        return s
+    }
+}

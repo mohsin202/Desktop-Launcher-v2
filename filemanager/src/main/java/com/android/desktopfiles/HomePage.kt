@@ -87,7 +87,7 @@ class HomePage(private val host: Host) : Page {
         if (!closed) col.addView(body())
     }
 
-    private fun card(icon: Glyph, name: String, w: Int, sub: View? = null, badge: Boolean = false, click: () -> Unit, long: ((View) -> Unit)? = null): View {
+    private fun card(icon: android.graphics.drawable.Drawable, name: String, w: Int, sub: View? = null, badge: Boolean = false, click: () -> Unit, long: ((View) -> Unit)? = null): View {
         val card = LinearLayout(c); card.gravity = Gravity.CENTER_VERTICAL
         card.setPadding(c.dp(12), c.dp(10), c.dp(12), c.dp(10))
         card.background = Ui.ripple(c, p, Ui.rounded(p.card, c.dpf(10f), p.line, 1), c.dpf(10f))
@@ -143,6 +143,12 @@ class HomePage(private val host: Host) : Page {
             f
         }
 
+        if (Tags.all().isNotEmpty()) section("Tags", "tags") {
+            val f = flow()
+            for (t in Tags.all()) f.addView(card(Tags.dot(c, t.color), t.name, 190, click = { host.go(Loc.Special("tag:" + t.id)) }))
+            f
+        }
+
         section("Drives", "drives") {
             val f = flow()
             for (v in Vols.list(c)) {
@@ -175,7 +181,7 @@ class HomePage(private val host: Host) : Page {
                 row.background = Ui.ripple(c, p, null, c.dpf(8f))
                 val iv = ImageView(c); Thumbs.bind(iv, f, c.dp(64))
                 row.addView(iv, LinearLayout.LayoutParams(c.dp(32), c.dp(32)))
-                val nm = Ui.text(c, Fs.shown(f), 14f, p.text); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.END
+                val nm = Ui.text(c, Fs.shown(f), 14f, p.text, false, false); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.END
                 row.addView(nm, LinearLayout.LayoutParams(0, WRAP, 1f).also { it.leftMargin = c.dp(10) })
                 val loc = Ui.text(c, f.parent ?: "", 11f, p.sub); loc.maxLines = 1; loc.ellipsize = android.text.TextUtils.TruncateAt.START
                 row.addView(loc, LinearLayout.LayoutParams(c.dp(220), WRAP))

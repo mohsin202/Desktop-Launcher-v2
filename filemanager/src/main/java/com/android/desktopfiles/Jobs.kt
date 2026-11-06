@@ -107,7 +107,7 @@ object Ops {
                 job.detail = src.name
                 val t = rootUnique(dest, src.name)
                 val ok = RootSu.sh((if (move) "mv " else "cp -a ") + RootSu.q(src) + " " + RootSu.q(t))
-                if (!ok) job.failed++
+                if (!ok) job.failed++ else if (move) Tags.move(src.absolutePath, t.absolutePath)
                 job.done += if (countMode) 1L else maxOf(1L, sizeOf(src))
                 continue
             }
@@ -121,6 +121,7 @@ object Ops {
                     val sz = sizeOf(src)
                     if (src.renameTo(target)) job.done += sz
                     else { copyTree(src, target, job); if (!job.cancelled) src.deleteRecursively() }
+                    if (!job.cancelled) Tags.move(src.absolutePath, target.absolutePath)
                 } else copyTree(src, target, job)
             } catch (_: Exception) { job.failed++ }
         }

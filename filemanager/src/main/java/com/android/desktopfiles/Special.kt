@@ -64,7 +64,7 @@ class MediaPage(private val host: Host, private val kind: String) : Page {
             val iv = ImageView(c); iv.setImageDrawable(Glyph(Glyph.Kind.FOLDER))
             r.addView(iv, LinearLayout.LayoutParams(c.dp(34), c.dp(34)).also { it.rightMargin = c.dp(12) })
             val box = LinearLayout(c); box.orientation = LinearLayout.VERTICAL
-            val nm = Ui.text(c, g.dir.name, 14f, p.text, true); nm.maxLines = 1
+            val nm = Ui.text(c, g.dir.name, 14f, p.text, true, false); nm.maxLines = 1
             val pt = Ui.text(c, g.dir.parent ?: "", 11f, p.sub); pt.maxLines = 1; pt.ellipsize = android.text.TextUtils.TruncateAt.START
             box.addView(nm); box.addView(pt)
             r.addView(box, LinearLayout.LayoutParams(0, WRAP, 1f))
@@ -122,7 +122,7 @@ class MediaPage(private val host: Host, private val kind: String) : Page {
             val out = map.values.filter { it.dir.exists() }.sortedWith(compareByDescending<Group> { it.count }.thenBy { it.dir.name.lowercase() })
             c.mainExecutor.execute {
                 groups = out; loading = false; adapter.notifyDataSetChanged()
-                empty.text = "No " + Kinds.title(kind).lowercase() + " found"
+                empty.text = T.t("No " + Kinds.title(kind).lowercase() + " found")
                 empty.visibility = if (groups.isEmpty()) View.VISIBLE else View.GONE
             }
         }.start()
@@ -156,7 +156,7 @@ class AppsPage(private val host: Host) : Page {
             iv.setImageDrawable(icons.getOrPut(a.pkg) { try { a.info.loadIcon(c.packageManager) } catch (_: Exception) { Glyph(Glyph.Kind.ANDROID) } })
             r.addView(iv, LinearLayout.LayoutParams(c.dp(36), c.dp(36)).also { it.rightMargin = c.dp(12) })
             val box = LinearLayout(c); box.orientation = LinearLayout.VERTICAL
-            val nm = Ui.text(c, a.label, 14f, p.text, true); nm.maxLines = 1
+            val nm = Ui.text(c, a.label, 14f, p.text, true, false); nm.maxLines = 1
             val pk = Ui.text(c, a.pkg + (if (a.system) "  ·  system" else ""), 11f, p.sub); pk.maxLines = 1
             box.addView(nm); box.addView(pk)
             r.addView(box, LinearLayout.LayoutParams(0, WRAP, 1f))
@@ -173,7 +173,7 @@ class AppsPage(private val host: Host) : Page {
         root.orientation = LinearLayout.VERTICAL
         val title = Ui.text(c, "Apps", 22f, p.text, true); title.setPadding(c.dp(16), c.dp(14), c.dp(16), c.dp(6))
         root.addView(title)
-        search.hint = "Filter apps"; search.setSingleLine(); search.textSize = 13f; search.setTextColor(p.text); search.setHintTextColor(p.sub)
+        search.hint = T.t("Filter apps"); search.setSingleLine(); search.textSize = 13f; search.setTextColor(p.text); search.setHintTextColor(p.sub)
         search.background = Ui.rounded(p.card, c.dpf(18f), p.line, 1); search.setPadding(c.dp(14), 0, c.dp(14), 0)
         search.addTextChangedListener(object : android.text.TextWatcher {
             override fun afterTextChanged(s: android.text.Editable?) { filter() }

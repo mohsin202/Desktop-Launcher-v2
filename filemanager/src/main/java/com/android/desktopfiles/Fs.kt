@@ -52,8 +52,8 @@ object Fs {
     /** Name shown for a file: shortcuts without their ending. */
     fun shown(f: File): String = if (f.extension == "desktoplink") f.name.removeSuffix(".desktoplink") else f.name
 
-    fun makeShortcut(target: File): File? = try {
-        val dest = unique(desktop(), target.name + ".desktoplink")
+    fun makeShortcut(target: File, into: File? = null): File? = try {
+        val dest = unique(into ?: desktop(), target.name + ".desktoplink")
         dest.writeText("DESKTOP_SHORTCUT\n" + target.absolutePath)
         dest
     } catch (_: Exception) { null }
@@ -82,7 +82,7 @@ object Fs {
     }
 }
 
-fun Context.toast(s: String) = android.widget.Toast.makeText(applicationContext, s, android.widget.Toast.LENGTH_SHORT).show()
+fun Context.toast(s: String) = android.widget.Toast.makeText(applicationContext, T.t(s), android.widget.Toast.LENGTH_SHORT).show()
 
 /** A drive, partition or storage shown as a card. */
 class Vol(val name: String, val dir: File?, val kind: Kind, val total: Long, val free: Long) {

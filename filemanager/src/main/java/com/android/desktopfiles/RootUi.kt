@@ -30,11 +30,11 @@ object RootUi {
         val grid = Array(3) { arrayOfNulls<CheckBox>(3) }
         val head = LinearLayout(act)
         head.addView(TextView(act), LinearLayout.LayoutParams(act.dp(80), WRAP))
-        for (t in listOf("Read", "Write", "Execute")) head.addView(TextView(act).also { it.text = t; it.textSize = 12f; it.gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, WRAP, 1f))
+        for (t in listOf("Read", "Write", "Execute")) head.addView(TextView(act).also { it.text = T.t(t); it.textSize = 12f; it.gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, WRAP, 1f))
         box.addView(head)
         for ((r, who) in listOf("Owner", "Group", "Others").withIndex()) {
             val row = LinearLayout(act); row.gravity = Gravity.CENTER_VERTICAL
-            row.addView(TextView(act).also { it.text = who }, LinearLayout.LayoutParams(act.dp(80), WRAP))
+            row.addView(TextView(act).also { it.text = T.t(who) }, LinearLayout.LayoutParams(act.dp(80), WRAP))
             val d = digits[r] - '0'
             for (cIdx in 0..2) {
                 val cb = CheckBox(act); cb.isChecked = d and (4 shr cIdx) != 0; grid[r][cIdx] = cb
@@ -42,15 +42,15 @@ object RootUi {
             }
             box.addView(row)
         }
-        val owner = EditText(act); owner.setText(pm.owner); owner.setSingleLine(); owner.hint = "Owner"
-        val group = EditText(act); group.setText(pm.group); group.setSingleLine(); group.hint = "Group"
+        val owner = EditText(act); owner.setText(pm.owner); owner.setSingleLine(); owner.hint = T.t("Owner")
+        val group = EditText(act); group.setText(pm.group); group.setSingleLine(); group.hint = T.t("Group")
         val og = LinearLayout(act)
         og.addView(owner, LinearLayout.LayoutParams(0, WRAP, 1f)); og.addView(group, LinearLayout.LayoutParams(0, WRAP, 1f))
         box.addView(og)
-        val rec = CheckBox(act); rec.text = "Apply to everything inside"
+        val rec = CheckBox(act); rec.text = T.t("Apply to everything inside")
         if (f.isDirectory) box.addView(rec)
-        val d = AlertDialog.Builder(act).setTitle("Permissions: " + f.name).setView(ScrollView(act).also { it.addView(box) })
-            .setPositiveButton("Apply") { _, _ ->
+        val d = AlertDialog.Builder(act).setTitle(T.t("Permissions: " + f.name)).setView(ScrollView(act).also { it.addView(box) })
+            .setPositiveButton(T.t("Apply")) { _, _ ->
                 var mode = special
                 for (r in 0..2) mode += (0..2).sumOf { if (grid[r][it]!!.isChecked) 4 shr it else 0 }
                 val o = owner.text.toString().trim(); val g = group.text.toString().trim()
@@ -62,7 +62,7 @@ object RootUi {
                     if (ok && (o != pm.owner || g != pm.group) && o.isNotEmpty() && g.isNotEmpty()) ok = RootSu.sh("chown $r$o:$g $q")
                     act.runOnUiThread { act.toast(if (ok) "Permissions changed" else "Could not change the permissions"); done() }
                 }.start()
-            }.setNegativeButton("Cancel", null).create()
+            }.setNegativeButton(T.t("Cancel"), null).create()
         d.show()
     }
 }

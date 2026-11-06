@@ -63,8 +63,8 @@ object Ui {
     fun ripple(c: Context, p: Pal, base: Drawable?, r: Float): Drawable =
         RippleDrawable(ColorStateList.valueOf(p.hover), base, rounded(Color.WHITE, r))
 
-    fun text(c: Context, s: String, size: Float, color: Int, bold: Boolean = false): TextView = TextView(c).also {
-        it.text = s; it.textSize = size; it.setTextColor(color); if (bold) it.typeface = Typeface.DEFAULT_BOLD
+    fun text(c: Context, s: String, size: Float, color: Int, bold: Boolean = false, tr: Boolean = true): TextView = TextView(c).also {
+        it.text = if (tr) T.t(s) else s; it.textSize = size; it.setTextColor(color); if (bold) it.typeface = Typeface.DEFAULT_BOLD
         it.includeFontPadding = false
     }
 

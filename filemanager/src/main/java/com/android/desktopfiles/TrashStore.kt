@@ -62,6 +62,7 @@ object TrashStore {
             val t = File(f.parentFile, ".trashed-$exp-${f.name}")
             val ok = f.renameTo(t)
             if (ok && t.isFile) scan(c, f.absolutePath, t.absolutePath)
+            if (ok) Tags.move(f.absolutePath, t.absolutePath)
             ok
         } catch (_: Exception) { false }
     }
@@ -70,6 +71,7 @@ object TrashStore {
         val t = Fs.unique(it.file.parentFile ?: Fs.desktop(), it.name)
         val ok = it.file.renameTo(t)
         if (ok && t.isFile) scan(c, it.file.absolutePath, t.absolutePath)
+        if (ok) Tags.move(it.file.absolutePath, t.absolutePath)
         ok
     } catch (_: Exception) { false }
 

@@ -47,10 +47,12 @@ class DetailsPane(private val c: Context) {
         val iv = ImageView(c); iv.scaleType = ImageView.ScaleType.FIT_CENTER
         Thumbs.bind(iv, f, 480)
         col.addView(iv, LinearLayout.LayoutParams(MATCH, c.dp(190)))
-        val nm = Ui.text(c, Fs.shown(f), 16f, p.text, true); nm.setPadding(0, c.dp(10), 0, 0); nm.setTextIsSelectable(true)
+        val nm = Ui.text(c, Fs.shown(f), 16f, p.text, true, false); nm.setPadding(0, c.dp(10), 0, 0); nm.setTextIsSelectable(true)
         col.addView(nm)
         row("Type", Fs.typeName(f))
         row("Location", f.parent ?: "/")
+        val tg = Tags.of(f.absolutePath)
+        if (tg.isNotEmpty()) row("Tags", tg.joinToString(", ") { it.name })
         val sz = row("Size", if (real.isDirectory) "calculating…" else Fs.size(c, real.length()))
         row("Modified", Fs.date(real.lastModified()))
         if (real.isDirectory) Thread {

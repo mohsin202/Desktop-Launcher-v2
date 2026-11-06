@@ -46,7 +46,7 @@ class TrashPage(private val host: Host) : Page {
             iv.setImageDrawable(Thumbs.icon(it.file))
             r.addView(iv, LinearLayout.LayoutParams(c.dp(30), c.dp(30)).also { it.rightMargin = c.dp(8) })
             val box = LinearLayout(c); box.orientation = LinearLayout.VERTICAL
-            val nm = Ui.text(c, it.name, 14f, p.text); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+            val nm = Ui.text(c, it.name, 14f, p.text, false, false); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
             val loc = Ui.text(c, "Deleted from " + (it.file.parent ?: ""), 10f, p.sub); loc.maxLines = 1; loc.ellipsize = android.text.TextUtils.TruncateAt.START
             box.addView(nm); box.addView(loc)
             r.addView(box, LinearLayout.LayoutParams(0, WRAP, 1f))

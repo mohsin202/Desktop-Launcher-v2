@@ -45,7 +45,7 @@ class ColumnsPage(private val host: Host, private val start: File) : Page {
                 r.isClickable = true
                 val iv = ImageView(c); Thumbs.bind(iv, f, c.dp(64))
                 r.addView(iv, LinearLayout.LayoutParams(c.dp(26), c.dp(26)).also { it.rightMargin = c.dp(10) })
-                val nm = Ui.text(c, Fs.shown(f), 13f, p.text); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                val nm = Ui.text(c, Fs.shown(f), 13f, p.text, false, false); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
                 r.addView(nm, LinearLayout.LayoutParams(0, WRAP, 1f))
                 val real = Fs.target(f) ?: f
                 if (real.isDirectory) r.addView(Ui.text(c, "›", 16f, p.sub))

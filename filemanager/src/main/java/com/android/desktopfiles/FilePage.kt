@@ -25,16 +25,16 @@ object Dialogs {
         val base = initial.substringBeforeLast('.', initial)
         et.setSelection(0, base.length)
         val box = FrameLayout(act); box.setPadding(act.dp(20), act.dp(8), act.dp(20), 0); box.addView(et)
-        val d = AlertDialog.Builder(act).setTitle(title).setView(box)
-            .setPositiveButton(okLabel) { _, _ -> val s = et.text.toString().trim(); if (s.isNotEmpty()) cb(s) }
-            .setNegativeButton("Cancel", null).create()
+        val d = AlertDialog.Builder(act).setTitle(T.t(title)).setView(box)
+            .setPositiveButton(T.t(okLabel)) { _, _ -> val s = et.text.toString().trim(); if (s.isNotEmpty()) cb(s) }
+            .setNegativeButton(T.t("Cancel"), null).create()
         d.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
         d.show()
     }
 
     fun confirm(act: android.app.Activity, title: String, msg: String, okLabel: String, cb: () -> Unit) {
-        AlertDialog.Builder(act).setTitle(title).setMessage(msg)
-            .setPositiveButton(okLabel) { _, _ -> cb() }.setNegativeButton("Cancel", null).show()
+        AlertDialog.Builder(act).setTitle(T.t(title)).setMessage(T.t(msg))
+            .setPositiveButton(T.t(okLabel)) { _, _ -> cb() }.setNegativeButton(T.t("Cancel"), null).show()
     }
 }
 
@@ -50,6 +50,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     private var loading = true
     private var message = ""
     private var lastMeta = 0; private var lastX = 0; private var lastY = 0
+    private var armed = false
     private var showDate = true; private var showType = true
 
     private val cmd = LinearLayout(c)
@@ -130,7 +131,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
 
     private fun groupHeader(r: Row): View {
         val open = r.header !in closedGroups
-        val t = Ui.text(c, (if (open) "▾  " else "▸  ") + r.header + "  (" + r.count + ")", 13f, p.accent, true)
+        val t = Ui.text(c, (if (open) "▾  " else "▸  ") + T.t(r.header!!) + "  (" + r.count + ")", 13f, p.accent, true, false)
         t.gravity = Gravity.CENTER_VERTICAL; t.setPadding(c.dp(14), 0, c.dp(8), 0)
         t.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(36)); t.isClickable = true
         t.setOnClickListener { if (!closedGroups.add(r.header!!)) closedGroups.remove(r.header); adapter.notifyDataSetChanged() }
@@ -156,6 +157,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         frame.addView(grid, FrameLayout.LayoutParams(MATCH, MATCH))
         frame.addView(emptyView, FrameLayout.LayoutParams(MATCH, MATCH))
         for (v in listOf<View>(list, grid)) {
+            if (dir != null) DnD.attach(host, v) { dir }
             v.setOnContextClickListener { ctxMenu(null, lastX, lastY); true }
             v.setOnTouchListener { _, e -> if (e.actionMasked == MotionEvent.ACTION_DOWN) { lastMeta = e.metaState; lastX = e.rawX.toInt(); lastY = e.rawY.toInt() }; false }
         }
@@ -192,6 +194,10 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
                         found = out
                         if (out.isEmpty()) msg = "No results for \"" + loc.q + "\""
                     }
+                    is Loc.Special -> if (loc.kind.startsWith("tag:")) {
+                        found = Tags.files(loc.kind.substring(4))
+                        if (found.isEmpty()) msg = "No items have this tag yet"
+                    }
                     else -> {}
                 }
             } catch (_: Exception) {}
@@ -227,7 +233,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     }
 
     private fun updateEmpty() {
-        emptyView.text = if (loading) "Loading…" else message
+        emptyView.text = T.t(if (loading) "Loading…" else message)
         emptyView.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
     }
 
@@ -239,7 +245,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             val sz = files.filter { it.isFile }.sumOf { it.length() }
             if (files.any { it.isFile }) s += "  " + Fs.size(c, sz)
         }
-        status.text = s
+        status.text = T.t(s)
     }
 
     private fun applyView() {
@@ -257,7 +263,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         row.setPadding(c.dp(8), 0, c.dp(8), 0)
         fun col(label: String, key: String, w: Int): TextView {
             val arrow = if (sortKey() == key) (if (asc()) " ▲" else " ▼") else ""
-            val t = Ui.text(c, label + arrow, 12f, p.sub, sortKey() == key)
+            val t = Ui.text(c, T.t(label) + arrow, 12f, p.sub, sortKey() == key, false)
             t.gravity = Gravity.CENTER_VERTICAL; t.isClickable = true
             t.background = Ui.ripple(c, p, null, c.dpf(6f))
             t.setOnClickListener {
@@ -374,12 +380,12 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     private fun bindRow(h: RowH, i: Int) {
         val f = items[i]
         val on = f.absolutePath in sel
-        h.name.text = Fs.shown(f)
+        h.name.text = Tags.decorate(Fs.shown(f), f.absolutePath)
         Thumbs.bind(h.icon, f, c.dp(if (h.grid) 120 else 60))
         h.root.background = Ui.ripple(c, p, if (on) Ui.rounded(p.sel, c.dpf(8f)) else null, c.dpf(8f))
         h.sub?.let { it.text = if (loc is Loc.Search) (f.parent ?: "") else ""; it.visibility = if (loc is Loc.Search) View.VISIBLE else View.GONE }
         h.date?.text = Fs.date(f.lastModified())
-        h.type?.text = Fs.typeName(f)
+        h.type?.text = T.t(Fs.typeName(f))
         h.size?.text = if (f.isDirectory) "" else Fs.size(c, f.length())
         h.check?.let {
             it.text = if (on) "✓" else ""
@@ -387,10 +393,24 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             it.setOnClickListener { toggle(i) }
         }
         h.root.isClickable = true
-        h.root.setOnTouchListener { _, e ->
-            if (e.actionMasked == MotionEvent.ACTION_DOWN) { lastMeta = e.metaState; lastX = e.rawX.toInt(); lastY = e.rawY.toInt() }
+        h.root.setOnTouchListener { v, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    lastMeta = e.metaState; lastX = e.rawX.toInt(); lastY = e.rawY.toInt()
+                    armed = e.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE && (e.buttonState and MotionEvent.BUTTON_PRIMARY) != 0
+                }
+                MotionEvent.ACTION_MOVE -> if (armed && Math.hypot((e.rawX - lastX).toDouble(), (e.rawY - lastY).toDouble()) > c.dp(10)) {
+                    armed = false
+                    val it = items[i]
+                    val files = if (it.absolutePath in sel) selFiles() else listOf(it)
+                    if (DnD.start(v, files) && it.absolutePath !in sel) { sel.clear(); sel.add(it.absolutePath); anchor = i; changed() }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> armed = false
+            }
             false
         }
+        val folder = (Fs.target(f) ?: f).takeIf { it.isDirectory }
+        if (folder != null) DnD.attach(host, h.root) { folder } else h.root.setOnDragListener(null)
         h.root.setOnClickListener { tap(i) }
         h.root.setOnLongClickListener { ctxMenu(items[i], lastX, lastY); true }
         h.root.setOnContextClickListener { ctxMenu(items[i], lastX, lastY); true }
@@ -447,7 +467,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             val t = File(f.parentFile, n)
             Thread {
                 val msg = if (RootSu.exists(t)) "That name already exists"
-                    else if (f.renameTo(t) || (RootSu.ensure() && RootSu.sh("mv " + RootSu.q(f) + " " + RootSu.q(t)))) "" else "Could not rename"
+                    else if (f.renameTo(t) || (RootSu.ensure() && RootSu.sh("mv " + RootSu.q(f) + " " + RootSu.q(t)))) { Tags.move(f.absolutePath, t.absolutePath); "" } else "Could not rename"
                 c.mainExecutor.execute { if (msg.isNotEmpty()) c.toast(msg); sel.clear(); host.refreshAll() }
             }.start()
         }
@@ -474,6 +494,14 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         val d = Fs.desktop()
         Jobs.start(Job((if (move) "Moving " else "Copying ") + files.size + " item(s) to Desktop"), { Ops.transfer(files, d, move, it) }) { host.refreshAll() }
         host.showStatus()
+    }
+
+    private fun tagItems(fs: List<File>): List<MenuItem> {
+        val paths = fs.map { it.absolutePath }
+        val l = Tags.all().map { t ->
+            MenuItem(t.name, checked = paths.all { pa -> Tags.of(pa).any { it.id == t.id } }) { Tags.toggle(paths, t.id); changed() }
+        }
+        return l + MenuItem("New tag…") { TagUi.create(host.act) { t -> Tags.toggle(paths, t.id); host.pinsChanged() } }
     }
 
     private fun transferTo(files: List<File>, d: File, move: Boolean) {
@@ -519,11 +547,11 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         val single = files.size <= 1
         fun text(size: String) = if (single) "Type: " + Fs.typeName(f) + "\nLocation: " + (f.parent ?: "/") + "\nSize: " + size + "\nModified: " + Fs.date(f.lastModified())
             else files.size.toString() + " items\nSize: " + size
-        val d = AlertDialog.Builder(host.act).setTitle(if (single) f.name else files.size.toString() + " items").setMessage(text("calculating…"))
-            .setPositiveButton("OK", null).show()
+        val d = AlertDialog.Builder(host.act).setTitle(if (single) f.name else T.t(files.size.toString() + " items")).setMessage(T.t(text("calculating…")))
+            .setPositiveButton(T.t("OK"), null).show()
         Thread {
             val total = if (single) Ops.sizeOf(f) else files.sumOf { Ops.sizeOf(it) }
-            host.act.runOnUiThread { d.setMessage(text(Fs.size(c, total) + " (" + total + " bytes)")) }
+            host.act.runOnUiThread { d.setMessage(T.t(text(Fs.size(c, total) + " (" + total + " bytes)"))) }
         }.start()
     }
 
@@ -560,6 +588,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             menu += null
             menu += MenuItem("Share", fs.any { it.isFile }) { Fs.share(c, fs) }
             if (one && target != null && target.isDirectory) menu += MenuItem("Pin to Quick access") { Store.pin(c, "dir:" + target.absolutePath); host.pinsChanged(); c.toast("Pinned") }
+            menu += MenuItem("Tags", sub = tagItems(fs))
             menu += MenuItem("Create shortcut on Desktop") { shortcuts(fs) }
             menu += MenuItem("Copy to Desktop") { toDesktop(fs, false) }
             menu += MenuItem("Move to Desktop") { toDesktop(fs, true) }
