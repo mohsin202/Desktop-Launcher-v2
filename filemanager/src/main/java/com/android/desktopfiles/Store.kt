@@ -23,7 +23,15 @@ object Store {
     fun pins(c: Context): List<String> {
         if (!has(c, "pins")) {
             val e = ext()
-            setList(c, "pins", listOf("dir:$e/Desktop", "dir:$e/Download", "dir:$e/Documents", "dir:$e/Pictures", "dir:$e/Music", "dir:$e/Movies", "sp:apps", "sp:trash"))
+            setList(c, "pins", listOf("dir:$e/Desktop", "dir:$e/Download", "sp:documents", "sp:pictures", "sp:music", "sp:videos", "sp:apps", "sp:trash"))
+            setStr(c, "pinsV", "2")
+        } else if (str(c, "pinsV", "1") != "2") {
+            // Documents / Pictures / Music / Movies now show every folder on the device that holds such files
+            val e = ext()
+            val map = mapOf("dir:$e/Documents" to "sp:documents", "dir:$e/Pictures" to "sp:pictures", "dir:$e/Music" to "sp:music", "dir:$e/Movies" to "sp:videos")
+            val l = list(c, "pins").map { map[it] ?: it }.distinct().toMutableList()
+            if ("sp:apps" !in l) l.add("sp:apps")
+            setList(c, "pins", l); setStr(c, "pinsV", "2")
         }
         return list(c, "pins")
     }
@@ -44,7 +52,7 @@ object Store {
 /** Where a tab is. */
 sealed class Loc {
     object Home : Loc()
-    data class Dir(val path: String) : Loc()
+    data class Dir(val path: String, val only: String = "") : Loc()
     data class Search(val base: String, val q: String) : Loc()
     object Trash : Loc()
     /** Reserved for the next part (Documents / Pictures / Music / Videos grouped by folder, Apps). */

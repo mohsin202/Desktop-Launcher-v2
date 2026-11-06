@@ -1,6 +1,7 @@
 package com.android.desktopfiles
 
 import android.content.Context
+import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import java.io.File
@@ -23,6 +24,8 @@ object Jobs {
     val list = CopyOnWriteArrayList<Job>()
     private val h = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
+    /** Set once by the window; lets a job start the notification service. */
+    @Volatile var appCtx: Context? = null
 
     fun listen(l: () -> Unit) { listeners.add(l) }
     fun unlisten(l: () -> Unit) { listeners.remove(l) }
@@ -40,6 +43,7 @@ object Jobs {
     fun start(job: Job, work: (Job) -> Unit, then: () -> Unit = {}) {
         list.add(job)
         changed()
+        appCtx?.let { try { it.startForegroundService(Intent(it, JobsService::class.java)) } catch (_: Exception) {} }
         Thread {
             try { work(job) } catch (_: Throwable) { job.failed++ }
             job.finished = true

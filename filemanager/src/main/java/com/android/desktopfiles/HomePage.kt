@@ -14,6 +14,10 @@ object Places {
     fun label(item: String): String = when {
         item == "sp:trash" -> "Trash"
         item == "sp:apps" -> "Apps"
+        item == "sp:documents" -> "Documents"
+        item == "sp:pictures" -> "Pictures"
+        item == "sp:music" -> "Music"
+        item == "sp:videos" -> "Videos"
         item.startsWith("dir:") -> File(item.substring(4)).let { if (it.absolutePath == Fs.ext().absolutePath) "Internal storage" else it.name }
         else -> item
     }
@@ -21,6 +25,10 @@ object Places {
     fun glyph(item: String): Glyph = when {
         item == "sp:trash" -> Glyph(Glyph.Kind.BIN)
         item == "sp:apps" -> Glyph(Glyph.Kind.APPS)
+        item == "sp:documents" -> Glyph(Glyph.Kind.DOCS)
+        item == "sp:pictures" -> Glyph(Glyph.Kind.PICS)
+        item == "sp:music" -> Glyph(Glyph.Kind.MUSIC)
+        item == "sp:videos" -> Glyph(Glyph.Kind.VIDEOS)
         else -> when (File(item.removePrefix("dir:")).name) {
             "Desktop" -> Glyph(Glyph.Kind.DESKTOP)
             "Download", "Downloads" -> Glyph(Glyph.Kind.DOWNLOAD)
@@ -129,7 +137,6 @@ class HomePage(private val host: Host) : Page {
         section("Quick access", "qa") {
             val f = flow()
             for (item in Store.pins(c)) {
-                if (item == "sp:apps") continue
                 val loc = Places.loc(item) ?: continue
                 f.addView(card(Places.glyph(item), Places.label(item), 190, click = { host.go(loc) }, long = { v -> placeMenu(v, item, loc) }))
             }

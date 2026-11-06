@@ -128,6 +128,7 @@ class FilePage(private val host: Host, private val loc: Loc) : Page {
                         val d = File(loc.path)
                         var k: List<File>? = try { d.listFiles()?.toList() } catch (_: Exception) { null }
                         if (k == null && RootSu.state == 1) k = RootSu.list(d.absolutePath)
+                        if (k != null && loc.only.isNotEmpty()) k = k.filter { Kinds.match(loc.only, it) }
                         if (k == null) msg = if (RootSu.state == 2 && d.absolutePath == "/") "Root access is needed to read this folder" else "This folder cannot be opened"
                         found = k ?: emptyList()
                     }
@@ -246,6 +247,7 @@ class FilePage(private val host: Host, private val loc: Loc) : Page {
         btn("Share", n > 0) { Fs.share(c, selFiles()) }
         btn("Delete", n > 0) { delete(selFiles(), false) }
         sep()
+        if ((loc as? Loc.Dir)?.only?.isNotEmpty() == true) btn("Show all files") { host.go(Loc.Dir(loc.path)) }
         btn("Sort ▾") { v -> Pop(c).showBelow(v, sortItems()) }
         btn("View ▾") { v -> Pop(c).showBelow(v, viewItems()) }
     }

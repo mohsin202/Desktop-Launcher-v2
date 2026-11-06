@@ -75,7 +75,10 @@ open class MainActivity : Activity(), Host {
             else -> Loc.Home
         }
         tabs.add(Tab(first))
+        Jobs.appCtx = applicationContext
         Jobs.listen(jobListener)
+        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            try { requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7) } catch (_: Exception) {}
         onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { onBack() }
         hadAccess = Environment.isExternalStorageManager()
         buildUi()
@@ -106,7 +109,7 @@ open class MainActivity : Activity(), Host {
 
     private fun titleOf(l: Loc): String = when (l) {
         is Loc.Home -> "Home"
-        is Loc.Dir -> if (l.path == Fs.ext().absolutePath) "Internal storage" else if (l.path == "/") "Root" else File(l.path).name
+        is Loc.Dir -> if (l.only.isNotEmpty()) File(l.path).name + " (" + l.only + ")" else if (l.path == Fs.ext().absolutePath) "Internal storage" else if (l.path == "/") "Root" else File(l.path).name
         is Loc.Trash -> "Trash"
         is Loc.Search -> "Search: " + l.q
         is Loc.Special -> l.kind.replaceFirstChar { it.uppercase() }
@@ -333,7 +336,6 @@ open class MainActivity : Activity(), Host {
         row(Glyph(Glyph.Kind.HOME), "Home", here is Loc.Home, Loc.Home)
         head("Quick access")
         for (item in Store.pins(this)) {
-            if (item == "sp:apps") continue
             val loc = Places.loc(item) ?: continue
             row(Places.glyph(item), Places.label(item), here == loc, loc, long = { v ->
                 val xy = IntArray(2); v.getLocationOnScreen(xy)
@@ -356,7 +358,7 @@ open class MainActivity : Activity(), Host {
         is Loc.Home -> HomePage(this)
         is Loc.Dir, is Loc.Search -> FilePage(this, l)
         is Loc.Trash -> TrashPage(this)
-        is Loc.Special -> SoonPage(this, "This page comes in the next update")
+        is Loc.Special -> if (l.kind == "apps") AppsPage(this) else MediaPage(this, l.kind)
     }
 
     private fun showTab() {
