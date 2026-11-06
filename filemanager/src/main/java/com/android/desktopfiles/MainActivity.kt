@@ -116,6 +116,7 @@ open class MainActivity : Activity(), Host {
     private fun titleOf(l: Loc): String = when (l) {
         is Loc.Home -> "Home"
         is Loc.Tag -> Tags.byId(l.id)?.name ?: "Tag"
+        is Loc.Mtp -> l.title.ifEmpty { Mtp.find(this, l.dev)?.let { Mtp.label(it) } ?: "Phone" }
         is Loc.Dir -> if (l.only.isNotEmpty()) File(l.path).name + " (" + l.only + ")" else if (l.path == Fs.ext().absolutePath) "Internal storage" else if (l.path == "/") "Root" else File(l.path).name
         is Loc.Trash -> "Trash"
         is Loc.Search -> "Search: " + l.q
@@ -139,6 +140,8 @@ open class MainActivity : Activity(), Host {
             val ime = ins.getInsets(WindowInsets.Type.ime())
             v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom)); WindowInsets.CONSUMED
         }
+        root.layoutDirection = View.LAYOUT_DIRECTION_LTR
+        window.decorView.layoutDirection = View.LAYOUT_DIRECTION_LTR
         setContentView(root)
 
         if (!Environment.isExternalStorageManager()) { permissionScreen(root); return }
@@ -416,6 +419,9 @@ open class MainActivity : Activity(), Host {
                 row(Places.volGlyph(v), "Root", here is Loc.Dir && here.path == "/", null, no, click = { if (no) toast("Get root access for the root directory") else go(Loc.Dir("/")) })
             } else row(Places.volGlyph(v), v.name, here is Loc.Dir && here.path == d.absolutePath, Loc.Dir(d.absolutePath))
         }
+        for (d in Mtp.list(this)) {
+            row(Glyph(Glyph.Kind.PHONE), Mtp.label(d), here is Loc.Mtp && here.dev == d.deviceName, null, click = { openPhone(d) })
+        }
         return sv
     }
 
@@ -430,6 +436,7 @@ open class MainActivity : Activity(), Host {
     private fun makePage(l: Loc): Page = when (l) {
         is Loc.Home -> HomePage(this)
         is Loc.Tag -> FilePage(this, Loc.Special("tag:" + l.id))
+        is Loc.Mtp -> MtpPage(this, l)
         is Loc.Dir -> if (Store.str(this, "view", "details") == "columns" && l.only.isEmpty() && !Store.bool(this, "dual", false)) ColumnsPage(this, File(l.path)) else FilePage(this, l)
         is Loc.Search -> FilePage(this, l)
         is Loc.Trash -> TrashPage(this)
@@ -496,6 +503,11 @@ open class MainActivity : Activity(), Host {
         when (val l = tabs[cur].loc) {
             is Loc.Dir -> { val par = File(l.path).parentFile; if (par != null && l.path != "/") go(Loc.Dir(par.absolutePath)) else go(Loc.Home) }
             is Loc.Search -> go(Loc.Dir(l.base))
+            is Loc.Mtp -> {
+                if (l.storage == -1) go(Loc.Home)
+                else if (l.parent == -1) go(Loc.Mtp(l.dev))
+                else Thread { val md = Mtp.device(l.dev); val par = if (md != null) Mtp.parentOf(md, l.parent) else null; runOnUiThread { go(if (par == null) Loc.Mtp(l.dev) else Loc.Mtp(l.dev, l.storage, par)) } }.start()
+            }
             is Loc.Home -> {}
             else -> go(Loc.Home)
         }
@@ -518,6 +530,14 @@ open class MainActivity : Activity(), Host {
             else -> {}
         }
         try { startActivity(i) } catch (_: Exception) { toast("Could not open a new window") }
+    }
+
+    override fun openPhone(d: android.hardware.usb.UsbDevice) {
+        toast("Connecting…")
+        Mtp.connect(this, d) { md ->
+            if (md == null) toast("Could not open the phone. Unlock it and set the USB mode to File transfer.")
+            else go(Loc.Mtp(d.deviceName))
+        }
     }
 
     override fun refreshAll() { page?.refresh(); page2?.refresh() }

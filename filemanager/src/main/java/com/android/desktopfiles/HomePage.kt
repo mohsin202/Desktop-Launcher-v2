@@ -168,6 +168,10 @@ class HomePage(private val host: Host) : Page {
                     f.addView(card(Places.volGlyph(v), v.name, 270, box, click = { if (d != null) host.go(Loc.Dir(d.absolutePath)) }))
                 }
             }
+            for (ph in Mtp.list(c)) {
+                val sub = Ui.text(c, "USB phone (MTP)", 11f, p.sub)
+                f.addView(card(Glyph(Glyph.Kind.PHONE), Mtp.label(ph), 270, sub, click = { host.openPhone(ph) }))
+            }
             f
         }
 

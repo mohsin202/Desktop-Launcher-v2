@@ -55,6 +55,8 @@ sealed class Loc {
     data class Dir(val path: String, val only: String = "") : Loc()
     data class Search(val base: String, val q: String) : Loc()
     object Trash : Loc()
+    /** A phone connected by USB: dev = the USB device name, storage = -1 lists the storages, parent = -1 is the top of a storage. */
+    data class Mtp(val dev: String, val storage: Int = -1, val parent: Int = -1, val title: String = "") : Loc()
     /** Everything that carries a colour tag. */
     data class Tag(val id: String) : Loc()
     /** Reserved for the next part (Documents / Pictures / Music / Videos grouped by folder, Apps). */
@@ -91,6 +93,8 @@ interface Host {
     fun selectionChanged(files: List<File>) {}
     /** Build the page of this tab again (the view type changed). */
     fun relayout() {}
+    /** Connect a phone and open it. */
+    fun openPhone(d: android.hardware.usb.UsbDevice) {}
     /** Dual pane: the folder shown by the other pane, or null. */
     fun otherPaneDir(pane: Int): File? = null
 }

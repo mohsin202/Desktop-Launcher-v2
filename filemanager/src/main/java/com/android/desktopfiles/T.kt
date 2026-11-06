@@ -66,6 +66,12 @@ object T {
         "These items are outside your storage and cannot go to the Trash." to "یہ آئٹم آپ کی اسٹوریج سے باہر ہیں اور ٹریش میں نہیں جا سکتے۔",
         "Copy here" to "یہاں کاپی کریں", "Move here" to "یہاں منتقل کریں", "Create shortcut here" to "یہاں شارٹ کٹ بنائیں",
         "A folder cannot be dropped into itself" to "فولڈر کو اسی میں نہیں ڈالا جا سکتا", "Done, nothing to do" to "مکمل، کچھ کرنا نہیں تھا",
+        "USB phone (MTP)" to "USB فون (MTP)", "The phone is not connected" to "فون جڑا ہوا نہیں", "USB permission was not given" to "USB کی اجازت نہیں دی گئی",
+        "Could not connect" to "جڑ نہیں سکا", "Could not open the phone" to "فون کھولا نہیں جا سکا", "Connecting…" to "جڑ رہا ہے…",
+        "The phone did not accept that" to "فون نے یہ قبول نہیں کیا",
+        "The phone did not answer. Set its USB mode to File transfer." to "فون نے جواب نہیں دیا۔ اس کا USB موڈ فائل ٹرانسفر پر کریں۔",
+        "Could not open the phone. Unlock it and set the USB mode to File transfer." to "فون کھولا نہیں جا سکا۔ اسے ان لاک کریں اور USB موڈ فائل ٹرانسفر پر کریں۔",
+        "Phone" to "فون", "Storage" to "اسٹوریج", "Copy to Downloads" to "ڈاؤن لوڈز میں کاپی کریں",
         "Enabled" to "فعال", "English" to "English", "Urdu" to "اردو")
 
     private class Rule(val re: Regex, val f: (MatchResult) -> String)
