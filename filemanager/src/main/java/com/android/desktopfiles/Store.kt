@@ -87,6 +87,8 @@ interface Host {
     fun openFile(f: File)
     /** The page tells which items are selected (the Details pane shows them). */
     fun selectionChanged(files: List<File>) {}
+    /** Build the page of this tab again (the view type changed). */
+    fun relayout() {}
     /** Dual pane: the folder shown by the other pane, or null. */
     fun otherPaneDir(pane: Int): File? = null
 }

@@ -74,15 +74,67 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     private fun asc() = Store.bool(c, "sortAsc", true)
     private fun isGrid() = Store.str(c, "view", "details") == "grid"
 
+    /** A line of the list: a group header (header != null) or the item number idx. */
+    private class Row(val header: String?, val idx: Int, val count: Int = 0)
+    private var rows: List<Row> = emptyList()
+    private val closedGroups = HashSet<String>()
+
+    private fun groupMode() = Store.str(c, "group", "none")
+    private fun grouping() = groupMode() != "none" && !isGrid()
+
+    /** Order number and title of the group a file belongs to (folders always form the first group). */
+    private fun gKey(f: File): Pair<Int, String> {
+        if (f.isDirectory) return -1 to "Folders"
+        return when (groupMode()) {
+            "name" -> { val ch = f.name.firstOrNull()?.uppercaseChar(); if (ch != null && ch.isLetter()) ch.code to ch.toString() else 0 to "#" }
+            "type" -> 0 to Fs.typeName(f)
+            "date" -> {
+                val d = (System.currentTimeMillis() - f.lastModified()) / 86_400_000L
+                when { d < 1 -> 5 to "Today"; d < 2 -> 4 to "Yesterday"; d < 7 -> 3 to "Earlier this week"; d < 30 -> 2 to "Earlier this month"; d < 365 -> 1 to "Earlier this year"; else -> 0 to "A long time ago" }
+            }
+            "size" -> {
+                val n = f.length()
+                when { n == 0L -> 0 to "Empty"; n < 16_384L -> 1 to "Tiny (under 16 KB)"; n < 1_048_576L -> 2 to "Small (under 1 MB)"; n < 134_217_728L -> 3 to "Medium (under 128 MB)"; n < 1_073_741_824L -> 4 to "Large (under 1 GB)"; else -> 5 to "Huge (1 GB and more)" }
+            }
+            else -> 0 to ""
+        }
+    }
+
+    private fun buildRows() {
+        if (!grouping()) { rows = items.indices.map { Row(null, it) }; return }
+        val counts = items.groupingBy { gKey(it).second }.eachCount()
+        val out = ArrayList<Row>(); var last: String? = null
+        for ((i, f) in items.withIndex()) {
+            val g = gKey(f).second
+            if (g != last) { out.add(Row(g, -1, counts[g] ?: 0)); last = g }
+            if (g !in closedGroups) out.add(Row(null, i))
+        }
+        rows = out
+    }
+
     private val adapter = object : BaseAdapter() {
-        override fun getCount() = items.size
-        override fun getItem(i: Int): Any = items[i]
+        override fun notifyDataSetChanged() { buildRows(); super.notifyDataSetChanged() }
+        override fun getCount() = rows.size
+        override fun getItem(i: Int): Any = rows[i]
         override fun getItemId(i: Int) = i.toLong()
+        override fun getViewTypeCount() = 2
+        override fun getItemViewType(i: Int) = if (rows[i].header != null) 1 else 0
         override fun getView(i: Int, cv: View?, parent: ViewGroup?): View {
+            val r = rows[i]
+            if (r.header != null) return groupHeader(r)
             val h = (cv?.tag as? RowH)?.takeIf { it.grid == isGrid() } ?: (if (isGrid()) gridCell() else detailsRow())
-            bindRow(h, i)
+            bindRow(h, r.idx)
             return h.root
         }
+    }
+
+    private fun groupHeader(r: Row): View {
+        val open = r.header !in closedGroups
+        val t = Ui.text(c, (if (open) "▾  " else "▸  ") + r.header + "  (" + r.count + ")", 13f, p.accent, true)
+        t.gravity = Gravity.CENTER_VERTICAL; t.setPadding(c.dp(14), 0, c.dp(8), 0)
+        t.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(36)); t.isClickable = true
+        t.setOnClickListener { if (!closedGroups.add(r.header!!)) closedGroups.remove(r.header); adapter.notifyDataSetChanged() }
+        return t
     }
 
     class RowH(val root: View, val grid: Boolean, val check: TextView?, val icon: ImageView, val name: TextView,
@@ -127,7 +179,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
                     is Loc.Dir -> {
                         val d = File(loc.path)
                         var k: List<File>? = try { d.listFiles()?.toList() } catch (_: Exception) { null }
-                        if (k == null && RootSu.state == 1) k = RootSu.list(d.absolutePath)
+                        if (k == null && RootSu.ensure()) k = RootSu.list(d.absolutePath)
                         if (k != null && loc.only.isNotEmpty()) k = k.filter { Kinds.match(loc.only, it) }
                         if (k == null) msg = if (RootSu.state == 2 && d.absolutePath == "/") "Root access is needed to read this folder" else "This folder cannot be opened"
                         found = k ?: emptyList()
@@ -164,7 +216,14 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         }
         val s = l.sortedWith(cmp)
         val ordered = if (asc()) s else s.reversed()
-        return ordered.sortedBy { if (it.isDirectory) 0 else 1 }
+        if (!grouping()) return ordered.sortedBy { if (it.isDirectory) 0 else 1 }
+        return ordered.sortedWith(Comparator { a, b ->
+            if (a.isDirectory != b.isDirectory) return@Comparator if (a.isDirectory) -1 else 1
+            if (a.isDirectory) return@Comparator 0
+            val ka = gKey(a); val kb = gKey(b)
+            val cm = if (ka.first != kb.first) ka.first.compareTo(kb.first) else ka.second.compareTo(kb.second)
+            if (asc()) cm else -cm
+        })
     }
 
     private fun updateEmpty() {
@@ -187,6 +246,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         list.visibility = if (isGrid()) View.GONE else View.VISIBLE
         grid.visibility = if (isGrid()) View.VISIBLE else View.GONE
         headerBox.visibility = if (isGrid()) View.GONE else View.VISIBLE
+        items = sortList(items)
         adapter.notifyDataSetChanged()
     }
 
@@ -262,6 +322,11 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     private fun viewItems(): List<MenuItem?> = listOf(
         MenuItem("Details", checked = !isGrid()) { Store.setStr(c, "view", "details"); applyView() },
         MenuItem("Grid", checked = isGrid()) { Store.setStr(c, "view", "grid"); applyView() },
+        MenuItem("Columns", checked = false) { Store.setStr(c, "view", "columns"); host.relayout() },
+        null,
+        MenuItem("Group by", sub = listOf("none" to "None", "name" to "Name", "type" to "Type", "date" to "Date modified", "size" to "Size").map { g ->
+            MenuItem(g.second, checked = groupMode() == g.first) { Store.setStr(c, "group", g.first); closedGroups.clear(); resort() }
+        }),
         null,
         MenuItem("Show hidden files", checked = Store.bool(c, "showHidden", false)) { Store.setBool(c, "showHidden", !Store.bool(c, "showHidden", false)); host.refreshAll() })
 
@@ -380,16 +445,20 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     private fun rename(f: File) {
         Dialogs.ask(host.act, "Rename", f.name, "Rename") { n ->
             val t = File(f.parentFile, n)
-            if (t.exists()) c.toast("That name already exists")
-            else if (!f.renameTo(t)) c.toast("Could not rename")
-            sel.clear(); host.refreshAll()
+            Thread {
+                val msg = if (RootSu.exists(t)) "That name already exists"
+                    else if (f.renameTo(t) || (RootSu.ensure() && RootSu.sh("mv " + RootSu.q(f) + " " + RootSu.q(t)))) "" else "Could not rename"
+                c.mainExecutor.execute { if (msg.isNotEmpty()) c.toast(msg); sel.clear(); host.refreshAll() }
+            }.start()
         }
     }
 
     private fun delete(files: List<File>, forever: Boolean) {
         if (files.isEmpty()) return
-        if (forever) {
-            Dialogs.confirm(host.act, "Delete permanently", "Delete " + files.size + " item(s) permanently? This cannot be undone.", "Delete") {
+        val outside = files.any { !it.absolutePath.startsWith(Fs.ext().absolutePath) }
+        if (forever || outside) {
+            val why = if (outside && !forever) "These items are outside your storage and cannot go to the Trash.\n" else ""
+            Dialogs.confirm(host.act, "Delete permanently", why + "Delete " + files.size + " item(s) permanently? This cannot be undone.", "Delete") {
                 Jobs.start(Job("Deleting " + files.size + " items"), { Ops.deleteForever(files, it) }) { sel.clear(); host.refreshAll() }
                 host.showStatus()
             }
@@ -436,10 +505,12 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     private fun newEntry(folder: Boolean) {
         val d = dir ?: return
         Dialogs.ask(host.act, if (folder) "New folder" else "New text file", if (folder) "New folder" else "New text file.txt", "Create") { n ->
-            val t = Fs.unique(d, n)
-            val ok = try { if (folder) t.mkdirs() else t.createNewFile() } catch (_: Exception) { false }
-            if (!ok) c.toast("Could not create it")
-            host.refreshAll()
+            Thread {
+                val t = if (d.canWrite()) Fs.unique(d, n) else File(d, n)
+                var ok = try { if (folder) t.mkdirs() else t.createNewFile() } catch (_: Exception) { false }
+                if (!ok && RootSu.ensure() && !RootSu.exists(t)) ok = RootSu.sh((if (folder) "mkdir -p " else "touch ") + RootSu.q(t))
+                c.mainExecutor.execute { if (!ok) c.toast("Could not create it"); host.refreshAll() }
+            }.start()
         }
     }
 
@@ -493,6 +564,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             menu += MenuItem("Copy to Desktop") { toDesktop(fs, false) }
             menu += MenuItem("Move to Desktop") { toDesktop(fs, true) }
             menu += null
+            if (one && RootSu.state == 1 && !fs[0].absolutePath.startsWith(Fs.ext().absolutePath)) menu += MenuItem("Permissions…") { RootUi.permissions(host.act, fs[0]) { host.refreshAll() } }
             menu += MenuItem("Properties") { properties(fs) }
         } else {
             if (dir != null) {
@@ -505,6 +577,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             if (dir != null) {
                 menu += null
                 menu += MenuItem("Pin this folder to Quick access") { Store.pin(c, "dir:" + dir.absolutePath); host.pinsChanged(); c.toast("Pinned") }
+                if (RootSu.state == 1 && !dir.absolutePath.startsWith(Fs.ext().absolutePath)) menu += MenuItem("Permissions…") { RootUi.permissions(host.act, dir) { host.refreshAll() } }
                 menu += MenuItem("Properties") { properties(emptyList()) }
             }
         }

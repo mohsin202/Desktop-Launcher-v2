@@ -114,30 +114,116 @@ object Vols {
     }
 }
 
-/** Root access (su): needed for the Root card. Listing only; checked once in the background. */
+/** A file or folder read through su: knows its kind, size and date from the listing (the app itself cannot look at it). */
+class RootFile(path: String, private val dir: Boolean, private val sz: Long, private val mt: Long) : File(path) {
+    override fun isDirectory() = dir
+    override fun isFile() = !dir
+    override fun length() = sz
+    override fun lastModified() = mt
+    override fun exists() = true
+}
+
+/** Root access (su): lets the Root card and system folders be listed, opened, copied, moved, renamed and deleted. */
 object RootSu {
     @Volatile var state = 0 // 0 not checked yet, 1 root available, 2 no root
 
+    fun q(p: String) = "'" + p.replace("'", "'\\''") + "'"
+    fun q(f: File) = q(f.absolutePath)
+
+    private fun probe(): Boolean {
+        val ok = try {
+            val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+            val t = Thread { try { Thread.sleep(8000); p.destroy() } catch (_: Exception) {} }
+            t.isDaemon = true; t.start()
+            val out = p.inputStream.bufferedReader().readText()
+            p.waitFor()
+            out.contains("uid=0")
+        } catch (_: Exception) { false }
+        state = if (ok) 1 else 2
+        return ok
+    }
+
     fun check(done: (Boolean) -> Unit) {
         Thread {
-            val ok = try {
-                val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
-                val t = Thread { try { Thread.sleep(8000); p.destroy() } catch (_: Exception) {} }
-                t.isDaemon = true; t.start()
-                val out = p.inputStream.bufferedReader().readText()
-                p.waitFor()
-                out.contains("uid=0")
-            } catch (_: Exception) { false }
-            state = if (ok) 1 else 2
+            val ok = probe()
             android.os.Handler(android.os.Looper.getMainLooper()).post { done(ok) }
         }.start()
     }
 
-    /** Names in a folder that the app itself cannot read, through su. Directories end with "/". */
+    /** Checks (once) and tells whether root works. Call from a worker thread. */
+    fun ensure(): Boolean { if (state == 0) probe(); return state == 1 }
+
+    /** Runs one command as root; true when it succeeded. Worker thread only. */
+    fun sh(cmd: String): Boolean = try {
+        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "$cmd 2>&1"))
+        p.inputStream.readBytes()
+        p.waitFor() == 0
+    } catch (_: Exception) { false }
+
+    /** Runs one command as root and returns (succeeded, all its output). Worker thread only. */
+    fun out(cmd: String): Pair<Boolean, String> = try {
+        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "$cmd 2>&1"))
+        val t = p.inputStream.bufferedReader().readText()
+        (p.waitFor() == 0) to t.trim()
+    } catch (e: Exception) { false to (e.message ?: "") }
+
+    /** The mounted file system a path lives on. */
+    class Mnt(val mp: String, val dev: String, val rw: Boolean)
+
+    fun mountOf(path: String): Mnt? {
+        val (ok, txt) = out("cat /proc/mounts")
+        if (!ok) return null
+        var best: Mnt? = null
+        for (l in txt.lines()) {
+            val a = l.split(" ")
+            if (a.size < 4) continue
+            val mp = a[1].replace("\\040", " ")
+            if (!(path == mp || mp == "/" || path.startsWith("$mp/"))) continue
+            if (best == null || mp.length >= best.mp.length) best = Mnt(mp, a[0], a[3].split(",").contains("rw"))
+        }
+        return best
+    }
+
+    /** Remounts a file system read-write or read-only (tries the usual spellings). */
+    fun remount(m: Mnt, rw: Boolean): Pair<Boolean, String> {
+        val mode = if (rw) "rw" else "ro"
+        var r = out("mount -o remount,$mode " + q(m.mp))
+        if (!r.first) r = out("mount -o $mode,remount " + q(m.mp))
+        if (!r.first) r = out("mount -o remount,$mode " + q(m.dev) + " " + q(m.mp))
+        return r
+    }
+
+    /** Mode (octal), owner and group of a file. */
+    class Perm(val mode: String, val owner: String, val group: String)
+
+    fun permOf(path: String): Perm? {
+        val (ok, txt) = out("stat -c '%a|%U|%G' " + q(path))
+        if (!ok) return null
+        val a = txt.lines().last().split("|")
+        return if (a.size == 3) Perm(a[0], a[1], a[2]) else null
+    }
+
+    fun exists(path: String): Boolean = sh("test -e " + q(path))
+    fun exists(f: File): Boolean = f.exists() || (state == 1 && !(f.parentFile?.canRead() ?: false) && exists(f.absolutePath))
+
+    /** The items of a folder that the app cannot read itself, with kind / size / date. */
     fun list(path: String): List<File>? = try {
-        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "ls -1Ap '" + path.replace("'", "'\\''") + "'"))
+        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "cd " + q(path) + " && stat -L -c '%F|%s|%Y|%n' .[!.]* ..?* * 2>/dev/null"))
         val lines = p.inputStream.bufferedReader().readLines()
         p.waitFor()
-        lines.filter { it.isNotBlank() }.map { File(path, it.removeSuffix("/")) }
+        val out = ArrayList<File>(); val seen = HashSet<String>()
+        for (l in lines) {
+            val a = l.split("|", limit = 4)
+            if (a.size < 4 || a[3] == "." || a[3] == ".." || !seen.add(a[3])) continue
+            out.add(RootFile(File(path, a[3]).path, a[0].startsWith("directory"), a[1].toLongOrNull() ?: 0L, (a[2].toLongOrNull() ?: 0L) * 1000))
+        }
+        if (out.isNotEmpty()) out else listNames(path)
+    } catch (_: Exception) { null }
+
+    private fun listNames(path: String): List<File>? = try {
+        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "ls -1Ap " + q(path)))
+        val lines = p.inputStream.bufferedReader().readLines()
+        p.waitFor()
+        lines.filter { it.isNotBlank() }.map { RootFile(File(path, it.removeSuffix("/")).path, it.endsWith("/"), 0L, 0L) }
     } catch (_: Exception) { null }
 }

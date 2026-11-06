@@ -85,11 +85,32 @@ object Ops {
         } else copyFile(src, dst, job)
     }
 
+    private fun rootUnique(dir: File, name: String): File {
+        var f = File(dir, name)
+        if (!RootSu.exists(f)) return f
+        val base = name.substringBeforeLast('.', name)
+        val e = if (name.contains('.')) "." + name.substringAfterLast('.') else ""
+        var i = 2
+        while (RootSu.exists(f)) { f = File(dir, "$base ($i)$e"); i++ }
+        return f
+    }
+
     /** Copies or moves [files] into [dest]. A name that already exists gets "(2)" (Keep both). */
     fun transfer(files: List<File>, dest: File, move: Boolean, job: Job) {
         job.total = files.sumOf { sizeOf(it) }
+        val countMode = job.total == 0L
+        if (countMode) job.total = files.size.toLong()
         for (src in files) {
             if (job.cancelled) return
+            // Items the app cannot reach itself (system folders) go through su
+            if (RootSu.ensure() && (src is RootFile || !src.canRead() || !dest.canWrite())) {
+                job.detail = src.name
+                val t = rootUnique(dest, src.name)
+                val ok = RootSu.sh((if (move) "mv " else "cp -a ") + RootSu.q(src) + " " + RootSu.q(t))
+                if (!ok) job.failed++
+                job.done += if (countMode) 1L else maxOf(1L, sizeOf(src))
+                continue
+            }
             if (!src.exists()) continue
             if (src.isDirectory && (dest.absolutePath == src.absolutePath || dest.absolutePath.startsWith(src.absolutePath + "/"))) { job.failed++; continue }
             if (move && src.parentFile?.absolutePath == dest.absolutePath) continue
@@ -154,7 +175,9 @@ object Ops {
         for (f in files) {
             if (job.cancelled) return
             job.detail = f.name
-            if (!f.deleteRecursively()) job.failed++
+            if (!f.deleteRecursively()) {
+                if (!(RootSu.ensure() && RootSu.sh("rm -rf " + RootSu.q(f)))) job.failed++
+            }
             job.done++
         }
     }

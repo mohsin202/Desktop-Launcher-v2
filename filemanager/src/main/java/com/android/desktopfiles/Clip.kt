@@ -42,7 +42,7 @@ object Clip {
     fun read(c: Context): Content? {
         val lines = text(c)?.lines() ?: return null
         if (lines.size < 3 || lines[0] != MAGIC) return null
-        val files = lines.drop(2).filter { it.isNotBlank() }.map { File(it) }.filter { it.exists() }
+        val files = lines.drop(2).filter { it.isNotBlank() }.map { File(it) }.filter { it.exists() || RootSu.state == 1 }
         return if (files.isEmpty()) null else Content(lines[1] == "cut", files)
     }
 

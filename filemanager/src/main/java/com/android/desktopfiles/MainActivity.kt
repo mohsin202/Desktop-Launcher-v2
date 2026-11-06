@@ -51,6 +51,7 @@ open class MainActivity : Activity(), Host {
     private var sideOpen = false
     private var wide = true
     private var statusBtn: View? = null
+    private var rwBtn: TextView? = null
     private var addrBox: FrameLayout? = null
     private var searchBox: EditText? = null
     private var navBack: TextView? = null
@@ -236,6 +237,9 @@ open class MainActivity : Activity(), Host {
             }
             toggle("◫", "dual"); toggle("ⓘ", "pane")
         }
+        val rw = Ui.text(this, "RW", 12f, 0xFFFFFFFF.toInt(), true); rwBtn = rw
+        rw.gravity = Gravity.CENTER; rw.visibility = View.GONE; rw.isClickable = true
+        bar.addView(rw, LinearLayout.LayoutParams(dp(40), dp(28)).also { it.rightMargin = dp(4) })
         val sb = StatusBtn(this, p) { if (StatusPanel.showing()) StatusPanel.hide() else showStatus() }
         statusBtn = sb
         bar.addView(sb, LinearLayout.LayoutParams(dp(40), dp(40)))
@@ -326,6 +330,32 @@ open class MainActivity : Activity(), Host {
         (getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(window.decorView.windowToken, 0)
     }
 
+    /** RW / RO button: shows and flips the mount state of the system area that is open (needs root). */
+    private fun updateRw() {
+        val b = rwBtn ?: return
+        val path = (tabs[cur].loc as? Loc.Dir)?.path
+        if (path == null || path.startsWith(Fs.ext().absolutePath) || RootSu.state == 2) { b.visibility = View.GONE; return }
+        Thread {
+            val m = if (RootSu.ensure()) RootSu.mountOf(path) else null
+            runOnUiThread {
+                if ((tabs[cur].loc as? Loc.Dir)?.path != path) return@runOnUiThread
+                if (m == null) { b.visibility = View.GONE; return@runOnUiThread }
+                b.visibility = View.VISIBLE
+                b.text = if (m.rw) "RW" else "RO"
+                b.background = Ui.rounded(if (m.rw) 0xFF2E9E57.toInt() else 0xFFC0392B.toInt(), dpf(8f))
+                b.setOnClickListener {
+                    Thread {
+                        val r = RootSu.remount(m, !m.rw)
+                        runOnUiThread {
+                            toast(if (r.first) "Remounted " + m.mp + " as " + (if (m.rw) "ro" else "rw") else "Remount failed: " + r.second.take(140))
+                            updateRw(); page?.refresh()
+                        }
+                    }.start()
+                }
+            }
+        }.start()
+    }
+
     // ---------- sidebar ----------
     private fun setSide(open: Boolean) { sideOpen = open; sidebar?.visibility = if (wide || open) View.VISIBLE else View.GONE }
 
@@ -378,7 +408,8 @@ open class MainActivity : Activity(), Host {
 
     private fun makePage(l: Loc): Page = when (l) {
         is Loc.Home -> HomePage(this)
-        is Loc.Dir, is Loc.Search -> FilePage(this, l)
+        is Loc.Dir -> if (Store.str(this, "view", "details") == "columns" && l.only.isEmpty() && !Store.bool(this, "dual", false)) ColumnsPage(this, File(l.path)) else FilePage(this, l)
+        is Loc.Search -> FilePage(this, l)
         is Loc.Trash -> TrashPage(this)
         is Loc.Special -> if (l.kind == "apps") AppsPage(this) else MediaPage(this, l.kind)
     }
@@ -415,7 +446,7 @@ open class MainActivity : Activity(), Host {
         }
         cnt.addView(row, FrameLayout.LayoutParams(MATCH, MATCH))
         editing = false
-        fillTabs(); fillAddress()
+        fillTabs(); fillAddress(); updateRw()
         navBack?.alpha = if (t.back.isEmpty()) 0.4f else 1f
         navFwd?.alpha = if (t.fwd.isEmpty()) 0.4f else 1f
         val l = t.loc
@@ -468,6 +499,7 @@ open class MainActivity : Activity(), Host {
     }
 
     override fun refreshAll() { page?.refresh(); page2?.refresh() }
+    override fun relayout() { showTab() }
     override fun selectionChanged(files: List<File>) { details?.show(files) }
     override fun otherPaneDir(pane: Int): File? {
         if (page2 == null) return null
@@ -502,7 +534,16 @@ open class MainActivity : Activity(), Host {
     override fun showStatus() { statusBtn?.let { StatusPanel.show(this, it) } }
     override fun contentWidthDp(): Int = content?.width?.let { (it / resources.displayMetrics.density).toInt() } ?: widthDp()
 
+    /** A file the app cannot read (system folders): su copies it to a hidden folder first, then it opens from there. */
+    private fun openViaRoot(f: File) {
+        val out = File(File(Fs.ext(), ".deskroot").also { it.mkdirs() }, f.name)
+        Jobs.start(Job("Preparing " + f.name), { j -> j.detail = f.name; if (!RootSu.sh("cp -f " + RootSu.q(f) + " " + RootSu.q(out))) j.failed++ }) {
+            if (out.exists()) Fs.view(this, out) else toast("Could not read the file")
+        }
+    }
+
     override fun openFile(f: File) {
+        if (!f.canRead() && RootSu.state == 1) { openViaRoot(f); return }
         Store.setList(this, "recentfiles", (listOf(f.absolutePath) + Store.list(this, "recentfiles").filter { it != f.absolutePath }).take(20))
         Fs.view(this, f)
     }
