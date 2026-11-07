@@ -39,4 +39,13 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     lint { abortOnError = false; checkReleaseBuilds = false }
+    // the SMB library and BouncyCastle each carry the same housekeeping files
+    packaging { resources { excludes += setOf("META-INF/versions/**", "META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/AL2.0", "META-INF/LGPL2.1", "META-INF/INDEX.LIST") } }
+}
+
+dependencies {
+    // Windows shares (SMB 2/3). BouncyCastle supplies the MD4 / crypto that Android does not offer.
+    implementation("eu.agno3.jcifs:jcifs-ng:2.1.10")
+    implementation("org.slf4j:slf4j-api:1.7.36")
+    implementation("org.bouncycastle:bcprov-jdk15on:1.70")
 }
