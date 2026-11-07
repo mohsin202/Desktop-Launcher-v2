@@ -450,7 +450,7 @@ open class MainActivity : Activity(), Host {
             r.background = Ui.ripple(this, p, if (selected) Ui.rounded(p.accentSoft, dpf(10f)) else null, dpf(10f))
             val iv = ImageView(this); iv.setImageDrawable(icon)
             r.addView(iv, LinearLayout.LayoutParams(dp(22), dp(22)).also { it.marginEnd = dp(12) })
-            val t = Ui.text(this, label, 14f, p.text, selected); t.maxLines = 1; t.ellipsize = android.text.TextUtils.TruncateAt.END
+            val t = Ui.text(this, label, 14f, p.text, selected).atStart(); t.maxLines = 1; t.ellipsize = android.text.TextUtils.TruncateAt.END
             r.addView(t, LinearLayout.LayoutParams(0, WRAP, 1f))
             if (badge) r.addView(Ui.text(this, "!", 11f, 0xFFFFFFFF.toInt(), true).also { it.gravity = Gravity.CENTER; it.background = Ui.rounded(0xFFE53935.toInt(), dpf(8f)) }, LinearLayout.LayoutParams(dp(16), dp(16)))
             r.setOnClickListener { if (click != null) click() else if (loc != null) go(loc); if (!wide) setSide(false) }
@@ -564,7 +564,11 @@ open class MainActivity : Activity(), Host {
         navFwd?.alpha = if (t.fwd.isEmpty()) 0.4f else 1f
         val l = t.loc
         if (l is Loc.Dir) Store.addRecent(this, l.path)
-        // refresh the sidebar highlight
+        refreshSidebar()
+    }
+
+    /** Build the sidebar again (highlight, pinned places). */
+    private fun refreshSidebar() {
         val old = sidebar
         if (old != null && old.parent is FrameLayout) {
             val par = old.parent as FrameLayout
@@ -657,7 +661,7 @@ open class MainActivity : Activity(), Host {
         }
         return super.dispatchTouchEvent(e)
     }
-    override fun pinsChanged() { showTab() }
+    override fun pinsChanged() { showTab(); refreshSidebar() }
     override fun showStatus() { statusBtn?.let { StatusPanel.show(this, it) } }
     override fun contentWidthDp(): Int = content?.width?.let { (it / resources.displayMetrics.density).toInt() } ?: widthDp()
 

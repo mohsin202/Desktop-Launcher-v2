@@ -104,9 +104,9 @@ class HomePage(private val host: Host) : Page {
         }
         card.addView(iconBox, LinearLayout.LayoutParams(c.dp(40), c.dp(40)))
         val txt = LinearLayout(c); txt.orientation = LinearLayout.VERTICAL
-        val n = Ui.text(c, name, 14f, p.text, true); n.maxLines = 1; n.ellipsize = android.text.TextUtils.TruncateAt.END
+        val n = Ui.text(c, name, 14f, p.text, true).atStart(); n.maxLines = 1; n.ellipsize = android.text.TextUtils.TruncateAt.END
         txt.addView(n)
-        if (sub != null) txt.addView(sub)
+        if (sub != null) { (sub as? android.widget.TextView)?.atStart(); txt.addView(sub) }
         card.addView(txt, LinearLayout.LayoutParams(0, WRAP, 1f).also { it.marginStart = c.dp(10) })
         card.layoutParams = LinearLayout.LayoutParams(c.dp(w), WRAP)
         return card

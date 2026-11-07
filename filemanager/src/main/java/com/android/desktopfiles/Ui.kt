@@ -66,6 +66,8 @@ object Ui {
     fun text(c: Context, s: String, size: Float, color: Int, bold: Boolean = false, tr: Boolean = true): TextView = TextView(c).also {
         it.text = if (tr) T.t(s) else s; it.textSize = size; it.setTextColor(color); if (bold) it.typeface = Typeface.DEFAULT_BOLD
         it.includeFontPadding = false
+        // real names (files, apps, drives) keep to the screen's start edge: right in right-to-left, left otherwise
+        if (!tr) it.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
     }
 
     /** A flat round / rounded button made of a text glyph. */
@@ -91,6 +93,7 @@ class MenuItem(val label: String, val enabled: Boolean = true, val checked: Bool
 /** Rounded popup menu (also used as the right-click / long-press menu). A null entry is a thin separator. */
 class Pop(private val c: Context) {
     private var win: PopupWindow? = null
+    private var origin: View? = null    // the screen the first menu was opened on: sub-menus hang from it, not from the menu above them
 
     fun dismiss() { try { win?.dismiss() } catch (_: Exception) {}; win = null }
 
@@ -109,10 +112,10 @@ class Pop(private val c: Context) {
                 val line = LinearLayout(c); line.orientation = LinearLayout.HORIZONTAL
                 for (q in m.row) {
                     val cell = LinearLayout(c); cell.orientation = LinearLayout.VERTICAL; cell.gravity = Gravity.CENTER
-                    val ic = Ui.text(c, q.icon ?: "", 19f, if (q.danger) p.warn else p.text); ic.gravity = Gravity.CENTER
-                    val lb = Ui.text(c, q.label, 11f, if (q.danger) p.warn else p.sub); lb.gravity = Gravity.CENTER; lb.maxLines = 1
+                    val ic = android.widget.ImageView(c); ic.setImageDrawable(MenuIcon(q.icon ?: "", p.text, c.dp(22)))
+                    val lb = Ui.text(c, q.label, 11f, p.sub); lb.gravity = Gravity.CENTER; lb.maxLines = 1
                     lb.ellipsize = android.text.TextUtils.TruncateAt.END
-                    cell.addView(ic, LinearLayout.LayoutParams(MATCH, WRAP)); cell.addView(lb, LinearLayout.LayoutParams(MATCH, WRAP))
+                    cell.addView(ic, LinearLayout.LayoutParams(c.dp(22), c.dp(22)).also { it.bottomMargin = c.dp(3) }); cell.addView(lb, LinearLayout.LayoutParams(MATCH, WRAP))
                     cell.alpha = if (q.enabled) 1f else 0.4f
                     cell.background = Ui.ripple(c, p, null, c.dpf(6f)); cell.isClickable = q.enabled
                     cell.setOnClickListener { if (q.enabled) { dismiss(); q.action() } }
@@ -163,22 +166,29 @@ class Pop(private val c: Context) {
      */
     fun showAt(anchor: View, x: Int, y: Int, items: List<MenuItem?>, alignEnd: Boolean = false) {
         dismiss()
-        val p = Ui.pal(c)
-        val v = build(items, p, c.dp(230))
-        v.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
-        val vis = android.graphics.Rect(); anchor.rootView.getWindowVisibleDisplayFrame(vis)
-        if (vis.isEmpty) { val dm = c.resources.displayMetrics; vis.set(0, 0, dm.widthPixels, dm.heightPixels) }
-        val m = c.dp(8)
-        val maxH = maxOf(c.dp(120), vis.height() - 2 * m)
-        val w = PopupWindow(v, v.measuredWidth, minOf(v.measuredHeight, maxH), true)
-        w.isOutsideTouchable = true
-        w.elevation = c.dpf(12f)
-        w.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
-        val wantX = if (alignEnd) x - v.measuredWidth else x
-        val px = wantX.coerceIn(vis.left + m, maxOf(vis.left + m, vis.right - m - v.measuredWidth))
-        val py = y.coerceIn(vis.top + m, maxOf(vis.top + m, vis.bottom - m - w.height))
-        win = w
-        w.showAtLocation(anchor.rootView, Gravity.NO_GRAVITY, px, py)
+        try {
+            val top = origin ?: anchor.rootView.also { origin = it }
+            val p = Ui.pal(c)
+            val v = build(items, p, c.dp(230))
+            v.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            val vis = android.graphics.Rect(); top.getWindowVisibleDisplayFrame(vis)
+            if (vis.isEmpty) { val dm = c.resources.displayMetrics; vis.set(0, 0, dm.widthPixels, dm.heightPixels) }
+            val m = c.dp(8)
+            val maxH = maxOf(c.dp(120), vis.height() - 2 * m)
+            val w = PopupWindow(v, v.measuredWidth, minOf(v.measuredHeight, maxH), true)
+            w.isOutsideTouchable = true
+            w.elevation = c.dpf(12f)
+            w.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
+            val wantX = if (alignEnd) x - v.measuredWidth else x
+            val px = wantX.coerceIn(vis.left + m, maxOf(vis.left + m, vis.right - m - v.measuredWidth))
+            val py = y.coerceIn(vis.top + m, maxOf(vis.top + m, vis.bottom - m - w.height))
+            win = w
+            w.showAtLocation(top, Gravity.NO_GRAVITY, px, py)
+        } catch (e: Exception) {
+            // never take the whole app down for a menu: say what went wrong instead
+            win = null
+            android.widget.Toast.makeText(c.applicationContext, "Menu: " + e.javaClass.simpleName + " " + (e.message ?: ""), android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     fun showBelow(anchor: View, items: List<MenuItem?>) {
@@ -186,6 +196,12 @@ class Pop(private val c: Context) {
         showAt(anchor, loc[0], loc[1] + anchor.height, items)
     }
 }
+
+/**
+ * Text that sits at the start edge of its box: the right in right-to-left, the left otherwise. Without this a name written in English
+ * counts as a left-to-right paragraph and lands on the left of an Urdu screen, away from its icon (no direction marks are added to the text).
+ */
+fun <V : android.widget.TextView> V.atStart(): V { textAlignment = View.TEXT_ALIGNMENT_VIEW_START; return this }
 
 /** The layout direction of this app's own windows (dialogs, menus): right-to-left when Urdu is on. */
 object Dir {

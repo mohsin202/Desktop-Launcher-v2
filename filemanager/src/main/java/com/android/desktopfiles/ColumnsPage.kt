@@ -152,6 +152,9 @@ class ColumnsPage(private val host: Host, private val start: File) : Page {
         if (real.isDirectory) {
             items += MenuItem("Open in new tab") { host.newTab(Loc.Dir(real.absolutePath)) }
             items += MenuItem("Open in new window") { host.newWindow(Loc.Dir(real.absolutePath)) }
+            val pk = "dir:" + real.absolutePath
+            items += if (Store.isPinned(c, pk)) MenuItem("Unpin from Quick access") { Store.unpin(c, pk); host.pinsChanged(); c.toast("Unpinned") }
+                else MenuItem("Pin to Quick access") { Store.pin(c, pk); host.pinsChanged(); c.toast("Pinned") }
         }
         items += null
         items += MenuItem("Cut") { Clip.set(c, listOf(f), true); c.toast("Cut 1") }

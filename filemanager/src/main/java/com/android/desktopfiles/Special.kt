@@ -65,7 +65,7 @@ class MediaPage(private val host: Host, private val kind: String) : Page {
             r.addView(iv, LinearLayout.LayoutParams(c.dp(34), c.dp(34)).also { it.marginEnd = c.dp(12) })
             val box = LinearLayout(c); box.orientation = LinearLayout.VERTICAL
             val nm = Ui.text(c, g.dir.name, 14f, p.text, true, false); nm.maxLines = 1
-            val pt = Ui.text(c, g.dir.parent ?: "", 11f, p.sub); pt.maxLines = 1; pt.ellipsize = android.text.TextUtils.TruncateAt.START
+            val pt = Ui.text(c, g.dir.parent ?: "", 11f, p.sub).atStart(); pt.maxLines = 1; pt.ellipsize = android.text.TextUtils.TruncateAt.START
             box.addView(nm); box.addView(pt)
             r.addView(box, LinearLayout.LayoutParams(0, WRAP, 1f))
             r.addView(Ui.text(c, g.count.toString() + (if (g.count == 1) " item" else " items"), 12f, p.sub))
@@ -76,7 +76,8 @@ class MediaPage(private val host: Host, private val kind: String) : Page {
                     MenuItem("Open") { host.go(Loc.Dir(g.dir.absolutePath, kind)) },
                     MenuItem("Open all files") { host.go(Loc.Dir(g.dir.absolutePath)) },
                     MenuItem("Open in new tab") { host.newTab(Loc.Dir(g.dir.absolutePath, kind)) },
-                    MenuItem("Open in new window") { host.newWindow(Loc.Dir(g.dir.absolutePath)) }))
+                    MenuItem("Open in new window") { host.newWindow(Loc.Dir(g.dir.absolutePath)) },
+                    MenuItem("Pin to Quick access") { Store.pin(c, "dir:" + g.dir.absolutePath); host.pinsChanged(); c.toast("Pinned") }))
             }
             r.setOnLongClickListener { menu(); true }
             r.setOnContextClickListener { menu(); true }
@@ -159,7 +160,7 @@ class AppsPage(private val host: Host) : Page {
             r.addView(iv, LinearLayout.LayoutParams(c.dp(36), c.dp(36)).also { it.marginEnd = c.dp(12) })
             val box = LinearLayout(c); box.orientation = LinearLayout.VERTICAL
             val nm = Ui.text(c, a.label, 14f, p.text, true, false); nm.maxLines = 1
-            val pk = Ui.text(c, a.pkg + (if (a.system) "  ·  system" else ""), 11f, p.sub); pk.maxLines = 1
+            val pk = Ui.text(c, a.pkg + (if (a.system) "  ·  system" else ""), 11f, p.sub).atStart(); pk.maxLines = 1
             box.addView(nm); box.addView(pk)
             r.addView(box, LinearLayout.LayoutParams(0, WRAP, 1f))
             r.addView(Ui.text(c, a.version, 12f, p.sub))

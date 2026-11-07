@@ -35,7 +35,7 @@ object Tiles {
         val iv = ImageView(c); iv.setImageDrawable(icon)
         t.addView(iv, LinearLayout.LayoutParams(c.dp(52), c.dp(52)))
         val n = Ui.text(c, name, 12f, p.text, false, false)
-        n.gravity = Gravity.CENTER_HORIZONTAL; n.maxLines = 2; n.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+        n.textAlignment = View.TEXT_ALIGNMENT_GRAVITY; n.gravity = Gravity.CENTER_HORIZONTAL; n.maxLines = 2; n.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
         t.addView(n, LinearLayout.LayoutParams(MATCH, WRAP).also { it.topMargin = c.dp(4) })
         return t
     }

@@ -191,9 +191,27 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
                     }
                     is Loc.Search -> {
                         val q = loc.q.lowercase(); val out = ArrayList<File>()
-                        // a newer search replaced this page: stop walking the disk
-                        File(loc.base).walkTopDown().onEnter { !dead && (!it.name.startsWith(".") || it.absolutePath == loc.base) }.takeWhile { !dead }.forEach {
-                            if (out.size < 600 && it.absolutePath != loc.base && it.name.lowercase().contains(q) && !it.name.startsWith(".")) out.add(it)
+                        val skip = setOf("system volume information", "\$recycle.bin", "lost.dir", ".trash", "found.000")
+                        // breadth-first walk, results are shown while the walk is still going
+                        val queue = ArrayDeque<File>(); queue.add(File(loc.base))
+                        var last = System.currentTimeMillis(); var shown = 0
+                        while (queue.isNotEmpty() && !dead && out.size < 600) {
+                            val d = queue.removeFirst()
+                            val kids = try { d.listFiles() } catch (_: Throwable) { null } ?: continue
+                            for (f in kids) {
+                                if (dead) break
+                                val n = f.name
+                                if (n.startsWith(".") || n.lowercase() in skip) continue
+                                if (out.size < 600 && n.lowercase().contains(q)) out.add(f)
+                                val isDir = try { f.isDirectory } catch (_: Throwable) { false }
+                                if (isDir && !(try { java.nio.file.Files.isSymbolicLink(f.toPath()) } catch (_: Throwable) { false })) queue.add(f)
+                            }
+                            val now = System.currentTimeMillis()
+                            if (out.size != shown && now - last > 400) {
+                                last = now; shown = out.size
+                                val part = sortList(ArrayList(out).filter { hidden || !it.name.startsWith(".") })
+                                c.mainExecutor.execute { if (!dead) { items = part; adapter.notifyDataSetChanged(); updateEmpty(); updateStatus() } }
+                            }
                         }
                         found = out
                         if (out.isEmpty()) msg = "No results for \"" + loc.q + "\""
@@ -204,7 +222,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
                     }
                     else -> {}
                 }
-            } catch (_: Exception) {}
+            } catch (_: Throwable) {}
             val vis = found.filter { hidden || !it.name.startsWith(".") }.filter { !it.name.startsWith(".trashed-") && it.name != ".deskclip" }
             val sorted = sortList(vis)
             c.mainExecutor.execute {
@@ -237,7 +255,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     }
 
     private fun updateEmpty() {
-        emptyView.text = T.t(if (loading) "Loading…" else message)
+        emptyView.text = T.t(if (loading) (if (loc is Loc.Search) "Searching…" else "Loading…") else message)
         emptyView.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
     }
 
@@ -357,11 +375,11 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         val iv = ImageView(c)
         r.addView(iv, LinearLayout.LayoutParams(c.dp(30), c.dp(30)).also { it.marginEnd = c.dp(8) })
         val nameBox = LinearLayout(c); nameBox.orientation = LinearLayout.VERTICAL
-        val nm = Ui.text(c, "", 14f, p.text); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
-        val sub = Ui.text(c, "", 10f, p.sub); sub.maxLines = 1; sub.ellipsize = android.text.TextUtils.TruncateAt.START
+        val nm = Ui.text(c, "", 14f, p.text).atStart(); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+        val sub = Ui.text(c, "", 10f, p.sub).atStart(); sub.maxLines = 1; sub.ellipsize = android.text.TextUtils.TruncateAt.START
         nameBox.addView(nm); nameBox.addView(sub)
         r.addView(nameBox, LinearLayout.LayoutParams(0, WRAP, 1f))
-        fun cell(w: Int): TextView { val t = Ui.text(c, "", 12f, p.sub); t.maxLines = 1; r.addView(t, LinearLayout.LayoutParams(c.dp(w), WRAP)); return t }
+        fun cell(w: Int): TextView { val t = Ui.text(c, "", 12f, p.sub).atStart(); t.maxLines = 1; r.addView(t, LinearLayout.LayoutParams(c.dp(w), WRAP)); return t }
         val d = if (showDate) cell(150) else null
         val ty = if (showType) cell(110) else null
         val sz = cell(80)
@@ -575,11 +593,11 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             val files = fs.any { it.isFile }
             // the quick row, like Windows 11
             menu += MenuItem("", row = listOf(
-                MenuItem("Cut", icon = "✂") { doCut(fs) },
-                MenuItem("Copy", icon = "⧉") { doCopy(fs) },
-                MenuItem("Rename", one, icon = "✎") { rename(fs[0]) },
-                MenuItem("Share", files, icon = "⇪") { Fs.share(c, fs) },
-                MenuItem("Delete", danger = true, icon = "🗑") { delete(fs, false) }))
+                MenuItem("Cut", icon = "cut") { doCut(fs) },
+                MenuItem("Copy", icon = "copy") { doCopy(fs) },
+                MenuItem("Rename", one, icon = "rename") { rename(fs[0]) },
+                MenuItem("Share", files, icon = "share") { Fs.share(c, fs) },
+                MenuItem("Delete", danger = true, icon = "delete") { delete(fs, false) }))
             menu += null
             menu += MenuItem("Open", one, hint = "Enter") { open(fs[0]) }
             if (one && target != null && target.isFile) menu += MenuItem("Open with…") { Fs.view(c, target, true) }
@@ -587,7 +605,9 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
                 menu += MenuItem("Open in new tab") { host.newTab(Loc.Dir(target.absolutePath)) }
                 menu += MenuItem("Open in new window") { host.newWindow(Loc.Dir(target.absolutePath)) }
                 if (Clip.has(c)) menu += MenuItem("Paste into folder") { doPaste(target) }
-                menu += MenuItem("Pin to Quick access") { Store.pin(c, "dir:" + target.absolutePath); host.pinsChanged(); c.toast("Pinned") }
+                val pk = "dir:" + target.absolutePath
+                menu += if (Store.isPinned(c, pk)) MenuItem("Unpin from Quick access") { Store.unpin(c, pk); host.pinsChanged(); c.toast("Unpinned") }
+                    else MenuItem("Pin to Quick access") { Store.pin(c, pk); host.pinsChanged(); c.toast("Pinned") }
             }
             if (one && target != null && target.isFile && target.extension.equals("zip", true)) {
                 menu += MenuItem("Extract to folder") { extract(target, true) }
@@ -624,7 +644,9 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             menu += MenuItem("Refresh") { host.refreshAll() }
             if (dir != null) {
                 menu += null
-                menu += MenuItem("Pin this folder to Quick access") { Store.pin(c, "dir:" + dir.absolutePath); host.pinsChanged(); c.toast("Pinned") }
+                val dk = "dir:" + dir.absolutePath
+                menu += if (Store.isPinned(c, dk)) MenuItem("Unpin from Quick access") { Store.unpin(c, dk); host.pinsChanged(); c.toast("Unpinned") }
+                    else MenuItem("Pin this folder to Quick access") { Store.pin(c, dk); host.pinsChanged(); c.toast("Pinned") }
                 if (RootSu.state == 1 && !dir.absolutePath.startsWith(Fs.ext().absolutePath)) menu += MenuItem("Permissions…") { RootUi.permissions(host.act, dir) { host.refreshAll() } }
                 menu += MenuItem("Properties") { properties(emptyList()) }
             }

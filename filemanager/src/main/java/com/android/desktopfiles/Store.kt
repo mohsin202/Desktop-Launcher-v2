@@ -37,6 +37,7 @@ object Store {
     }
 
     fun pin(c: Context, item: String) { val l = pins(c); if (item !in l) setList(c, "pins", l + item) }
+    fun isPinned(c: Context, item: String) = item in pins(c)
     fun unpin(c: Context, item: String) { setList(c, "pins", pins(c).filter { it != item }) }
 
     /** Folders that were opened lately (the address bar's drop-down). */
