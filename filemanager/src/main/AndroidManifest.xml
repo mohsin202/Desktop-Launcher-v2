@@ -35,6 +35,20 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- The system's "Android MTP host" / USB storage notice offers every app that can browse a drive: these lines put this app in that list. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="vnd.android.document/root" />
+                <data android:mimeType="vnd.android.document/directory" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.provider.action.BROWSE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="vnd.android.document/root" />
+                <data android:mimeType="vnd.android.document/directory" />
+            </intent-filter>
             <!-- The launcher opens folders here: extra "path". -->
             <intent-filter>
                 <action android:name="com.android.desktopfiles.OPEN" />
