@@ -128,6 +128,7 @@ class Pop(private val c: Context) {
         sv.isVerticalScrollBarEnabled = false
         sv.addView(box)
         val fl = FrameLayout(c)
+        fl.layoutDirection = Dir.value()
         fl.setPaddingRelative(c.dp(6), c.dp(6), c.dp(6), c.dp(6))
         fl.addView(sv, FrameLayout.LayoutParams(maxOf(minW, c.dp(190)), WRAP))
         return fl
@@ -158,6 +159,15 @@ class Pop(private val c: Context) {
     }
 }
 
+/** The layout direction of this app's own windows (dialogs, menus): right-to-left when Urdu is on. */
+object Dir {
+    fun value(): Int = if (T.rtl) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
+    fun apply(d: android.app.Dialog) { d.window?.decorView?.layoutDirection = value() }
+}
+
+/** Like show(), and the dialog follows the app's direction. */
+fun android.app.AlertDialog.Builder.showDir(): android.app.AlertDialog { val d = create(); d.show(); Dir.apply(d); return d }
+
 /** Wraps its children onto several lines. */
 class Flow(c: Context, private val gap: Int) : ViewGroup(c) {
     override fun onMeasure(wSpec: Int, hSpec: Int) {
@@ -181,7 +191,9 @@ class Flow(c: Context, private val gap: Int) : ViewGroup(c) {
             val ch = getChildAt(i)
             if (ch.visibility == GONE) continue
             if (x > 0 && x + ch.measuredWidth > maxW) { x = 0; y += lineH + gap; lineH = 0 }
-            ch.layout(x, y, x + ch.measuredWidth, y + ch.measuredHeight)
+            // right-to-left: the first card sits at the right edge and the line fills towards the left
+            if (layoutDirection == LAYOUT_DIRECTION_RTL) ch.layout(maxW - x - ch.measuredWidth, y, maxW - x, y + ch.measuredHeight)
+            else ch.layout(x, y, x + ch.measuredWidth, y + ch.measuredHeight)
             x += ch.measuredWidth + gap
             lineH = maxOf(lineH, ch.measuredHeight)
         }

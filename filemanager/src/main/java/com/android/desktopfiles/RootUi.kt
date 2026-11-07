@@ -63,6 +63,6 @@ object RootUi {
                     act.runOnUiThread { act.toast(if (ok) "Permissions changed" else "Could not change the permissions"); done() }
                 }.start()
             }.setNegativeButton(T.t("Cancel"), null).create()
-        d.show()
+        d.show(); Dir.apply(d)
     }
 }

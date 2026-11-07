@@ -49,7 +49,7 @@ object DavAccts {
                 if (i == 0) davDialog(act) { a -> done(Remote(a.id, a.name, "WebDAV", DavFs(a))) }
                 else if (i == 1) SmbAccts.addDialog(act) { a -> done(Remote(a.id, a.name, "SMB", SmbFs(a))) }
                 else SafAccts.addFromPicker(act) { a -> done(Remote(a.id, a.name, "App folder", SafFs(act.applicationContext, a))) }
-            }.setNegativeButton(T.t("Cancel"), null).show()
+            }.setNegativeButton(T.t("Cancel"), null).showDir()
     }
 
     /** The form for a new WebDAV account. [done] is called with the saved account after the connection was tested. */
@@ -71,7 +71,7 @@ object DavAccts {
         for (v in listOf(name, url, user, pass, trust, msg)) box.addView(v)
         val dlg = AlertDialog.Builder(act).setTitle(T.t("Add a cloud account (WebDAV)")).setView(ScrollViewOf(act, box))
             .setPositiveButton(T.t("Add"), null).setNegativeButton(T.t("Cancel"), null).create()
-        dlg.show()
+        dlg.show(); Dir.apply(dlg)
         dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { b ->
             var u = url.text.toString().trim()
             if (u.isEmpty()) { msg.text = T.t("Type the address"); return@setOnClickListener }

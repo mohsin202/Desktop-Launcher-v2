@@ -117,6 +117,7 @@ object StatusPanel {
             }
         }
         fill()
+        box.layoutDirection = Dir.value()
         val w = PopupWindow(box, c.dp(340), WRAP, true)
         w.isOutsideTouchable = true
         w.setBackgroundDrawable(null)

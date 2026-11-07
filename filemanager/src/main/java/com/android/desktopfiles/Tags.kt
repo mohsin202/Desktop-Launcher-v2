@@ -132,7 +132,7 @@ object TagUi {
         val hs = HorizontalScrollView(act); hs.addView(row); box.addView(hs)
         AlertDialog.Builder(act).setTitle(T.t("Tag colour")).setView(box)
             .setPositiveButton(T.t("Save")) { _, _ -> Tags.recolor(t.id, chosen); done() }
-            .setNegativeButton(T.t("Cancel"), null).show()
+            .setNegativeButton(T.t("Cancel"), null).showDir()
     }
 
     /** Asks for a name and a colour, makes the tag and hands it back. */
@@ -152,6 +152,6 @@ object TagUi {
         val hs = HorizontalScrollView(act); hs.addView(row); box.addView(hs)
         AlertDialog.Builder(act).setTitle(T.t("New tag")).setView(box)
             .setPositiveButton(T.t("Create")) { _, _ -> val n = et.text.toString().trim(); if (n.isNotEmpty()) done(Tags.add(n, chosen)) }
-            .setNegativeButton(T.t("Cancel"), null).show()
+            .setNegativeButton(T.t("Cancel"), null).showDir()
     }
 }

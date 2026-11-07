@@ -69,15 +69,6 @@ open class MainActivity : Activity(), Host {
         if (fresh.isNotEmpty() && hasWindowFocus() && !StatusPanel.showing()) statusBtn?.post { showStatus() }
     }
 
-    /** Dialogs, menus and every window of this screen follow the chosen language's direction (Urdu = right to left). */
-    override fun attachBaseContext(base: Context) {
-        val s = Store.str(base, "lang", "system")
-        val ur = if (s == "ur") true else if (s == "en") false else java.util.Locale.getDefault().language == "ur"
-        val cfg = Configuration(base.resources.configuration)
-        cfg.setLayoutDirection(java.util.Locale(if (ur) "ur" else "en"))
-        super.attachBaseContext(base.createConfigurationContext(cfg))
-    }
-
     private var treeCb: ((Uri) -> Unit)? = null
 
     /** Opens Android's folder picker (Google Drive, OneDrive, Dropbox and other apps appear in it) and hands back the chosen folder. */
@@ -129,7 +120,7 @@ open class MainActivity : Activity(), Host {
         if (now != hadAccess) { hadAccess = now; buildUi() } else page?.refresh()
     }
 
-    override fun onConfigurationChanged(n: Configuration) { super.onConfigurationChanged(n); buildUi() }
+    override fun onConfigurationChanged(n: Configuration) { cfgW = n.screenWidthDp; super.onConfigurationChanged(n); buildUi() }
 
     private fun onBack() {
         when {
@@ -141,8 +132,12 @@ open class MainActivity : Activity(), Host {
     }
 
     // ---------- UI ----------
-    private fun widthDp(): Int = (resources.displayMetrics.widthPixels / resources.displayMetrics.density).toInt().let {
-        val w = window.decorView.width; if (w > 0) (w / resources.displayMetrics.density).toInt() else it }
+    /** Window width in dp as the system reports it with each configuration change (the view itself still has the old size right after a rotation). */
+    private var cfgW = 0
+    private fun widthDp(): Int {
+        if (cfgW <= 0) cfgW = resources.configuration.screenWidthDp
+        return if (cfgW > 0) cfgW else (resources.displayMetrics.widthPixels / resources.displayMetrics.density).toInt()
+    }
 
     private fun titleOf(l: Loc): String = when (l) {
         is Loc.Home -> "Home"

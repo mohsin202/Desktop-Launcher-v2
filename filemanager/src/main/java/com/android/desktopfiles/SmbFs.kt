@@ -123,7 +123,7 @@ object SmbAccts {
         val sv = ScrollView(act); sv.addView(box)
         val dlg = AlertDialog.Builder(act).setTitle(T.t("Add a Windows share (SMB)")).setView(sv)
             .setPositiveButton(T.t("Add"), null).setNegativeButton(T.t("Cancel"), null).create()
-        dlg.show()
+        dlg.show(); Dir.apply(dlg)
         dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { b ->
             val s = server.text.toString().trim().removePrefix("smb://").replace('\\', '/').trim('/')
             if (s.isEmpty()) { msg.text = T.t("Type the server address"); return@setOnClickListener }

@@ -29,12 +29,12 @@ object Dialogs {
             .setPositiveButton(T.t(okLabel)) { _, _ -> val s = et.text.toString().trim(); if (s.isNotEmpty()) cb(s) }
             .setNegativeButton(T.t("Cancel"), null).create()
         d.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
-        d.show()
+        d.show(); Dir.apply(d)
     }
 
     fun confirm(act: android.app.Activity, title: String, msg: String, okLabel: String, cb: () -> Unit) {
         AlertDialog.Builder(act).setTitle(T.t(title)).setMessage(T.t(msg))
-            .setPositiveButton(T.t(okLabel)) { _, _ -> cb() }.setNegativeButton(T.t("Cancel"), null).show()
+            .setPositiveButton(T.t(okLabel)) { _, _ -> cb() }.setNegativeButton(T.t("Cancel"), null).showDir()
     }
 }
 
@@ -548,7 +548,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         fun text(size: String) = if (single) "Type: " + Fs.typeName(f) + "\nLocation: " + (f.parent ?: "/") + "\nSize: " + size + "\nModified: " + Fs.date(f.lastModified())
             else files.size.toString() + " items\nSize: " + size
         val d = AlertDialog.Builder(host.act).setTitle(if (single) f.name else T.t(files.size.toString() + " items")).setMessage(T.t(text("calculating…")))
-            .setPositiveButton(T.t("OK"), null).show()
+            .setPositiveButton(T.t("OK"), null).showDir()
         Thread {
             val total = if (single) Ops.sizeOf(f) else files.sumOf { Ops.sizeOf(it) }
             host.act.runOnUiThread { d.setMessage(T.t(text(Fs.size(c, total) + " (" + total + " bytes)"))) }
