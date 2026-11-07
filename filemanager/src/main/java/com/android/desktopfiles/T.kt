@@ -34,7 +34,7 @@ object T {
         "Earlier this month" to "اس مہینے پہلے", "Earlier this year" to "اس سال پہلے", "A long time ago" to "بہت پہلے",
         "Empty" to "خالی", "Tiny (under 16 KB)" to "بہت چھوٹی (16 KB سے کم)", "Small (under 1 MB)" to "چھوٹی (1 MB سے کم)",
         "Medium (under 128 MB)" to "درمیانی (128 MB سے کم)", "Large (under 1 GB)" to "بڑی (1 GB سے کم)", "Huge (1 GB and more)" to "بہت بڑی (1 GB یا زیادہ)",
-        "Open" to "کھولیں", "Open with…" to "اس کے ساتھ کھولیں…", "Open in new tab" to "نئے ٹیب میں کھولیں", "Open in new window" to "نئی ونڈو میں کھولیں",
+        "Open" to "کھولیں", "Compress to…" to "کمپریس کریں…", "ZIP file" to "ZIP فائل", "Copy as path" to "پاتھ کاپی کریں", "Path copied" to "پاتھ کاپی ہو گیا", "Send to" to "بھیجیں", "Show more options" to "مزید آپشنز دکھائیں", "Select all" to "سب منتخب کریں", "Open with…" to "اس کے ساتھ کھولیں…", "Open in new tab" to "نئے ٹیب میں کھولیں", "Open in new window" to "نئی ونڈو میں کھولیں",
         "Open all files" to "تمام فائلیں کھولیں", "Paste into folder" to "فولڈر میں پیسٹ کریں", "Delete permanently" to "ہمیشہ کے لیے ڈیلیٹ",
         "Compress to ZIP" to "ZIP میں سمیٹیں", "Extract to folder" to "فولڈر میں نکالیں", "Extract here" to "یہیں نکالیں",
         "Copy to other pane" to "دوسرے پین میں کاپی", "Move to other pane" to "دوسرے پین میں منتقل", "New tag…" to "نیا ٹیگ…", "New tag" to "نیا ٹیگ",

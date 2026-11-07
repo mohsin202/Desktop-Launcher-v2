@@ -17,10 +17,25 @@ class FileProv : ContentProvider() {
 
     override fun onCreate() = true
 
+    /** Folders other apps may read through this provider: internal storage plus every mounted drive (USB disk, SD card). */
+    private fun roots(): List<String> {
+        val l = ArrayList<String>()
+        l += Environment.getExternalStorageDirectory().absolutePath
+        try {
+            val sm = context?.getSystemService(android.os.storage.StorageManager::class.java)
+            sm?.storageVolumes?.forEach { v -> v.directory?.let { d -> l += d.absolutePath } }
+        } catch (_: Exception) {}
+        l += "/storage"
+        return l
+    }
+
     private fun fileOf(uri: Uri): File? {
-        val f = File(uri.path ?: return null).canonicalFile
-        val ext = Environment.getExternalStorageDirectory().canonicalPath
-        return if (f.path.startsWith(ext)) f else null
+        // checked on the written-out path (no ".." tricks) and on the real path behind any link; a drive is often reached through a link
+        val plain = File(uri.path ?: return null).toPath().normalize().toString()
+        val real = try { File(plain).canonicalPath } catch (_: Exception) { plain }
+        val ok = roots().any { r -> plain == r || plain.startsWith("$r/") || real == r || real.startsWith("$r/") } ||
+            real.startsWith("/mnt/media_rw/") || real.startsWith("/mnt/pass_through/")
+        return if (ok) File(plain) else null
     }
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor? {

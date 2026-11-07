@@ -169,6 +169,9 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     }
 
     // ---------- loading ----------
+    @Volatile private var dead = false
+    override fun destroy() { dead = true }
+
     override fun refresh() {
         loading = true; updateEmpty()
         val keep = HashSet(sel)
@@ -188,7 +191,8 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
                     }
                     is Loc.Search -> {
                         val q = loc.q.lowercase(); val out = ArrayList<File>()
-                        File(loc.base).walkTopDown().onEnter { !it.name.startsWith(".") || it.absolutePath == loc.base }.forEach {
+                        // a newer search replaced this page: stop walking the disk
+                        File(loc.base).walkTopDown().onEnter { !dead && (!it.name.startsWith(".") || it.absolutePath == loc.base) }.takeWhile { !dead }.forEach {
                             if (out.size < 600 && it.absolutePath != loc.base && it.name.lowercase().contains(q) && !it.name.startsWith(".")) out.add(it)
                         }
                         found = out
@@ -542,6 +546,13 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         }
     }
 
+    private fun copyPath(files: List<File>) {
+        if (files.isEmpty()) return
+        val cm = c.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        cm.setPrimaryClip(android.content.ClipData.newPlainText("path", files.joinToString("\n") { it.absolutePath }))
+        c.toast("Path copied")
+    }
+
     private fun properties(files: List<File>) {
         val f = files.firstOrNull() ?: dir ?: return
         val single = files.size <= 1
@@ -561,40 +572,48 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             if (f.absolutePath !in sel) { sel.clear(); sel.add(f.absolutePath); anchor = items.indexOf(f); changed() }
             val fs = selFiles(); val one = fs.size == 1
             val target = if (one) (Fs.target(fs[0]) ?: fs[0]) else null
-            menu += MenuItem("Open", one) { open(fs[0]) }
+            val files = fs.any { it.isFile }
+            // the quick row, like Windows 11
+            menu += MenuItem("", row = listOf(
+                MenuItem("Cut", icon = "✂") { doCut(fs) },
+                MenuItem("Copy", icon = "⧉") { doCopy(fs) },
+                MenuItem("Rename", one, icon = "✎") { rename(fs[0]) },
+                MenuItem("Share", files, icon = "⇪") { Fs.share(c, fs) },
+                MenuItem("Delete", danger = true, icon = "🗑") { delete(fs, false) }))
+            menu += null
+            menu += MenuItem("Open", one, hint = "Enter") { open(fs[0]) }
             if (one && target != null && target.isFile) menu += MenuItem("Open with…") { Fs.view(c, target, true) }
             if (one && target != null && target.isDirectory) {
                 menu += MenuItem("Open in new tab") { host.newTab(Loc.Dir(target.absolutePath)) }
                 menu += MenuItem("Open in new window") { host.newWindow(Loc.Dir(target.absolutePath)) }
+                if (Clip.has(c)) menu += MenuItem("Paste into folder") { doPaste(target) }
+                menu += MenuItem("Pin to Quick access") { Store.pin(c, "dir:" + target.absolutePath); host.pinsChanged(); c.toast("Pinned") }
             }
-            menu += null
-            menu += MenuItem("Cut") { doCut(fs) }
-            menu += MenuItem("Copy") { doCopy(fs) }
-            if (one && target != null && target.isDirectory && Clip.has(c)) menu += MenuItem("Paste into folder") { doPaste(target) }
-            menu += MenuItem("Rename", one) { rename(fs[0]) }
-            menu += MenuItem("Delete", danger = true) { delete(fs, false) }
-            menu += MenuItem("Delete permanently", danger = true) { delete(fs, true) }
-            menu += null
-            menu += MenuItem("Compress to ZIP", dir != null || loc is Loc.Search) { compress(fs) }
             if (one && target != null && target.isFile && target.extension.equals("zip", true)) {
                 menu += MenuItem("Extract to folder") { extract(target, true) }
                 menu += MenuItem("Extract here") { extract(target, false) }
             }
-            val od = host.otherPaneDir(pane)
-            if (od != null) {
-                menu += MenuItem("Copy to other pane") { transferTo(fs, od, false) }
-                menu += MenuItem("Move to other pane") { transferTo(fs, od, true) }
-            }
-            menu += null
-            menu += MenuItem("Share", fs.any { it.isFile }) { Fs.share(c, fs) }
-            if (one && target != null && target.isDirectory) menu += MenuItem("Pin to Quick access") { Store.pin(c, "dir:" + target.absolutePath); host.pinsChanged(); c.toast("Pinned") }
-            menu += MenuItem("Tags", sub = tagItems(fs))
-            menu += MenuItem("Create shortcut on Desktop") { shortcuts(fs) }
-            menu += MenuItem("Copy to Desktop") { toDesktop(fs, false) }
-            menu += MenuItem("Move to Desktop") { toDesktop(fs, true) }
-            menu += null
-            if (one && RootSu.state == 1 && !fs[0].absolutePath.startsWith(Fs.ext().absolutePath)) menu += MenuItem("Permissions…") { RootUi.permissions(host.act, fs[0]) { host.refreshAll() } }
+            menu += MenuItem("Compress to…", dir != null || loc is Loc.Search, sub = listOf(MenuItem("ZIP file") { compress(fs) }))
+            menu += MenuItem("Copy as path", hint = "Ctrl+Shift+C") { copyPath(fs) }
             menu += MenuItem("Properties") { properties(fs) }
+            menu += null
+            menu += MenuItem("Tags", sub = tagItems(fs))
+            val od = host.otherPaneDir(pane)
+            val send = ArrayList<MenuItem>()
+            send += MenuItem("Create shortcut on Desktop") { shortcuts(fs) }
+            send += MenuItem("Copy to Desktop") { toDesktop(fs, false) }
+            send += MenuItem("Move to Desktop") { toDesktop(fs, true) }
+            if (od != null) {
+                send += MenuItem("Copy to other pane") { transferTo(fs, od, false) }
+                send += MenuItem("Move to other pane") { transferTo(fs, od, true) }
+            }
+            menu += MenuItem("Send to", sub = send)
+            menu += null
+            val more = ArrayList<MenuItem>()
+            more += MenuItem("Delete permanently", danger = true) { delete(fs, true) }
+            if (one && RootSu.state == 1 && !fs[0].absolutePath.startsWith(Fs.ext().absolutePath)) more += MenuItem("Permissions…") { RootUi.permissions(host.act, fs[0]) { host.refreshAll() } }
+            more += MenuItem("Select all") { selectAll() }
+            menu += MenuItem("Show more options", sub = more)
         } else {
             if (dir != null) {
                 menu += MenuItem("New", sub = newItems())
@@ -617,6 +636,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         val d = dir
         when {
             ctrl && code == KeyEvent.KEYCODE_A -> selectAll()
+            ctrl && shift && code == KeyEvent.KEYCODE_C -> copyPath(selFiles())
             ctrl && code == KeyEvent.KEYCODE_C -> doCopy(selFiles())
             ctrl && code == KeyEvent.KEYCODE_X -> doCut(selFiles())
             ctrl && code == KeyEvent.KEYCODE_V && d != null -> doPaste(d)

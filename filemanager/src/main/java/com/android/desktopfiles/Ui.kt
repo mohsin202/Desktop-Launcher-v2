@@ -80,8 +80,13 @@ object Ui {
     }
 }
 
+/**
+ * One menu line. [row] makes a line of icon buttons (Cut, Copy, Rename… like Windows 11); each of those items gives its [icon].
+ * [hint] is the dim shortcut text at the far end of the line.
+ */
 class MenuItem(val label: String, val enabled: Boolean = true, val checked: Boolean? = null, val danger: Boolean = false,
-               val sub: List<MenuItem>? = null, val action: () -> Unit = {})
+               val sub: List<MenuItem>? = null, val row: List<MenuItem>? = null, val icon: String? = null, val hint: String? = null,
+               val action: () -> Unit = {})
 
 /** Rounded popup menu (also used as the right-click / long-press menu). A null entry is a thin separator. */
 class Pop(private val c: Context) {
@@ -100,6 +105,22 @@ class Pop(private val c: Context) {
                 box.addView(sep, LinearLayout.LayoutParams(MATCH, 1).also { it.setMargins(c.dp(8), c.dp(4), c.dp(8), c.dp(4)) })
                 continue
             }
+            if (m.row != null) {
+                val line = LinearLayout(c); line.orientation = LinearLayout.HORIZONTAL
+                for (q in m.row) {
+                    val cell = LinearLayout(c); cell.orientation = LinearLayout.VERTICAL; cell.gravity = Gravity.CENTER
+                    val ic = Ui.text(c, q.icon ?: "", 19f, if (q.danger) p.warn else p.text); ic.gravity = Gravity.CENTER
+                    val lb = Ui.text(c, q.label, 11f, if (q.danger) p.warn else p.sub); lb.gravity = Gravity.CENTER; lb.maxLines = 1
+                    lb.ellipsize = android.text.TextUtils.TruncateAt.END
+                    cell.addView(ic, LinearLayout.LayoutParams(MATCH, WRAP)); cell.addView(lb, LinearLayout.LayoutParams(MATCH, WRAP))
+                    cell.alpha = if (q.enabled) 1f else 0.4f
+                    cell.background = Ui.ripple(c, p, null, c.dpf(6f)); cell.isClickable = q.enabled
+                    cell.setOnClickListener { if (q.enabled) { dismiss(); q.action() } }
+                    line.addView(cell, LinearLayout.LayoutParams(0, c.dp(56), 1f).also { it.marginStart = c.dp(1); it.marginEnd = c.dp(1) })
+                }
+                box.addView(line, LinearLayout.LayoutParams(MATCH, WRAP))
+                continue
+            }
             val row = LinearLayout(c)
             row.orientation = LinearLayout.HORIZONTAL
             row.gravity = Gravity.CENTER_VERTICAL
@@ -109,6 +130,7 @@ class Pop(private val c: Context) {
             if (m.checked != null) row.addView(chk, LinearLayout.LayoutParams(c.dp(22), WRAP))
             val t = Ui.text(c, m.label, 14f, if (m.danger) p.warn else p.text)
             row.addView(t, LinearLayout.LayoutParams(0, WRAP, 1f))
+            if (m.hint != null) row.addView(Ui.text(c, m.hint, 11f, p.sub).also { it.setPaddingRelative(c.dp(16), 0, 0, 0) }, LinearLayout.LayoutParams(WRAP, WRAP))
             if (m.sub != null) row.addView(Ui.text(c, if (T.rtl) "‹" else "›", 16f, p.sub), LinearLayout.LayoutParams(WRAP, WRAP))
             row.alpha = if (m.enabled) 1f else 0.4f
             row.background = Ui.ripple(c, p, null, c.dpf(6f))
@@ -118,7 +140,8 @@ class Pop(private val c: Context) {
                 if (m.sub != null) {
                     val loc = IntArray(2); row.getLocationOnScreen(loc)
                     val old = win; win = null
-                    showAt(row.rootView, if (T.rtl) loc[0] - c.dp(196) else loc[0] + row.width, loc[1], m.sub)
+                    // the sub-menu opens beside this one: to its right, or to its left in right-to-left
+                    showAt(row.rootView, if (T.rtl) loc[0] else loc[0] + row.width, loc[1], m.sub, alignEnd = T.rtl)
                     try { old?.dismiss() } catch (_: Exception) {}
                 } else { dismiss(); m.action() }
             }
@@ -134,21 +157,26 @@ class Pop(private val c: Context) {
         return fl
     }
 
-    /** Shows the menu with its top-left corner at the screen point (x, y), kept inside the window. */
-    fun showAt(anchor: View, x: Int, y: Int, items: List<MenuItem?>) {
+    /**
+     * Shows the menu with its top-left corner at the screen point (x, y). It stays inside the visible area (below the status bar and above
+     * the taskbar) and scrolls when it is taller than that. [alignEnd] puts its right edge at x instead (sub-menus in right-to-left).
+     */
+    fun showAt(anchor: View, x: Int, y: Int, items: List<MenuItem?>, alignEnd: Boolean = false) {
         dismiss()
         val p = Ui.pal(c)
-        val v = build(items, p, c.dp(190))
+        val v = build(items, p, c.dp(230))
         v.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
-        val dm = c.resources.displayMetrics
-        val rl = IntArray(2); anchor.rootView.getLocationOnScreen(rl)
-        val maxH = dm.heightPixels - c.dp(24)
+        val vis = android.graphics.Rect(); anchor.rootView.getWindowVisibleDisplayFrame(vis)
+        if (vis.isEmpty) { val dm = c.resources.displayMetrics; vis.set(0, 0, dm.widthPixels, dm.heightPixels) }
+        val m = c.dp(8)
+        val maxH = maxOf(c.dp(120), vis.height() - 2 * m)
         val w = PopupWindow(v, v.measuredWidth, minOf(v.measuredHeight, maxH), true)
         w.isOutsideTouchable = true
         w.elevation = c.dpf(12f)
         w.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
-        val px = x.coerceIn(rl[0], maxOf(rl[0], rl[0] + anchor.rootView.width - v.measuredWidth))
-        val py = y.coerceIn(rl[1], maxOf(rl[1], rl[1] + anchor.rootView.height - w.height))
+        val wantX = if (alignEnd) x - v.measuredWidth else x
+        val px = wantX.coerceIn(vis.left + m, maxOf(vis.left + m, vis.right - m - v.measuredWidth))
+        val py = y.coerceIn(vis.top + m, maxOf(vis.top + m, vis.bottom - m - w.height))
         win = w
         w.showAtLocation(anchor.rootView, Gravity.NO_GRAVITY, px, py)
     }

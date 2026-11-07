@@ -14,6 +14,7 @@ import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.GridView
 import android.widget.ListView
 import java.io.File
 import java.net.URLDecoder
@@ -103,6 +104,7 @@ class DavPage(private val host: Host, private val loc: Loc.Dav) : Page {
     private val root = LinearLayout(c)
     private val cmd = LinearLayout(c)
     private val list = ListView(c)
+    private val grid = Tiles.gridView(c)
     private val empty = Ui.text(c, "", 14f, p.sub)
     override val view: View get() = root
 
@@ -112,15 +114,19 @@ class DavPage(private val host: Host, private val loc: Loc.Dav) : Page {
         override fun getItemId(i: Int) = i.toLong()
         override fun getView(i: Int, cv: View?, parent: ViewGroup?): View {
             val item = items[i]
-            val r = LinearLayout(c); r.gravity = Gravity.CENTER_VERTICAL
-            r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(46)); r.setPaddingRelative(c.dp(12), 0, c.dp(12), 0)
-            r.background = Ui.ripple(c, p, null, c.dpf(8f)); r.isClickable = true
-            val iv = ImageView(c)
-            iv.setImageDrawable(if (item.dir) Glyph(Glyph.Kind.FOLDER) else Thumbs.icon(File(item.name)))
-            r.addView(iv, LinearLayout.LayoutParams(c.dp(30), c.dp(30)).also { l -> l.marginEnd = c.dp(10) })
-            val nm = Ui.text(c, item.name, 14f, p.text, false, false); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
-            r.addView(nm, LinearLayout.LayoutParams(0, WRAP, 1f))
-            if (!item.dir) r.addView(Ui.text(c, Fs.size(c, item.size), 12f, p.sub), LinearLayout.LayoutParams(c.dp(80), WRAP))
+            val icon = if (item.dir) Glyph(Glyph.Kind.FOLDER) else Thumbs.icon(File(item.name))
+            val r: LinearLayout
+            if (Tiles.isGrid(c)) r = Tiles.tile(c, p, icon, item.name)
+            else {
+                r = LinearLayout(c); r.gravity = Gravity.CENTER_VERTICAL
+                r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(46)); r.setPaddingRelative(c.dp(12), 0, c.dp(12), 0)
+                r.background = Ui.ripple(c, p, null, c.dpf(8f)); r.isClickable = true
+                val iv = ImageView(c); iv.setImageDrawable(icon)
+                r.addView(iv, LinearLayout.LayoutParams(c.dp(30), c.dp(30)).also { l -> l.marginEnd = c.dp(10) })
+                val nm = Ui.text(c, item.name, 14f, p.text, false, false); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                r.addView(nm, LinearLayout.LayoutParams(0, WRAP, 1f))
+                if (!item.dir) r.addView(Ui.text(c, Fs.size(c, item.size), 12f, p.sub), LinearLayout.LayoutParams(c.dp(80), WRAP))
+            }
             r.setOnTouchListener { _, e -> if (e.actionMasked == MotionEvent.ACTION_DOWN) { lastX = e.rawX.toInt(); lastY = e.rawY.toInt() }; false }
             r.setOnClickListener { open(item) }
             r.setOnLongClickListener { menu(item); true }
@@ -137,14 +143,22 @@ class DavPage(private val host: Host, private val loc: Loc.Dav) : Page {
         list.divider = null; list.adapter = adapter; list.selector = android.graphics.drawable.ColorDrawable(0)
         val fr = FrameLayout(c)
         fr.addView(list, FrameLayout.LayoutParams(MATCH, MATCH))
+        grid.adapter = adapter; fr.addView(grid, FrameLayout.LayoutParams(MATCH, MATCH))
         empty.gravity = Gravity.CENTER; fr.addView(empty, FrameLayout.LayoutParams(MATCH, MATCH))
         root.addView(fr, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        buildBar(); load()
+        buildBar(); load(); applyView()
     }
 
-    private fun btn(label: String, on: Boolean = true, click: () -> Unit) {
+    private fun applyView() {
+        val g = Tiles.isGrid(c)
+        list.visibility = if (g) View.GONE else View.VISIBLE
+        grid.visibility = if (g) View.VISIBLE else View.GONE
+        adapter.notifyDataSetChanged()
+    }
+
+    private fun btn(label: String, on: Boolean = true, click: (View) -> Unit) {
         val t = Ui.text(c, label, 13f, p.text); t.setPaddingRelative(c.dp(12), 0, c.dp(12), 0); t.gravity = Gravity.CENTER; t.alpha = if (on) 1f else 0.45f
-        if (on) { t.isClickable = true; t.background = Ui.ripple(c, p, null, c.dpf(8f)); t.setOnClickListener { click() } }
+        if (on) { t.isClickable = true; t.background = Ui.ripple(c, p, null, c.dpf(8f)); t.setOnClickListener { click(t) } }
         cmd.addView(t, LinearLayout.LayoutParams(WRAP, c.dp(36)))
     }
 
@@ -154,6 +168,7 @@ class DavPage(private val host: Host, private val loc: Loc.Dav) : Page {
         btn("Paste", ok && Clip.has(c)) { paste() }
         btn("New folder", ok) { Dialogs.ask(host.act, "New folder", "New folder", "Create") { n -> work { acct!!.mkcol(join(loc.path, n)) } } }
         btn("Refresh", ok) { load() }
+        btn("View ▾", ok) { v -> Pop(c).showBelow(v, Tiles.viewItems(c) { applyView() }) }
     }
 
     private fun join(dir: String, name: String) = dir.trimEnd('/') + "/" + name

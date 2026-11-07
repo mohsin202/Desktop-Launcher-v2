@@ -110,6 +110,18 @@ open class MainActivity : Activity(), Host {
         onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { onBack() }
         hadAccess = Environment.isExternalStorageManager()
         buildUi()
+        openedFromSystemDrive()
+    }
+
+    /** Started from the system's "Open with" list for a connected drive or phone (the MTP host): go straight to the connected phone. */
+    private fun openedFromSystemDrive() {
+        val i = intent ?: return
+        val t = i.type ?: ""
+        val act = i.action ?: ""
+        val fromDrive = t.startsWith("vnd.android.document/") || act == "android.provider.action.BROWSE" || i.data?.authority == "com.android.mtp.documents"
+        if (!fromDrive) return
+        val phones = Mtp.list(this)
+        if (phones.size == 1) openPhone(phones[0]) else if (phones.isEmpty()) toast("No phone found")
     }
 
     override fun onDestroy() { super.onDestroy(); Jobs.unlisten(jobListener); page?.destroy(); page2?.destroy() }
@@ -255,7 +267,17 @@ open class MainActivity : Activity(), Host {
             s.hint = T.t("Search"); s.setSingleLine(); s.textSize = 13f; s.setTextColor(p.text); s.setHintTextColor(p.sub)
             s.background = Ui.rounded(p.card, dpf(18f), p.line, 1); s.setPaddingRelative(dp(14), 0, dp(14), 0)
             s.imeOptions = EditorInfo.IME_ACTION_SEARCH
-            s.setOnEditorActionListener { v, _, _ -> search(v.text.toString()); true }
+            s.setOnEditorActionListener { v, _, _ -> s.removeCallbacks(searchRun); liveSearch(v.text.toString()); true }
+            // the Enter key of a real keyboard does not always reach the action listener
+            s.setOnKeyListener { v, k, e ->
+                if ((k == KeyEvent.KEYCODE_ENTER || k == KeyEvent.KEYCODE_NUMPAD_ENTER) && e.action == KeyEvent.ACTION_DOWN) { v.removeCallbacks(searchRun); liveSearch((v as EditText).text.toString()); true } else false
+            }
+            // search while typing: every letter narrows the results after a short pause
+            s.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
+                override fun onTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
+                override fun afterTextChanged(e: android.text.Editable?) { if (!searchSilent) { s.removeCallbacks(searchRun); s.postDelayed(searchRun, 250) } }
+            })
             bar.addView(s, LinearLayout.LayoutParams(dp(190), dp(36)))
         } else {
             searchBox = null
@@ -296,6 +318,27 @@ open class MainActivity : Activity(), Host {
                 MenuItem("اردو", checked = Store.str(this, "lang", "system") == "ur") { Store.setStr(this, "lang", "ur"); recreate() })),
             MenuItem("New window") { newWindow(Loc.Home) },
             MenuItem("Desktop Files 1.0", enabled = false))
+    }
+
+    private var searchSilent = false
+    private val searchRun = Runnable { liveSearch(searchBox?.text?.toString() ?: "") }
+
+    /** Searches for [q] in the folder being looked at. A search that is already showing is replaced (no history entry per letter); an empty box returns to the folder. */
+    private fun liveSearch(q: String) {
+        val query = q.trim()
+        val t = tabs[cur]; val l = t.loc
+        val box = searchBox
+        val hadFocus = box?.hasFocus() == true
+        if (query.isEmpty()) {
+            if (l is Loc.Search) { t.loc = Loc.Dir(l.base); showTab() }
+        } else {
+            val base = when (l) { is Loc.Dir -> l.path; is Loc.Search -> l.base; else -> Fs.ext().absolutePath }
+            val n = Loc.Search(base, query)
+            if (l == n) return
+            if (l is Loc.Search) { t.loc = n; showTab() } else go(n)
+        }
+        // the page was rebuilt: keep the cursor in the search box so typing goes on
+        if (hadFocus && box != null && !box.hasFocus()) { box.requestFocus(); box.setSelection(box.text.length) }
     }
 
     private fun search(q: String) {
@@ -511,6 +554,11 @@ open class MainActivity : Activity(), Host {
         }
         cnt.addView(row, FrameLayout.LayoutParams(MATCH, MATCH))
         editing = false
+        searchBox?.let { sb ->
+            val sl = t.loc
+            val want = if (sl is Loc.Search) sl.q else ""
+            if (sb.text.toString().trim() != want && !(sl is Loc.Search && sb.hasFocus())) { searchSilent = true; sb.setText(want); searchSilent = false }
+        }
         fillTabs(); fillAddress(); updateRw()
         navBack?.alpha = if (t.back.isEmpty()) 0.4f else 1f
         navFwd?.alpha = if (t.fwd.isEmpty()) 0.4f else 1f
