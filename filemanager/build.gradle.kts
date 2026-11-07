@@ -44,8 +44,6 @@ android {
 }
 
 dependencies {
-    // Windows shares (SMB 2/3). BouncyCastle supplies the MD4 / crypto that Android does not offer.
+    // Windows shares (SMB 2/3). The library brings its own BouncyCastle (MD4 / crypto that Android does not offer) and slf4j.
     implementation("eu.agno3.jcifs:jcifs-ng:2.1.10")
-    implementation("org.slf4j:slf4j-api:1.7.36")
-    implementation("org.bouncycastle:bcprov-jdk15on:1.70")
 }
