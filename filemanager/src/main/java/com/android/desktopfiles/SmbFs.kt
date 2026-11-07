@@ -32,7 +32,7 @@ class SmbFs(private val a: SmbAcct) : RemoteFs {
         pr.setProperty("jcifs.smb.client.responseTimeout", "30000")
         pr.setProperty("jcifs.smb.client.connTimeout", "15000")
         val base = BaseContext(PropertyConfiguration(pr))
-        if (a.user.isEmpty()) base.withGuestCredentials()
+        if (a.user.isEmpty()) base.withCredentials(NtlmPasswordAuthenticator(null, "GUEST", ""))
         else {
             val dom = if (a.user.contains('\\')) a.user.substringBefore('\\') else null
             val usr = if (a.user.contains('\\')) a.user.substringAfter('\\') else a.user
