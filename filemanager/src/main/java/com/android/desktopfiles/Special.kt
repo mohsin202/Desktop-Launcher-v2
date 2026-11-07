@@ -59,10 +59,10 @@ class MediaPage(private val host: Host, private val kind: String) : Page {
         override fun getView(i: Int, cv: View?, parent: ViewGroup?): View {
             val g = groups[i]
             val r = LinearLayout(c); r.gravity = Gravity.CENTER_VERTICAL
-            r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(56)); r.setPadding(c.dp(12), 0, c.dp(12), 0)
+            r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(56)); r.setPaddingRelative(c.dp(12), 0, c.dp(12), 0)
             r.background = Ui.ripple(c, p, null, c.dpf(8f)); r.isClickable = true
             val iv = ImageView(c); iv.setImageDrawable(Glyph(Glyph.Kind.FOLDER))
-            r.addView(iv, LinearLayout.LayoutParams(c.dp(34), c.dp(34)).also { it.rightMargin = c.dp(12) })
+            r.addView(iv, LinearLayout.LayoutParams(c.dp(34), c.dp(34)).also { it.marginEnd = c.dp(12) })
             val box = LinearLayout(c); box.orientation = LinearLayout.VERTICAL
             val nm = Ui.text(c, g.dir.name, 14f, p.text, true, false); nm.maxLines = 1
             val pt = Ui.text(c, g.dir.parent ?: "", 11f, p.sub); pt.maxLines = 1; pt.ellipsize = android.text.TextUtils.TruncateAt.START
@@ -86,9 +86,9 @@ class MediaPage(private val host: Host, private val kind: String) : Page {
 
     init {
         root.orientation = LinearLayout.VERTICAL
-        val title = Ui.text(c, Kinds.title(kind), 22f, p.text, true); title.setPadding(c.dp(16), c.dp(14), c.dp(16), c.dp(2))
+        val title = Ui.text(c, Kinds.title(kind), 22f, p.text, true); title.setPaddingRelative(c.dp(16), c.dp(14), c.dp(16), c.dp(2))
         root.addView(title)
-        val sub = Ui.text(c, "Folders on this device that contain " + Kinds.title(kind).lowercase(), 12f, p.sub); sub.setPadding(c.dp(16), 0, c.dp(16), c.dp(8))
+        val sub = Ui.text(c, "Folders on this device that contain " + Kinds.title(kind).lowercase(), 12f, p.sub); sub.setPaddingRelative(c.dp(16), 0, c.dp(16), c.dp(8))
         root.addView(sub)
         list.divider = null; list.adapter = adapter; list.selector = android.graphics.drawable.ColorDrawable(0)
         val fr = FrameLayout(c)
@@ -140,6 +140,8 @@ class AppsPage(private val host: Host) : Page {
     private val root = LinearLayout(c)
     private val list = ListView(c)
     private val search = EditText(c)
+    private val count = Ui.text(c, "", 12f, p.sub)
+    private val sysBtn = Ui.text(c, "", 13f, p.accent, true)
     private var lastX = 0; private var lastY = 0
     override val view: View get() = root
 
@@ -150,11 +152,11 @@ class AppsPage(private val host: Host) : Page {
         override fun getView(i: Int, cv: View?, parent: ViewGroup?): View {
             val a = shown[i]
             val r = LinearLayout(c); r.gravity = Gravity.CENTER_VERTICAL
-            r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(54)); r.setPadding(c.dp(12), 0, c.dp(12), 0)
+            r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(54)); r.setPaddingRelative(c.dp(12), 0, c.dp(12), 0)
             r.background = Ui.ripple(c, p, null, c.dpf(8f)); r.isClickable = true
             val iv = ImageView(c)
             iv.setImageDrawable(icons.getOrPut(a.pkg) { try { a.info.loadIcon(c.packageManager) } catch (_: Exception) { Glyph(Glyph.Kind.ANDROID) } })
-            r.addView(iv, LinearLayout.LayoutParams(c.dp(36), c.dp(36)).also { it.rightMargin = c.dp(12) })
+            r.addView(iv, LinearLayout.LayoutParams(c.dp(36), c.dp(36)).also { it.marginEnd = c.dp(12) })
             val box = LinearLayout(c); box.orientation = LinearLayout.VERTICAL
             val nm = Ui.text(c, a.label, 14f, p.text, true, false); nm.maxLines = 1
             val pk = Ui.text(c, a.pkg + (if (a.system) "  ·  system" else ""), 11f, p.sub); pk.maxLines = 1
@@ -171,16 +173,27 @@ class AppsPage(private val host: Host) : Page {
 
     init {
         root.orientation = LinearLayout.VERTICAL
-        val title = Ui.text(c, "Apps", 22f, p.text, true); title.setPadding(c.dp(16), c.dp(14), c.dp(16), c.dp(6))
-        root.addView(title)
+        val head = LinearLayout(c); head.gravity = Gravity.CENTER_VERTICAL; head.setPaddingRelative(c.dp(16), c.dp(14), c.dp(10), c.dp(6))
+        head.addView(Ui.text(c, "Apps", 22f, p.text, true), LinearLayout.LayoutParams(WRAP, WRAP))
+        head.addView(count, LinearLayout.LayoutParams(0, WRAP, 1f).also { it.marginStart = c.dp(10) })
+        sysBtn.setPaddingRelative(c.dp(12), c.dp(8), c.dp(12), c.dp(8)); sysBtn.isClickable = true; sysBtn.background = Ui.ripple(c, p, null, c.dpf(8f))
+        sysBtn.setOnClickListener { Store.setBool(c, "appsSystem", !Store.bool(c, "appsSystem", true)); filter() }
+        head.addView(sysBtn)
+        root.addView(head)
+        // an app was installed or removed while another window was in front: look again when this window gets the focus back
+        root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            val l = android.view.ViewTreeObserver.OnWindowFocusChangeListener { f -> if (f) refresh() }
+            override fun onViewAttachedToWindow(v: View) { v.viewTreeObserver.addOnWindowFocusChangeListener(l) }
+            override fun onViewDetachedFromWindow(v: View) { v.viewTreeObserver.removeOnWindowFocusChangeListener(l) }
+        })
         search.hint = T.t("Filter apps"); search.setSingleLine(); search.textSize = 13f; search.setTextColor(p.text); search.setHintTextColor(p.sub)
-        search.background = Ui.rounded(p.card, c.dpf(18f), p.line, 1); search.setPadding(c.dp(14), 0, c.dp(14), 0)
+        search.background = Ui.rounded(p.card, c.dpf(18f), p.line, 1); search.setPaddingRelative(c.dp(14), 0, c.dp(14), 0)
         search.addTextChangedListener(object : android.text.TextWatcher {
             override fun afterTextChanged(s: android.text.Editable?) { filter() }
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, d: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, d: Int) {}
         })
-        root.addView(search, LinearLayout.LayoutParams(MATCH, c.dp(38)).also { it.leftMargin = c.dp(16); it.rightMargin = c.dp(16); it.bottomMargin = c.dp(6) })
+        root.addView(search, LinearLayout.LayoutParams(MATCH, c.dp(38)).also { it.marginStart = c.dp(16); it.marginEnd = c.dp(16); it.bottomMargin = c.dp(6) })
         list.divider = null; list.adapter = adapter; list.selector = android.graphics.drawable.ColorDrawable(0)
         root.addView(list, LinearLayout.LayoutParams(MATCH, 0, 1f))
         refresh()
@@ -188,7 +201,10 @@ class AppsPage(private val host: Host) : Page {
 
     private fun filter() {
         val q = search.text.toString().trim().lowercase()
-        shown = if (q.isEmpty()) all else all.filter { it.label.lowercase().contains(q) || it.pkg.lowercase().contains(q) }
+        val sys = Store.bool(c, "appsSystem", true)
+        shown = all.filter { (sys || !it.system) && (q.isEmpty() || it.label.lowercase().contains(q) || it.pkg.lowercase().contains(q)) }
+        sysBtn.text = T.t(if (sys) "Hide system apps" else "Show system apps")
+        count.text = shown.size.toString()
         adapter.notifyDataSetChanged()
     }
 

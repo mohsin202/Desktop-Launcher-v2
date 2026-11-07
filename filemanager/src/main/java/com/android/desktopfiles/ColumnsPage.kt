@@ -40,15 +40,15 @@ class ColumnsPage(private val host: Host, private val start: File) : Page {
             override fun getView(i: Int, cv: View?, parent: ViewGroup?): View {
                 val f = items[i]
                 val r = LinearLayout(c); r.gravity = Gravity.CENTER_VERTICAL
-                r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(40)); r.setPadding(c.dp(10), 0, c.dp(8), 0)
+                r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(40)); r.setPaddingRelative(c.dp(10), 0, c.dp(8), 0)
                 r.background = Ui.ripple(c, p, if (f == selected) Ui.rounded(p.sel, c.dpf(8f)) else null, c.dpf(8f))
                 r.isClickable = true
                 val iv = ImageView(c); Thumbs.bind(iv, f, c.dp(64))
-                r.addView(iv, LinearLayout.LayoutParams(c.dp(26), c.dp(26)).also { it.rightMargin = c.dp(10) })
+                r.addView(iv, LinearLayout.LayoutParams(c.dp(26), c.dp(26)).also { it.marginEnd = c.dp(10) })
                 val nm = Ui.text(c, Fs.shown(f), 13f, p.text, false, false); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
                 r.addView(nm, LinearLayout.LayoutParams(0, WRAP, 1f))
                 val real = Fs.target(f) ?: f
-                if (real.isDirectory) r.addView(Ui.text(c, "›", 16f, p.sub))
+                if (real.isDirectory) r.addView(Ui.text(c, if (T.rtl) "‹" else "›", 16f, p.sub))
                 r.setOnTouchListener { _, e -> if (e.actionMasked == MotionEvent.ACTION_DOWN) { lastX = e.rawX.toInt(); lastY = e.rawY.toInt() }; false }
                 r.setOnClickListener { choose(this@Column, f) }
                 r.setOnLongClickListener { menu(this@Column, f); true }
@@ -80,9 +80,9 @@ class ColumnsPage(private val host: Host, private val start: File) : Page {
 
     init {
         root.orientation = LinearLayout.VERTICAL
-        val bar = LinearLayout(c); bar.gravity = Gravity.CENTER_VERTICAL; bar.setPadding(c.dp(6), 0, c.dp(6), 0)
+        val bar = LinearLayout(c); bar.gravity = Gravity.CENTER_VERTICAL; bar.setPaddingRelative(c.dp(6), 0, c.dp(6), 0)
         fun btn(label: String, click: (View) -> Unit) {
-            val t = Ui.text(c, label, 13f, p.text); t.setPadding(c.dp(12), 0, c.dp(12), 0); t.gravity = Gravity.CENTER
+            val t = Ui.text(c, label, 13f, p.text); t.setPaddingRelative(c.dp(12), 0, c.dp(12), 0); t.gravity = Gravity.CENTER
             t.isClickable = true; t.background = Ui.ripple(c, p, null, c.dpf(8f)); t.setOnClickListener(click)
             bar.addView(t, LinearLayout.LayoutParams(WRAP, c.dp(36)))
         }

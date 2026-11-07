@@ -24,7 +24,7 @@ object Dialogs {
         val et = EditText(act); et.setText(initial); et.setSingleLine()
         val base = initial.substringBeforeLast('.', initial)
         et.setSelection(0, base.length)
-        val box = FrameLayout(act); box.setPadding(act.dp(20), act.dp(8), act.dp(20), 0); box.addView(et)
+        val box = FrameLayout(act); box.setPaddingRelative(act.dp(20), act.dp(8), act.dp(20), 0); box.addView(et)
         val d = AlertDialog.Builder(act).setTitle(T.t(title)).setView(box)
             .setPositiveButton(T.t(okLabel)) { _, _ -> val s = et.text.toString().trim(); if (s.isNotEmpty()) cb(s) }
             .setNegativeButton(T.t("Cancel"), null).create()
@@ -132,7 +132,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     private fun groupHeader(r: Row): View {
         val open = r.header !in closedGroups
         val t = Ui.text(c, (if (open) "▾  " else "▸  ") + T.t(r.header!!) + "  (" + r.count + ")", 13f, p.accent, true, false)
-        t.gravity = Gravity.CENTER_VERTICAL; t.setPadding(c.dp(14), 0, c.dp(8), 0)
+        t.gravity = Gravity.CENTER_VERTICAL; t.setPaddingRelative(c.dp(14), 0, c.dp(8), 0)
         t.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(36)); t.isClickable = true
         t.setOnClickListener { if (!closedGroups.add(r.header!!)) closedGroups.remove(r.header); adapter.notifyDataSetChanged() }
         return t
@@ -144,14 +144,14 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     init {
         root.orientation = LinearLayout.VERTICAL
         val sv = HorizontalScrollView(c); sv.isHorizontalScrollBarEnabled = false
-        cmd.gravity = Gravity.CENTER_VERTICAL; cmd.setPadding(c.dp(6), 0, c.dp(6), 0)
+        cmd.gravity = Gravity.CENTER_VERTICAL; cmd.setPaddingRelative(c.dp(6), 0, c.dp(6), 0)
         sv.addView(cmd)
         root.addView(sv, LinearLayout.LayoutParams(MATCH, c.dp(46)))
         root.addView(headerBox, LinearLayout.LayoutParams(MATCH, WRAP))
         list.divider = null; list.adapter = adapter; list.selector = android.graphics.drawable.ColorDrawable(0)
         grid.adapter = adapter; grid.numColumns = GridView.AUTO_FIT; grid.columnWidth = c.dp(104)
         grid.stretchMode = GridView.STRETCH_COLUMN_WIDTH; grid.selector = android.graphics.drawable.ColorDrawable(0)
-        grid.setPadding(c.dp(8), c.dp(4), c.dp(8), c.dp(4)); grid.clipToPadding = false
+        grid.setPaddingRelative(c.dp(8), c.dp(4), c.dp(8), c.dp(4)); grid.clipToPadding = false
         emptyView.gravity = Gravity.CENTER
         frame.addView(list, FrameLayout.LayoutParams(MATCH, MATCH))
         frame.addView(grid, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -162,7 +162,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             v.setOnTouchListener { _, e -> if (e.actionMasked == MotionEvent.ACTION_DOWN) { lastMeta = e.metaState; lastX = e.rawX.toInt(); lastY = e.rawY.toInt() }; false }
         }
         root.addView(frame, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        status.setPadding(c.dp(14), c.dp(6), c.dp(14), c.dp(6))
+        status.setPaddingRelative(c.dp(14), c.dp(6), c.dp(14), c.dp(6))
         root.addView(status, LinearLayout.LayoutParams(MATCH, WRAP))
         buildHeader(); buildBar(); applyView()
         refresh()
@@ -260,7 +260,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     private fun buildHeader() {
         headerBox.removeAllViews()
         val row = LinearLayout(c); row.gravity = Gravity.CENTER_VERTICAL
-        row.setPadding(c.dp(8), 0, c.dp(8), 0)
+        row.setPaddingRelative(c.dp(8), 0, c.dp(8), 0)
         fun col(label: String, key: String, w: Int): TextView {
             val arrow = if (sortKey() == key) (if (asc()) " ▲" else " ▼") else ""
             val t = Ui.text(c, T.t(label) + arrow, 12f, p.sub, sortKey() == key, false)
@@ -289,7 +289,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
 
     private fun btn(label: String, on: Boolean = true, click: (View) -> Unit) {
         val t = Ui.text(c, label, 13f, if (on) p.text else p.sub)
-        t.setPadding(c.dp(12), 0, c.dp(12), 0); t.gravity = Gravity.CENTER
+        t.setPaddingRelative(c.dp(12), 0, c.dp(12), 0); t.gravity = Gravity.CENTER
         t.alpha = if (on) 1f else 0.45f
         if (on) { t.isClickable = true; t.background = Ui.ripple(c, p, null, c.dpf(8f)); t.setOnClickListener(click) }
         cmd.addView(t, LinearLayout.LayoutParams(WRAP, c.dp(36)))
@@ -297,7 +297,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
 
     private fun sep() {
         val v = View(c); v.setBackgroundColor(p.line)
-        cmd.addView(v, LinearLayout.LayoutParams(1, c.dp(20)).also { it.leftMargin = c.dp(4); it.rightMargin = c.dp(4) })
+        cmd.addView(v, LinearLayout.LayoutParams(1, c.dp(20)).also { it.marginStart = c.dp(4); it.marginEnd = c.dp(4) })
     }
 
     private fun buildBar() {
@@ -347,11 +347,11 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
 
     private fun detailsRow(): RowH {
         val r = LinearLayout(c); r.gravity = Gravity.CENTER_VERTICAL
-        r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(44)); r.setPadding(c.dp(8), 0, c.dp(8), 0)
+        r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(44)); r.setPaddingRelative(c.dp(8), 0, c.dp(8), 0)
         val ck = checkView()
-        r.addView(ck, LinearLayout.LayoutParams(c.dp(22), c.dp(22)).also { it.rightMargin = c.dp(6) })
+        r.addView(ck, LinearLayout.LayoutParams(c.dp(22), c.dp(22)).also { it.marginEnd = c.dp(6) })
         val iv = ImageView(c)
-        r.addView(iv, LinearLayout.LayoutParams(c.dp(30), c.dp(30)).also { it.rightMargin = c.dp(8) })
+        r.addView(iv, LinearLayout.LayoutParams(c.dp(30), c.dp(30)).also { it.marginEnd = c.dp(8) })
         val nameBox = LinearLayout(c); nameBox.orientation = LinearLayout.VERTICAL
         val nm = Ui.text(c, "", 14f, p.text); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
         val sub = Ui.text(c, "", 10f, p.sub); sub.maxLines = 1; sub.ellipsize = android.text.TextUtils.TruncateAt.START
@@ -367,7 +367,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
 
     private fun gridCell(): RowH {
         val r = LinearLayout(c); r.orientation = LinearLayout.VERTICAL; r.gravity = Gravity.CENTER_HORIZONTAL
-        r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(112)); r.setPadding(c.dp(4), c.dp(8), c.dp(4), c.dp(4))
+        r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(112)); r.setPaddingRelative(c.dp(4), c.dp(8), c.dp(4), c.dp(4))
         val iv = ImageView(c); iv.scaleType = ImageView.ScaleType.FIT_CENTER
         r.addView(iv, LinearLayout.LayoutParams(c.dp(60), c.dp(60)))
         val nm = Ui.text(c, "", 12f, p.text); nm.maxLines = 2; nm.gravity = Gravity.CENTER_HORIZONTAL

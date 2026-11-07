@@ -54,6 +54,10 @@ object Tags {
         saveDefs(all().map { if (it.id == id) Tag(id, name.replace("|", " ").replace("\n", " ").trim(), it.color) else it })
     }
 
+    @Synchronized fun recolor(id: String, color: Int) {
+        saveDefs(all().map { if (it.id == id) Tag(id, it.name, color) else it })
+    }
+
     @Synchronized fun remove(id: String) {
         saveDefs(all().filter { it.id != id })
         val m = load(); for (v in m.values) v.remove(id); save()
@@ -112,18 +116,37 @@ object Tags {
 }
 
 object TagUi {
-    /** Asks for a name and a colour, makes the tag and hands it back. */
-    fun create(act: Activity, done: (Tags.Tag) -> Unit) {
-        var chosen = Tags.palette[4]
-        val box = LinearLayout(act); box.orientation = LinearLayout.VERTICAL; box.setPadding(act.dp(20), act.dp(8), act.dp(20), 0)
-        val et = EditText(act); et.hint = T.t("Tag name"); et.setSingleLine(); box.addView(et)
-        val row = LinearLayout(act); row.gravity = Gravity.CENTER_VERTICAL; row.setPadding(0, act.dp(12), 0, act.dp(4))
+    /** Lets the user pick another colour for an existing tag. */
+    fun recolor(act: Activity, t: Tags.Tag, done: () -> Unit) {
+        var chosen = t.color
+        val box = LinearLayout(act); box.orientation = LinearLayout.VERTICAL; box.setPaddingRelative(act.dp(20), act.dp(12), act.dp(20), 0)
+        val row = LinearLayout(act); row.gravity = Gravity.CENTER_VERTICAL
         val dots = ArrayList<View>()
         fun paint() { for ((i, v) in dots.withIndex()) v.alpha = if (Tags.palette[i] == chosen) 1f else 0.35f }
         for (col in Tags.palette) {
             val v = View(act); v.background = Tags.dot(act, col).also { it.setSize(act.dp(28), act.dp(28)) }
             v.setOnClickListener { chosen = col; paint() }
-            dots.add(v); row.addView(v, LinearLayout.LayoutParams(act.dp(28), act.dp(28)).also { it.rightMargin = act.dp(10) })
+            dots.add(v); row.addView(v, LinearLayout.LayoutParams(act.dp(28), act.dp(28)).also { it.marginEnd = act.dp(10) })
+        }
+        paint()
+        val hs = HorizontalScrollView(act); hs.addView(row); box.addView(hs)
+        AlertDialog.Builder(act).setTitle(T.t("Tag colour")).setView(box)
+            .setPositiveButton(T.t("Save")) { _, _ -> Tags.recolor(t.id, chosen); done() }
+            .setNegativeButton(T.t("Cancel"), null).show()
+    }
+
+    /** Asks for a name and a colour, makes the tag and hands it back. */
+    fun create(act: Activity, done: (Tags.Tag) -> Unit) {
+        var chosen = Tags.palette[4]
+        val box = LinearLayout(act); box.orientation = LinearLayout.VERTICAL; box.setPaddingRelative(act.dp(20), act.dp(8), act.dp(20), 0)
+        val et = EditText(act); et.hint = T.t("Tag name"); et.setSingleLine(); box.addView(et)
+        val row = LinearLayout(act); row.gravity = Gravity.CENTER_VERTICAL; row.setPaddingRelative(0, act.dp(12), 0, act.dp(4))
+        val dots = ArrayList<View>()
+        fun paint() { for ((i, v) in dots.withIndex()) v.alpha = if (Tags.palette[i] == chosen) 1f else 0.35f }
+        for (col in Tags.palette) {
+            val v = View(act); v.background = Tags.dot(act, col).also { it.setSize(act.dp(28), act.dp(28)) }
+            v.setOnClickListener { chosen = col; paint() }
+            dots.add(v); row.addView(v, LinearLayout.LayoutParams(act.dp(28), act.dp(28)).also { it.marginEnd = act.dp(10) })
         }
         paint()
         val hs = HorizontalScrollView(act); hs.addView(row); box.addView(hs)

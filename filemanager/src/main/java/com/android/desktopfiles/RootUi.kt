@@ -26,7 +26,7 @@ object RootUi {
         val p = Ui.pal(act)
         val special = if (pm.mode.length > 3) pm.mode.substring(0, pm.mode.length - 3) else ""
         val digits = pm.mode.takeLast(3).padStart(3, '0')
-        val box = LinearLayout(act); box.orientation = LinearLayout.VERTICAL; box.setPadding(act.dp(20), act.dp(8), act.dp(20), act.dp(4))
+        val box = LinearLayout(act); box.orientation = LinearLayout.VERTICAL; box.setPaddingRelative(act.dp(20), act.dp(8), act.dp(20), act.dp(4))
         val grid = Array(3) { arrayOfNulls<CheckBox>(3) }
         val head = LinearLayout(act)
         head.addView(TextView(act), LinearLayout.LayoutParams(act.dp(80), WRAP))

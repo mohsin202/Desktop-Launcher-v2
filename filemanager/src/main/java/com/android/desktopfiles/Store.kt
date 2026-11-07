@@ -57,6 +57,8 @@ sealed class Loc {
     object Trash : Loc()
     /** A phone connected by USB: dev = the USB device name, storage = -1 lists the storages, parent = -1 is the top of a storage. */
     data class Mtp(val dev: String, val storage: Int = -1, val parent: Int = -1, val title: String = "") : Loc()
+    /** A cloud (WebDAV) account: acct = account id, path = folder on the server ("" is the top). */
+    data class Dav(val acct: String, val path: String = "", val title: String = "") : Loc()
     /** Everything that carries a colour tag. */
     data class Tag(val id: String) : Loc()
     /** Reserved for the next part (Documents / Pictures / Music / Videos grouped by folder, Apps). */

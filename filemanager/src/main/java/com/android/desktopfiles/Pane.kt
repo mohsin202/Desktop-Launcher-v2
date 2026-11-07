@@ -20,12 +20,12 @@ class DetailsPane(private val c: Context) {
     init {
         sv.setBackgroundColor(p.card)
         col.orientation = LinearLayout.VERTICAL
-        col.setPadding(c.dp(16), c.dp(16), c.dp(16), c.dp(16))
+        col.setPaddingRelative(c.dp(16), c.dp(16), c.dp(16), c.dp(16))
         sv.addView(col)
     }
 
     private fun row(label: String, value: String): TextView {
-        col.addView(Ui.text(c, label, 11f, p.sub).also { it.setPadding(0, c.dp(12), 0, c.dp(2)) })
+        col.addView(Ui.text(c, label, 11f, p.sub).also { it.setPaddingRelative(0, c.dp(12), 0, c.dp(2)) })
         val v = Ui.text(c, value, 13f, p.text); v.setTextIsSelectable(true)
         col.addView(v); return v
     }
@@ -47,7 +47,7 @@ class DetailsPane(private val c: Context) {
         val iv = ImageView(c); iv.scaleType = ImageView.ScaleType.FIT_CENTER
         Thumbs.bind(iv, f, 480)
         col.addView(iv, LinearLayout.LayoutParams(MATCH, c.dp(190)))
-        val nm = Ui.text(c, Fs.shown(f), 16f, p.text, true, false); nm.setPadding(0, c.dp(10), 0, 0); nm.setTextIsSelectable(true)
+        val nm = Ui.text(c, Fs.shown(f), 16f, p.text, true, false); nm.setPaddingRelative(0, c.dp(10), 0, 0); nm.setTextIsSelectable(true)
         col.addView(nm)
         row("Type", Fs.typeName(f))
         row("Location", f.parent ?: "/")
@@ -62,8 +62,8 @@ class DetailsPane(private val c: Context) {
         val e = real.extension.lowercase()
         if (real.isFile && e in setOf("txt", "md", "log", "csv", "json", "xml", "html", "kt", "java", "py", "js", "css", "ini", "conf", "yml", "yaml", "srt") && real.length() < 400_000) {
             val tv = Ui.text(c, "", 11f, p.text); tv.typeface = Typeface.MONOSPACE
-            tv.background = Ui.rounded(p.bg, c.dpf(8f)); tv.setPadding(c.dp(10), c.dp(8), c.dp(10), c.dp(8))
-            col.addView(Ui.text(c, "Preview", 11f, p.sub).also { it.setPadding(0, c.dp(14), 0, c.dp(4)) })
+            tv.background = Ui.rounded(p.bg, c.dpf(8f)); tv.setPaddingRelative(c.dp(10), c.dp(8), c.dp(10), c.dp(8))
+            col.addView(Ui.text(c, "Preview", 11f, p.sub).also { it.setPaddingRelative(0, c.dp(14), 0, c.dp(4)) })
             col.addView(tv)
             Thread {
                 val s = try { real.bufferedReader().use { r -> val cb = CharArray(2000); val n = r.read(cb); if (n > 0) String(cb, 0, n) else "" } } catch (_: Exception) { "" }

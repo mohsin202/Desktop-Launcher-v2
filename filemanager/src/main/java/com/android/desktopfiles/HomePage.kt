@@ -66,7 +66,7 @@ class HomePage(private val host: Host) : Page {
 
     init {
         col.orientation = LinearLayout.VERTICAL
-        col.setPadding(c.dp(16), c.dp(8), c.dp(16), c.dp(24))
+        col.setPaddingRelative(c.dp(16), c.dp(8), c.dp(16), c.dp(24))
         scroll.addView(col, MATCH, WRAP)
         scroll.setBackgroundColor(0)
         if (RootSu.state == 0) RootSu.check { build() }
@@ -78,9 +78,9 @@ class HomePage(private val host: Host) : Page {
     private fun section(title: String, key: String, body: () -> View) {
         val closed = Store.collapsed(c, key)
         val head = LinearLayout(c); head.gravity = Gravity.CENTER_VERTICAL
-        head.setPadding(0, c.dp(14), 0, c.dp(8))
+        head.setPaddingRelative(0, c.dp(14), 0, c.dp(8))
         head.isClickable = true
-        head.addView(Ui.text(c, if (closed) "▸" else "▾", 14f, p.sub), LinearLayout.LayoutParams(c.dp(22), WRAP))
+        head.addView(Ui.text(c, if (closed) (if (T.rtl) "◂" else "▸") else "▾", 14f, p.sub), LinearLayout.LayoutParams(c.dp(22), WRAP))
         head.addView(Ui.text(c, title, 14f, p.text, true))
         head.setOnClickListener { Store.setCollapsed(c, key, !closed); build() }
         col.addView(head)
@@ -89,7 +89,7 @@ class HomePage(private val host: Host) : Page {
 
     private fun card(icon: android.graphics.drawable.Drawable, name: String, w: Int, sub: View? = null, badge: Boolean = false, click: () -> Unit, long: ((View) -> Unit)? = null): View {
         val card = LinearLayout(c); card.gravity = Gravity.CENTER_VERTICAL
-        card.setPadding(c.dp(12), c.dp(10), c.dp(12), c.dp(10))
+        card.setPaddingRelative(c.dp(12), c.dp(10), c.dp(12), c.dp(10))
         card.background = Ui.ripple(c, p, Ui.rounded(p.card, c.dpf(10f), p.line, 1), c.dpf(10f))
         card.isClickable = true
         card.setOnClickListener { click() }
@@ -107,7 +107,7 @@ class HomePage(private val host: Host) : Page {
         val n = Ui.text(c, name, 14f, p.text, true); n.maxLines = 1; n.ellipsize = android.text.TextUtils.TruncateAt.END
         txt.addView(n)
         if (sub != null) txt.addView(sub)
-        card.addView(txt, LinearLayout.LayoutParams(0, WRAP, 1f).also { it.leftMargin = c.dp(10) })
+        card.addView(txt, LinearLayout.LayoutParams(0, WRAP, 1f).also { it.marginStart = c.dp(10) })
         card.layoutParams = LinearLayout.LayoutParams(c.dp(w), WRAP)
         return card
     }
@@ -118,16 +118,16 @@ class HomePage(private val host: Host) : Page {
 
     private fun build() {
         col.removeAllViews()
-        val title = Ui.text(c, "Home", 22f, p.text, true); title.setPadding(0, c.dp(8), 0, 0)
+        val title = Ui.text(c, "Home", 22f, p.text, true); title.setPaddingRelative(0, c.dp(8), 0, 0)
         col.addView(title)
 
         if (!Store.bool(c, "hideNetBar", false)) {
             val bar = LinearLayout(c); bar.gravity = Gravity.CENTER_VERTICAL
-            bar.setPadding(c.dp(12), c.dp(8), c.dp(8), c.dp(8))
+            bar.setPaddingRelative(c.dp(12), c.dp(8), c.dp(8), c.dp(8))
             bar.background = Ui.rounded(p.accentSoft, c.dpf(10f))
-            val t = Ui.text(c, "Network locations (SMB) will come in a later update.", 13f, p.text)
+            val t = Ui.text(c, "Cloud accounts (WebDAV: Nextcloud, ownCloud, NAS) can be added below. SMB will come later.", 13f, p.text)
             bar.addView(t, LinearLayout.LayoutParams(0, WRAP, 1f))
-            val b = Ui.text(c, "Disable", 13f, p.accent, true); b.setPadding(c.dp(12), c.dp(8), c.dp(12), c.dp(8))
+            val b = Ui.text(c, "Disable", 13f, p.accent, true); b.setPaddingRelative(c.dp(12), c.dp(8), c.dp(12), c.dp(8))
             b.isClickable = true; b.background = Ui.ripple(c, p, null, c.dpf(8f))
             b.setOnClickListener { Store.setBool(c, "hideNetBar", true); build() }
             bar.addView(b)
@@ -172,6 +172,11 @@ class HomePage(private val host: Host) : Page {
                 val sub = Ui.text(c, "USB phone (MTP)", 11f, p.sub)
                 f.addView(card(Glyph(Glyph.Kind.PHONE), Mtp.label(ph), 270, sub, click = { host.openPhone(ph) }))
             }
+            for (a in DavAccts.all(c)) {
+                val sub = Ui.text(c, "Cloud (WebDAV)", 11f, p.sub)
+                f.addView(card(Glyph(Glyph.Kind.DRIVE), a.name, 270, sub, click = { host.go(Loc.Dav(a.id)) }))
+            }
+            f.addView(card(Glyph(Glyph.Kind.FOLDER), "Add cloud account…", 270, Ui.text(c, "WebDAV", 11f, p.sub), click = { DavAccts.addDialog(host.act) { a -> host.go(Loc.Dav(a.id)) } }))
             f
         }
 
@@ -181,12 +186,12 @@ class HomePage(private val host: Host) : Page {
             if (files.isEmpty()) box.addView(Ui.text(c, "Files you open will appear here.", 13f, p.sub))
             for (f in files) {
                 val row = LinearLayout(c); row.gravity = Gravity.CENTER_VERTICAL
-                row.setPadding(c.dp(8), c.dp(6), c.dp(8), c.dp(6)); row.isClickable = true
+                row.setPaddingRelative(c.dp(8), c.dp(6), c.dp(8), c.dp(6)); row.isClickable = true
                 row.background = Ui.ripple(c, p, null, c.dpf(8f))
                 val iv = ImageView(c); Thumbs.bind(iv, f, c.dp(64))
                 row.addView(iv, LinearLayout.LayoutParams(c.dp(32), c.dp(32)))
                 val nm = Ui.text(c, Fs.shown(f), 14f, p.text, false, false); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.END
-                row.addView(nm, LinearLayout.LayoutParams(0, WRAP, 1f).also { it.leftMargin = c.dp(10) })
+                row.addView(nm, LinearLayout.LayoutParams(0, WRAP, 1f).also { it.marginStart = c.dp(10) })
                 val loc = Ui.text(c, f.parent ?: "", 11f, p.sub); loc.maxLines = 1; loc.ellipsize = android.text.TextUtils.TruncateAt.START
                 row.addView(loc, LinearLayout.LayoutParams(c.dp(220), WRAP))
                 row.setOnClickListener { host.openFile(f) }

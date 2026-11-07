@@ -36,15 +36,15 @@ class TrashPage(private val host: Host) : Page {
         override fun getItemId(i: Int) = i.toLong()
         override fun getView(i: Int, cv: View?, parent: ViewGroup?): View {
             val r = LinearLayout(c); r.gravity = Gravity.CENTER_VERTICAL
-            r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(50)); r.setPadding(c.dp(8), 0, c.dp(8), 0)
+            r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(50)); r.setPaddingRelative(c.dp(8), 0, c.dp(8), 0)
             val it = items[i]; val on = it.file.absolutePath in sel
             r.background = Ui.ripple(c, p, if (on) Ui.rounded(p.sel, c.dpf(8f)) else null, c.dpf(8f))
             val ck = Ui.text(c, if (on) "✓" else "", 13f, 0xFFFFFFFF.toInt(), true); ck.gravity = Gravity.CENTER
             ck.background = if (on) Ui.rounded(p.accent, c.dpf(11f)) else Ui.rounded(0, c.dpf(11f), p.sub, c.dp(1))
-            r.addView(ck, LinearLayout.LayoutParams(c.dp(22), c.dp(22)).also { it.rightMargin = c.dp(8) })
+            r.addView(ck, LinearLayout.LayoutParams(c.dp(22), c.dp(22)).also { it.marginEnd = c.dp(8) })
             val iv = ImageView(c)
             iv.setImageDrawable(Thumbs.icon(it.file))
-            r.addView(iv, LinearLayout.LayoutParams(c.dp(30), c.dp(30)).also { it.rightMargin = c.dp(8) })
+            r.addView(iv, LinearLayout.LayoutParams(c.dp(30), c.dp(30)).also { it.marginEnd = c.dp(8) })
             val box = LinearLayout(c); box.orientation = LinearLayout.VERTICAL
             val nm = Ui.text(c, it.name, 14f, p.text, false, false); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
             val loc = Ui.text(c, "Deleted from " + (it.file.parent ?: ""), 10f, p.sub); loc.maxLines = 1; loc.ellipsize = android.text.TextUtils.TruncateAt.START
@@ -64,7 +64,7 @@ class TrashPage(private val host: Host) : Page {
     init {
         root.orientation = LinearLayout.VERTICAL
         val sv = HorizontalScrollView(c); sv.isHorizontalScrollBarEnabled = false
-        cmd.gravity = Gravity.CENTER_VERTICAL; cmd.setPadding(c.dp(6), 0, c.dp(6), 0); sv.addView(cmd)
+        cmd.gravity = Gravity.CENTER_VERTICAL; cmd.setPaddingRelative(c.dp(6), 0, c.dp(6), 0); sv.addView(cmd)
         root.addView(sv, LinearLayout.LayoutParams(MATCH, c.dp(46)))
         list.divider = null; list.adapter = adapter; list.selector = android.graphics.drawable.ColorDrawable(0)
         val fr = FrameLayout(c)
@@ -72,14 +72,14 @@ class TrashPage(private val host: Host) : Page {
         empty.gravity = Gravity.CENTER
         fr.addView(empty, FrameLayout.LayoutParams(MATCH, MATCH))
         root.addView(fr, LinearLayout.LayoutParams(MATCH, 0, 1f))
-        status.setPadding(c.dp(14), c.dp(6), c.dp(14), c.dp(6))
+        status.setPaddingRelative(c.dp(14), c.dp(6), c.dp(14), c.dp(6))
         root.addView(status, LinearLayout.LayoutParams(MATCH, WRAP))
         buildBar(); refresh()
     }
 
     private fun btn(label: String, on: Boolean = true, danger: Boolean = false, click: () -> Unit) {
         val t = Ui.text(c, label, 13f, if (!on) p.sub else if (danger) p.warn else p.text)
-        t.setPadding(c.dp(12), 0, c.dp(12), 0); t.gravity = Gravity.CENTER; t.alpha = if (on) 1f else 0.45f
+        t.setPaddingRelative(c.dp(12), 0, c.dp(12), 0); t.gravity = Gravity.CENTER; t.alpha = if (on) 1f else 0.45f
         if (on) { t.isClickable = true; t.background = Ui.ripple(c, p, null, c.dpf(8f)); t.setOnClickListener { click() } }
         cmd.addView(t, LinearLayout.LayoutParams(WRAP, c.dp(36)))
     }

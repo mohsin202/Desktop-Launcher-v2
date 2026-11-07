@@ -20,7 +20,10 @@ class Prog(c: Context, private val pal: Pal) : View(c) {
     override fun onDraw(canvas: Canvas) {
         val h = height.toFloat(); val r = h / 2
         p.color = pal.line; canvas.drawRoundRect(RectF(0f, 0f, width.toFloat(), h), r, r, p)
-        p.color = pal.accent; canvas.drawRoundRect(RectF(0f, 0f, maxOf(h, width * fraction.coerceIn(0f, 1f)), h), r, r, p)
+        p.color = pal.accent
+        val fw = maxOf(h, width * fraction.coerceIn(0f, 1f))
+        if (layoutDirection == LAYOUT_DIRECTION_RTL) canvas.drawRoundRect(RectF(width - fw, 0f, width.toFloat(), h), r, r, p)
+        else canvas.drawRoundRect(RectF(0f, 0f, fw, h), r, r, p)
     }
 }
 
@@ -76,7 +79,7 @@ object StatusPanel {
         val p = Ui.pal(c)
         val box = LinearLayout(c); box.orientation = LinearLayout.VERTICAL
         box.background = Ui.rounded(p.card, c.dpf(12f), p.line, 1)
-        box.setPadding(c.dp(14), c.dp(10), c.dp(14), c.dp(12))
+        box.setPaddingRelative(c.dp(14), c.dp(10), c.dp(14), c.dp(12))
         box.elevation = c.dpf(8f)
         val head = LinearLayout(c); head.gravity = Gravity.CENTER_VERTICAL
         head.addView(Ui.text(c, "Status Center", 15f, p.text, true), LinearLayout.LayoutParams(0, WRAP, 1f))
@@ -89,12 +92,12 @@ object StatusPanel {
         fun fill() {
             list.removeAllViews()
             if (Jobs.list.isEmpty()) {
-                val t = Ui.text(c, "No running operations", 13f, p.sub); t.setPadding(0, c.dp(12), 0, c.dp(4)); list.addView(t)
+                val t = Ui.text(c, "No running operations", 13f, p.sub); t.setPaddingRelative(0, c.dp(12), 0, c.dp(4)); list.addView(t)
                 return
             }
             for (j in Jobs.list) {
                 val row = LinearLayout(c); row.orientation = LinearLayout.HORIZONTAL; row.gravity = Gravity.CENTER_VERTICAL
-                row.setPadding(0, c.dp(8), 0, c.dp(2))
+                row.setPaddingRelative(0, c.dp(8), 0, c.dp(2))
                 val col = LinearLayout(c); col.orientation = LinearLayout.VERTICAL
                 val t = Ui.text(c, j.title, 13f, p.text, true); t.maxLines = 1; t.ellipsize = android.text.TextUtils.TruncateAt.END
                 col.addView(t)
@@ -118,7 +121,10 @@ object StatusPanel {
         w.isOutsideTouchable = true
         w.setBackgroundDrawable(null)
         win = w
-        w.showAsDropDown(anchor, -c.dp(300), c.dp(4))
+        val al = IntArray(2); anchor.getLocationOnScreen(al)
+        val sw = c.resources.displayMetrics.widthPixels
+        val px = (if (T.rtl) al[0] + anchor.width - c.dp(340) + c.dp(300) else al[0] - c.dp(300)).coerceIn(0, maxOf(0, sw - c.dp(340)))
+        w.showAtLocation(anchor.rootView, android.view.Gravity.NO_GRAVITY, px, al[1] + anchor.height + c.dp(4))
         val tick = object : Runnable {
             override fun run() { if (win === w && w.isShowing) { fill(); h.postDelayed(this, 350) } }
         }

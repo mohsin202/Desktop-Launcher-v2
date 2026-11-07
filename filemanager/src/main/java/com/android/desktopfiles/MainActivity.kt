@@ -69,6 +69,15 @@ open class MainActivity : Activity(), Host {
         if (fresh.isNotEmpty() && hasWindowFocus() && !StatusPanel.showing()) statusBtn?.post { showStatus() }
     }
 
+    /** Dialogs, menus and every window of this screen follow the chosen language's direction (Urdu = right to left). */
+    override fun attachBaseContext(base: Context) {
+        val s = Store.str(base, "lang", "system")
+        val ur = if (s == "ur") true else if (s == "en") false else java.util.Locale.getDefault().language == "ur"
+        val cfg = Configuration(base.resources.configuration)
+        cfg.setLayoutDirection(java.util.Locale(if (ur) "ur" else "en"))
+        super.attachBaseContext(base.createConfigurationContext(cfg))
+    }
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         window.setDecorFitsSystemWindows(false)
@@ -116,6 +125,7 @@ open class MainActivity : Activity(), Host {
     private fun titleOf(l: Loc): String = when (l) {
         is Loc.Home -> "Home"
         is Loc.Tag -> Tags.byId(l.id)?.name ?: "Tag"
+        is Loc.Dav -> l.title.ifEmpty { DavAccts.byId(this, l.acct)?.name ?: "Cloud" }
         is Loc.Mtp -> l.title.ifEmpty { Mtp.find(this, l.dev)?.let { Mtp.label(it) } ?: "Phone" }
         is Loc.Dir -> if (l.only.isNotEmpty()) File(l.path).name + " (" + l.only + ")" else if (l.path == Fs.ext().absolutePath) "Internal storage" else if (l.path == "/") "Root" else File(l.path).name
         is Loc.Trash -> "Trash"
@@ -140,8 +150,8 @@ open class MainActivity : Activity(), Host {
             val ime = ins.getInsets(WindowInsets.Type.ime())
             v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom)); WindowInsets.CONSUMED
         }
-        root.layoutDirection = View.LAYOUT_DIRECTION_LTR
-        window.decorView.layoutDirection = View.LAYOUT_DIRECTION_LTR
+        root.layoutDirection = if (T.rtl) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
+        window.decorView.layoutDirection = root.layoutDirection
         setContentView(root)
 
         if (!Environment.isExternalStorageManager()) { permissionScreen(root); return }
@@ -157,7 +167,7 @@ open class MainActivity : Activity(), Host {
         root.addView(body, LinearLayout.LayoutParams(MATCH, 0, 1f))
         val cnt = FrameLayout(this); content = cnt
         val side = buildSidebar(); sidebar = side
-        body.addView(cnt, FrameLayout.LayoutParams(MATCH, MATCH).also { if (wide) it.leftMargin = dp(220) })
+        body.addView(cnt, FrameLayout.LayoutParams(MATCH, MATCH).also { if (wide) it.marginStart = dp(220) })
         body.addView(side, FrameLayout.LayoutParams(dp(220), MATCH))
         side.visibility = if (wide || sideOpen) View.VISIBLE else View.GONE
         showTab()
@@ -165,10 +175,10 @@ open class MainActivity : Activity(), Host {
 
     private fun permissionScreen(root: LinearLayout) {
         val box = LinearLayout(this); box.orientation = LinearLayout.VERTICAL; box.gravity = Gravity.CENTER
-        box.setPadding(dp(32), dp(32), dp(32), dp(32))
+        box.setPaddingRelative(dp(32), dp(32), dp(32), dp(32))
         val iv = ImageView(this); iv.setImageDrawable(Glyph(Glyph.Kind.FOLDER))
         box.addView(iv, LinearLayout.LayoutParams(dp(72), dp(72)))
-        box.addView(Ui.text(this, "Desktop Files", 22f, p.text, true).also { it.setPadding(0, dp(12), 0, dp(6)) })
+        box.addView(Ui.text(this, "Desktop Files", 22f, p.text, true).also { it.setPaddingRelative(0, dp(12), 0, dp(6)) })
         val t = Ui.text(this, "Allow access to all files so Desktop Files can show and manage your folders.", 14f, p.sub); t.gravity = Gravity.CENTER
         box.addView(t)
         val b = Ui.text(this, "Allow access", 15f, 0xFFFFFFFF.toInt(), true); b.gravity = Gravity.CENTER
@@ -183,7 +193,7 @@ open class MainActivity : Activity(), Host {
 
     private fun buildTabs(): View {
         val sv = HorizontalScrollView(this); sv.isHorizontalScrollBarEnabled = false
-        val row = LinearLayout(this); row.gravity = Gravity.CENTER_VERTICAL; row.setPadding(dp(8), dp(6), dp(8), 0)
+        val row = LinearLayout(this); row.gravity = Gravity.CENTER_VERTICAL; row.setPaddingRelative(dp(8), dp(6), dp(8), 0)
         tabStrip = row
         sv.addView(row, FrameLayout.LayoutParams(WRAP, MATCH))
         fillTabs()
@@ -195,38 +205,38 @@ open class MainActivity : Activity(), Host {
         row.removeAllViews()
         for ((i, t) in tabs.withIndex()) {
             val chip = LinearLayout(this); chip.gravity = Gravity.CENTER_VERTICAL
-            chip.setPadding(dp(12), 0, dp(4), 0)
+            chip.setPaddingRelative(dp(12), 0, dp(4), 0)
             chip.background = if (i == cur) Ui.rounded(p.bg, dpf(10f)).also { it.cornerRadii = floatArrayOf(dpf(10f), dpf(10f), dpf(10f), dpf(10f), 0f, 0f, 0f, 0f) }
                               else Ui.ripple(this, p, null, dpf(10f))
             chip.isClickable = true
             chip.setOnClickListener { if (i != cur) { cur = i; showTab() } }
             val ic = ImageView(this)
             ic.setImageDrawable(when (t.loc) { is Loc.Home -> Glyph(Glyph.Kind.HOME); is Loc.Trash -> Glyph(Glyph.Kind.BIN); else -> Glyph(Glyph.Kind.FOLDER) })
-            chip.addView(ic, LinearLayout.LayoutParams(dp(18), dp(18)).also { it.rightMargin = dp(8) })
+            chip.addView(ic, LinearLayout.LayoutParams(dp(18), dp(18)).also { it.marginEnd = dp(8) })
             val tx = Ui.text(this, titleOf(t.loc), 13f, p.text, i == cur, t.loc !is Loc.Dir || t.loc.let { it is Loc.Dir && (it.only.isNotEmpty().not() && (it.path == Fs.ext().absolutePath || it.path == "/")) }); tx.maxLines = 1; tx.ellipsize = android.text.TextUtils.TruncateAt.END
             tx.maxWidth = dp(150)
             chip.addView(tx)
             val x = Ui.glyphButton(this, p, "×", 15f, 28, 28) { closeTab(i) }
-            chip.addView(x, LinearLayout.LayoutParams(dp(28), dp(28)).also { it.leftMargin = dp(4) })
-            row.addView(chip, LinearLayout.LayoutParams(WRAP, dp(34)).also { it.rightMargin = dp(2) })
+            chip.addView(x, LinearLayout.LayoutParams(dp(28), dp(28)).also { it.marginStart = dp(4) })
+            row.addView(chip, LinearLayout.LayoutParams(WRAP, dp(34)).also { it.marginEnd = dp(2) })
         }
         row.addView(Ui.glyphButton(this, p, "+", 20f, 34, 34) { newTab(Loc.Home) })
     }
 
     private fun buildToolbar(): View {
-        val bar = LinearLayout(this); bar.gravity = Gravity.CENTER_VERTICAL; bar.setPadding(dp(6), 0, dp(6), 0)
+        val bar = LinearLayout(this); bar.gravity = Gravity.CENTER_VERTICAL; bar.setPaddingRelative(dp(6), 0, dp(6), 0)
         if (!wide) bar.addView(Ui.glyphButton(this, p, "☰", 18f) { setSide(!sideOpen) })
-        navBack = Ui.glyphButton(this, p, "←", 18f) { back() }; bar.addView(navBack)
-        navFwd = Ui.glyphButton(this, p, "→", 18f) { forward() }; bar.addView(navFwd)
+        navBack = Ui.glyphButton(this, p, if (T.rtl) "→" else "←", 18f) { back() }; bar.addView(navBack)
+        navFwd = Ui.glyphButton(this, p, if (T.rtl) "←" else "→", 18f) { forward() }; bar.addView(navFwd)
         bar.addView(Ui.glyphButton(this, p, "↑", 18f) { up() })
         bar.addView(Ui.glyphButton(this, p, "⟳", 18f) { refreshAll() })
         val ab = FrameLayout(this); addrBox = ab
         ab.background = Ui.rounded(p.card, dpf(18f), p.line, 1)
-        bar.addView(ab, LinearLayout.LayoutParams(0, dp(36), 1f).also { it.leftMargin = dp(6); it.rightMargin = dp(6) })
+        bar.addView(ab, LinearLayout.LayoutParams(0, dp(36), 1f).also { it.marginStart = dp(6); it.marginEnd = dp(6) })
         if (widthDp() >= 820) {
             val s = EditText(this); searchBox = s
             s.hint = T.t("Search"); s.setSingleLine(); s.textSize = 13f; s.setTextColor(p.text); s.setHintTextColor(p.sub)
-            s.background = Ui.rounded(p.card, dpf(18f), p.line, 1); s.setPadding(dp(14), 0, dp(14), 0)
+            s.background = Ui.rounded(p.card, dpf(18f), p.line, 1); s.setPaddingRelative(dp(14), 0, dp(14), 0)
             s.imeOptions = EditorInfo.IME_ACTION_SEARCH
             s.setOnEditorActionListener { v, _, _ -> search(v.text.toString()); true }
             bar.addView(s, LinearLayout.LayoutParams(dp(190), dp(36)))
@@ -245,7 +255,7 @@ open class MainActivity : Activity(), Host {
         }
         val rw = Ui.text(this, "RW", 12f, 0xFFFFFFFF.toInt(), true); rwBtn = rw
         rw.gravity = Gravity.CENTER; rw.visibility = View.GONE; rw.isClickable = true
-        bar.addView(rw, LinearLayout.LayoutParams(dp(40), dp(28)).also { it.rightMargin = dp(4) })
+        bar.addView(rw, LinearLayout.LayoutParams(dp(40), dp(28)).also { it.marginEnd = dp(4) })
         val sb = StatusBtn(this, p) { if (StatusPanel.showing()) StatusPanel.hide() else showStatus() }
         statusBtn = sb
         bar.addView(sb, LinearLayout.LayoutParams(dp(40), dp(40)))
@@ -264,9 +274,9 @@ open class MainActivity : Activity(), Host {
             MenuItem("Details pane (Alt+P)", checked = Store.bool(this, "pane", false)) { Store.setBool(this, "pane", !Store.bool(this, "pane", false)); showTab() },
             MenuItem("Dual pane", checked = Store.bool(this, "dual", false)) { Store.setBool(this, "dual", !Store.bool(this, "dual", false)); showTab() },
             MenuItem("Language", sub = listOf(
-                MenuItem("System", checked = Store.str(this, "lang", "system") == "system") { Store.setStr(this, "lang", "system"); buildUi() },
-                MenuItem("English", checked = Store.str(this, "lang", "system") == "en") { Store.setStr(this, "lang", "en"); buildUi() },
-                MenuItem("اردو", checked = Store.str(this, "lang", "system") == "ur") { Store.setStr(this, "lang", "ur"); buildUi() })),
+                MenuItem("System", checked = Store.str(this, "lang", "system") == "system") { Store.setStr(this, "lang", "system"); recreate() },
+                MenuItem("English", checked = Store.str(this, "lang", "system") == "en") { Store.setStr(this, "lang", "en"); recreate() },
+                MenuItem("اردو", checked = Store.str(this, "lang", "system") == "ur") { Store.setStr(this, "lang", "ur"); recreate() })),
             MenuItem("New window") { newWindow(Loc.Home) },
             MenuItem("Desktop Files 1.0", enabled = false))
     }
@@ -296,7 +306,7 @@ open class MainActivity : Activity(), Host {
         val l = tabs[cur].loc
         if (editing) {
             val et = EditText(this); et.setSingleLine(); et.textSize = 13f; et.setTextColor(p.text); et.background = null
-            et.setPadding(dp(14), 0, dp(14), 0)
+            et.setPaddingRelative(dp(14), 0, dp(14), 0)
             et.setText(if (l is Loc.Dir) l.path else "")
             et.imeOptions = EditorInfo.IME_ACTION_GO
             et.setOnEditorActionListener { v, _, _ -> goTyped(v.text.toString()); true }
@@ -307,17 +317,17 @@ open class MainActivity : Activity(), Host {
         }
         val row = LinearLayout(this); row.gravity = Gravity.CENTER_VERTICAL
         val sv = HorizontalScrollView(this); sv.isHorizontalScrollBarEnabled = false
-        val cr = LinearLayout(this); cr.gravity = Gravity.CENTER_VERTICAL; cr.setPadding(dp(8), 0, dp(8), 0)
+        val cr = LinearLayout(this); cr.gravity = Gravity.CENTER_VERTICAL; cr.setPaddingRelative(dp(8), 0, dp(8), 0)
         sv.addView(cr, FrameLayout.LayoutParams(WRAP, MATCH))
         when (l) {
             is Loc.Dir -> for ((i, c) in crumbs(l.path).withIndex()) {
-                if (i > 0) cr.addView(Ui.text(this, "›", 14f, p.sub).also { it.setPadding(dp(2), 0, dp(2), 0) })
-                val t = Ui.text(this, if (i == 0) T.t(c.first) else c.first, 13f, p.text, false, false); t.setPadding(dp(8), dp(6), dp(8), dp(6)); t.isClickable = true
+                if (i > 0) cr.addView(Ui.text(this, if (T.rtl) "‹" else "›", 14f, p.sub).also { it.setPaddingRelative(dp(2), 0, dp(2), 0) })
+                val t = Ui.text(this, if (i == 0) T.t(c.first) else c.first, 13f, p.text, false, false); t.setPaddingRelative(dp(8), dp(6), dp(8), dp(6)); t.isClickable = true
                 t.background = Ui.ripple(this, p, null, dpf(8f)); t.setOnClickListener { go(Loc.Dir(c.second)) }
                 DnD.attach(this, t) { File(c.second) }
                 cr.addView(t)
             }
-            else -> cr.addView(Ui.text(this, titleOf(l), 13f, p.text, true).also { it.setPadding(dp(8), 0, dp(8), 0) })
+            else -> cr.addView(Ui.text(this, titleOf(l), 13f, p.text, true).also { it.setPaddingRelative(dp(8), 0, dp(8), 0) })
         }
         sv.post { sv.fullScroll(View.FOCUS_RIGHT) }
         row.addView(sv, LinearLayout.LayoutParams(0, MATCH, 1f))
@@ -372,14 +382,14 @@ open class MainActivity : Activity(), Host {
 
     private fun buildSidebar(): View {
         val sv = ScrollView(this); sv.setBackgroundColor(if (wide) 0 else p.card); sv.elevation = if (wide) 0f else dpf(8f)
-        val col = LinearLayout(this); col.orientation = LinearLayout.VERTICAL; col.setPadding(dp(8), dp(8), dp(8), dp(16))
+        val col = LinearLayout(this); col.orientation = LinearLayout.VERTICAL; col.setPaddingRelative(dp(8), dp(8), dp(8), dp(16))
         sv.addView(col)
         val here = tabs[cur].loc
         fun row(icon: android.graphics.drawable.Drawable, label: String, selected: Boolean, loc: Loc?, badge: Boolean = false, long: ((View) -> Unit)? = null, click: (() -> Unit)? = null) {
-            val r = LinearLayout(this); r.gravity = Gravity.CENTER_VERTICAL; r.setPadding(dp(10), 0, dp(10), 0); r.isClickable = true
+            val r = LinearLayout(this); r.gravity = Gravity.CENTER_VERTICAL; r.setPaddingRelative(dp(10), 0, dp(10), 0); r.isClickable = true
             r.background = Ui.ripple(this, p, if (selected) Ui.rounded(p.accentSoft, dpf(10f)) else null, dpf(10f))
             val iv = ImageView(this); iv.setImageDrawable(icon)
-            r.addView(iv, LinearLayout.LayoutParams(dp(22), dp(22)).also { it.rightMargin = dp(12) })
+            r.addView(iv, LinearLayout.LayoutParams(dp(22), dp(22)).also { it.marginEnd = dp(12) })
             val t = Ui.text(this, label, 14f, p.text, selected); t.maxLines = 1; t.ellipsize = android.text.TextUtils.TruncateAt.END
             r.addView(t, LinearLayout.LayoutParams(0, WRAP, 1f))
             if (badge) r.addView(Ui.text(this, "!", 11f, 0xFFFFFFFF.toInt(), true).also { it.gravity = Gravity.CENTER; it.background = Ui.rounded(0xFFE53935.toInt(), dpf(8f)) }, LinearLayout.LayoutParams(dp(16), dp(16)))
@@ -388,7 +398,7 @@ open class MainActivity : Activity(), Host {
             if (loc is Loc.Dir) DnD.attach(this, r) { File(loc.path) } else if (loc is Loc.Trash) DnD.attachTrash(this, r)
             col.addView(r, LinearLayout.LayoutParams(MATCH, dp(40)))
         }
-        fun head(s: String) { col.addView(Ui.text(this, s, 12f, p.sub, true).also { it.setPadding(dp(10), dp(14), 0, dp(6)) }) }
+        fun head(s: String) { col.addView(Ui.text(this, s, 12f, p.sub, true).also { it.setPaddingRelative(dp(10), dp(14), 0, dp(6)) }) }
 
         row(Glyph(Glyph.Kind.HOME), "Home", here is Loc.Home, Loc.Home)
         head("Quick access")
@@ -407,6 +417,7 @@ open class MainActivity : Activity(), Host {
                     val xy = IntArray(2); v.getLocationOnScreen(xy)
                     Pop(this).showAt(v, xy[0] + v.width / 2, xy[1] + v.height / 2, listOf(
                         MenuItem("Rename tag") { Dialogs.ask(this, "Rename tag", t.name, "Rename") { n -> Tags.rename(t.id, n); showTab() } },
+                        MenuItem("Change colour") { TagUi.recolor(this, t) { showTab(); refreshAll() } },
                         MenuItem("Delete tag", danger = true) { Dialogs.confirm(this, "Delete tag", "Delete the tag \"" + t.name + "\"? The files themselves stay.", "Delete") { Tags.remove(t.id); if (tabs[cur].loc == loc) go(Loc.Home) else showTab() } }))
                 })
             }
@@ -422,6 +433,13 @@ open class MainActivity : Activity(), Host {
         for (d in Mtp.list(this)) {
             row(Glyph(Glyph.Kind.PHONE), Mtp.label(d), here is Loc.Mtp && here.dev == d.deviceName, null, click = { openPhone(d) })
         }
+        head("Cloud")
+        for (a in DavAccts.all(this)) {
+            row(Glyph(Glyph.Kind.DRIVE), a.name, here is Loc.Dav && here.acct == a.id, Loc.Dav(a.id), long = { v ->
+                val xy = IntArray(2); v.getLocationOnScreen(xy); Pop(this).showAt(v, xy[0] + v.width / 2, xy[1] + v.height / 2, listOf(MenuItem("Remove account", danger = true) { Dialogs.confirm(this, "Remove account", "Remove \"" + a.name + "\" from this app? Nothing is deleted on the server.", "Remove") { DavAccts.remove(this, a.id); if (here is Loc.Dav && here.acct == a.id) go(Loc.Home) else showTab() } }))
+            })
+        }
+        row(Glyph(Glyph.Kind.FOLDER), "Add cloud account…", false, null, click = { DavAccts.addDialog(this) { a -> go(Loc.Dav(a.id)) } })
         return sv
     }
 
@@ -437,6 +455,7 @@ open class MainActivity : Activity(), Host {
         is Loc.Home -> HomePage(this)
         is Loc.Tag -> FilePage(this, Loc.Special("tag:" + l.id))
         is Loc.Mtp -> MtpPage(this, l)
+        is Loc.Dav -> DavPage(this, l)
         is Loc.Dir -> if (Store.str(this, "view", "details") == "columns" && l.only.isEmpty() && !Store.bool(this, "dual", false)) ColumnsPage(this, File(l.path)) else FilePage(this, l)
         is Loc.Search -> FilePage(this, l)
         is Loc.Trash -> TrashPage(this)
@@ -508,6 +527,7 @@ open class MainActivity : Activity(), Host {
                 else if (l.parent == -1) go(Loc.Mtp(l.dev))
                 else Thread { val md = Mtp.device(l.dev); val par = if (md != null) Mtp.parentOf(md, l.parent) else null; runOnUiThread { go(if (par == null) Loc.Mtp(l.dev) else Loc.Mtp(l.dev, l.storage, par)) } }.start()
             }
+            is Loc.Dav -> { if (l.path.isEmpty() || l.path == "/") go(Loc.Home) else go(Loc.Dav(l.acct, l.path.trimEnd('/').substringBeforeLast('/', ""))) }
             is Loc.Home -> {}
             else -> go(Loc.Home)
         }

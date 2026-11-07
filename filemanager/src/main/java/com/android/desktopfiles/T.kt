@@ -6,6 +6,9 @@ import java.util.Locale
 object T {
     @Volatile var ur = false
 
+    /** The interface runs right-to-left when Urdu is on. */
+    val rtl: Boolean get() = ur
+
     /** [setting]: "system", "en" or "ur". */
     fun init(setting: String) { ur = when (setting) { "ur" -> true; "en" -> false; else -> Locale.getDefault().language == "ur" } }
 
@@ -40,7 +43,7 @@ object T {
         "Pin this folder to Quick access" to "یہ فولڈر فوری رسائی میں پن کریں", "Select all" to "سب منتخب کریں", "Refresh" to "تازہ کریں",
         "New" to "نیا", "Folder" to "فولڈر", "Text file" to "ٹیکسٹ فائل", "New folder" to "نیا فولڈر", "New text file" to "نئی ٹیکسٹ فائل",
         "Unpin" to "ان پن", "Unpin from Quick access" to "فوری رسائی سے ہٹائیں", "Pinned" to "پن ہو گیا",
-        "Rename tag" to "ٹیگ کا نام بدلیں", "Delete tag" to "ٹیگ ڈیلیٹ کریں", "Cancel" to "منسوخ", "OK" to "ٹھیک ہے", "Create" to "بنائیں",
+        "Rename tag" to "ٹیگ کا نام بدلیں", "Hide system apps" to "سسٹم ایپس چھپائیں", "Show system apps" to "سسٹم ایپس دکھائیں", "Change colour" to "رنگ بدلیں", "Tag colour" to "ٹیگ کا رنگ", "Save" to "محفوظ کریں", "Delete tag" to "ٹیگ ڈیلیٹ کریں", "Cancel" to "منسوخ", "OK" to "ٹھیک ہے", "Create" to "بنائیں",
         "Apply" to "لاگو کریں", "Restore" to "بحال کریں", "Empty Trash" to "ٹریش خالی کریں", "Allow access" to "رسائی کی اجازت دیں",
         "Allow access to all files so Desktop Files can show and manage your folders." to "Desktop Files کو آپ کے فولڈر دکھانے اور سنبھالنے کے لیے تمام فائلوں تک رسائی کی اجازت دیں۔",
         "Theme" to "تھیم", "System" to "سسٹم", "Light" to "روشن", "Dark" to "تاریک", "Language" to "زبان",
@@ -67,6 +70,13 @@ object T {
         "Copy here" to "یہاں کاپی کریں", "Move here" to "یہاں منتقل کریں", "Create shortcut here" to "یہاں شارٹ کٹ بنائیں",
         "A folder cannot be dropped into itself" to "فولڈر کو اسی میں نہیں ڈالا جا سکتا", "Done, nothing to do" to "مکمل، کچھ کرنا نہیں تھا",
         "USB phone (MTP)" to "USB فون (MTP)", "The phone is not connected" to "فون جڑا ہوا نہیں", "USB permission was not given" to "USB کی اجازت نہیں دی گئی",
+        "Add a cloud account (WebDAV)" to "کلاؤڈ اکاؤنٹ شامل کریں (WebDAV)", "Add cloud account…" to "کلاؤڈ اکاؤنٹ شامل کریں…", "Cloud" to "کلاؤڈ", "Cloud (WebDAV)" to "کلاؤڈ (WebDAV)",
+        "Name (for example My Nextcloud)" to "نام (مثلاً My Nextcloud)", "Address (https://server/remote.php/dav/files/user/)" to "پتہ (https://server/remote.php/dav/files/user/)",
+        "User name" to "صارف کا نام", "Password" to "پاس ورڈ", "Trust this server's certificate (self-signed)" to "اس سرور کا سرٹیفکیٹ قبول کریں (self-signed)",
+        "Type the address" to "پتہ لکھیں", "Add" to "شامل کریں", "Remove account" to "اکاؤنٹ ہٹائیں", "Remove" to "ہٹائیں",
+        "This account was removed" to "یہ اکاؤنٹ ہٹا دیا گیا ہے", "Wrong user name or password (401)" to "صارف نام یا پاس ورڈ غلط ہے (401)", "Wrong user name or password (403)" to "صارف نام یا پاس ورڈ غلط ہے (403)",
+        "Not found (404)" to "نہیں ملا (404)", "Not allowed (405)" to "اجازت نہیں (405)", "No space left on the server" to "سرور پر جگہ ختم ہے",
+        "Cloud accounts (WebDAV: Nextcloud, ownCloud, NAS) can be added below. SMB will come later." to "کلاؤڈ اکاؤنٹ (WebDAV: Nextcloud، ownCloud، NAS) نیچے سے شامل کریں۔ SMB بعد میں آئے گا۔",
         "Could not connect" to "جڑ نہیں سکا", "Could not open the phone" to "فون کھولا نہیں جا سکا", "Connecting…" to "جڑ رہا ہے…",
         "The phone did not accept that" to "فون نے یہ قبول نہیں کیا",
         "The phone did not answer. Set its USB mode to File transfer." to "فون نے جواب نہیں دیا۔ اس کا USB موڈ فائل ٹرانسفر پر کریں۔",

@@ -40,11 +40,11 @@ class MtpPage(private val host: Host, private val loc: Loc.Mtp) : Page {
         override fun getView(i: Int, cv: View?, parent: ViewGroup?): View {
             val item = items[i]
             val r = LinearLayout(c); r.gravity = Gravity.CENTER_VERTICAL
-            r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(46)); r.setPadding(c.dp(12), 0, c.dp(12), 0)
+            r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(46)); r.setPaddingRelative(c.dp(12), 0, c.dp(12), 0)
             r.background = Ui.ripple(c, p, null, c.dpf(8f)); r.isClickable = true
             val iv = ImageView(c)
             iv.setImageDrawable(if (item.dir) Glyph(if (item.storage) Glyph.Kind.PHONE else Glyph.Kind.FOLDER) else Thumbs.icon(File(item.name)))
-            r.addView(iv, LinearLayout.LayoutParams(c.dp(30), c.dp(30)).also { l -> l.rightMargin = c.dp(10) })
+            r.addView(iv, LinearLayout.LayoutParams(c.dp(30), c.dp(30)).also { l -> l.marginEnd = c.dp(10) })
             val nm = Ui.text(c, item.name, 14f, p.text, false, false); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
             r.addView(nm, LinearLayout.LayoutParams(0, WRAP, 1f))
             if ((!item.dir) || (item.storage && item.size > 0)) r.addView(Ui.text(c, Fs.size(c, item.size), 12f, p.sub), LinearLayout.LayoutParams(c.dp(80), WRAP))
@@ -59,7 +59,7 @@ class MtpPage(private val host: Host, private val loc: Loc.Mtp) : Page {
     init {
         root.orientation = LinearLayout.VERTICAL
         val sv = HorizontalScrollView(c); sv.isHorizontalScrollBarEnabled = false
-        cmd.gravity = Gravity.CENTER_VERTICAL; cmd.setPadding(c.dp(6), 0, c.dp(6), 0); sv.addView(cmd)
+        cmd.gravity = Gravity.CENTER_VERTICAL; cmd.setPaddingRelative(c.dp(6), 0, c.dp(6), 0); sv.addView(cmd)
         root.addView(sv, LinearLayout.LayoutParams(MATCH, c.dp(46)))
         list.divider = null; list.adapter = adapter; list.selector = android.graphics.drawable.ColorDrawable(0)
         val fr = FrameLayout(c)
@@ -72,7 +72,7 @@ class MtpPage(private val host: Host, private val loc: Loc.Mtp) : Page {
     private fun inStorage() = storage != -1
 
     private fun btn(label: String, on: Boolean = true, click: () -> Unit) {
-        val t = Ui.text(c, label, 13f, p.text); t.setPadding(c.dp(12), 0, c.dp(12), 0); t.gravity = Gravity.CENTER; t.alpha = if (on) 1f else 0.45f
+        val t = Ui.text(c, label, 13f, p.text); t.setPaddingRelative(c.dp(12), 0, c.dp(12), 0); t.gravity = Gravity.CENTER; t.alpha = if (on) 1f else 0.45f
         if (on) { t.isClickable = true; t.background = Ui.ripple(c, p, null, c.dpf(8f)); t.setOnClickListener { click() } }
         cmd.addView(t, LinearLayout.LayoutParams(WRAP, c.dp(36)))
     }

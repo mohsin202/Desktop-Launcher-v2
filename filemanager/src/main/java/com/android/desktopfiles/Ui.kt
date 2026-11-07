@@ -93,7 +93,7 @@ class Pop(private val c: Context) {
         val box = LinearLayout(c)
         box.orientation = LinearLayout.VERTICAL
         box.background = Ui.rounded(p.card, c.dpf(10f), p.line, 1)
-        box.setPadding(c.dp(4), c.dp(6), c.dp(4), c.dp(6))
+        box.setPaddingRelative(c.dp(4), c.dp(6), c.dp(4), c.dp(6))
         for (m in items) {
             if (m == null) {
                 val sep = View(c); sep.setBackgroundColor(p.line)
@@ -103,13 +103,13 @@ class Pop(private val c: Context) {
             val row = LinearLayout(c)
             row.orientation = LinearLayout.HORIZONTAL
             row.gravity = Gravity.CENTER_VERTICAL
-            row.setPadding(c.dp(12), 0, c.dp(12), 0)
+            row.setPaddingRelative(c.dp(12), 0, c.dp(12), 0)
             val chk = Ui.text(c, if (m.checked == true) "✓" else "", 14f, p.accent, true)
             chk.gravity = Gravity.CENTER
             if (m.checked != null) row.addView(chk, LinearLayout.LayoutParams(c.dp(22), WRAP))
             val t = Ui.text(c, m.label, 14f, if (m.danger) p.warn else p.text)
             row.addView(t, LinearLayout.LayoutParams(0, WRAP, 1f))
-            if (m.sub != null) row.addView(Ui.text(c, "›", 16f, p.sub), LinearLayout.LayoutParams(WRAP, WRAP))
+            if (m.sub != null) row.addView(Ui.text(c, if (T.rtl) "‹" else "›", 16f, p.sub), LinearLayout.LayoutParams(WRAP, WRAP))
             row.alpha = if (m.enabled) 1f else 0.4f
             row.background = Ui.ripple(c, p, null, c.dpf(6f))
             row.isClickable = m.enabled
@@ -118,7 +118,7 @@ class Pop(private val c: Context) {
                 if (m.sub != null) {
                     val loc = IntArray(2); row.getLocationOnScreen(loc)
                     val old = win; win = null
-                    showAt(row.rootView, loc[0] + row.width, loc[1], m.sub)
+                    showAt(row.rootView, if (T.rtl) loc[0] - c.dp(196) else loc[0] + row.width, loc[1], m.sub)
                     try { old?.dismiss() } catch (_: Exception) {}
                 } else { dismiss(); m.action() }
             }
@@ -128,7 +128,7 @@ class Pop(private val c: Context) {
         sv.isVerticalScrollBarEnabled = false
         sv.addView(box)
         val fl = FrameLayout(c)
-        fl.setPadding(c.dp(6), c.dp(6), c.dp(6), c.dp(6))
+        fl.setPaddingRelative(c.dp(6), c.dp(6), c.dp(6), c.dp(6))
         fl.addView(sv, FrameLayout.LayoutParams(maxOf(minW, c.dp(190)), WRAP))
         return fl
     }
@@ -195,7 +195,10 @@ class UsageBar(c: Context, private val pal: Pal, private val fraction: Float) : 
         val h = height.toFloat(); val r = h / 2
         p.color = pal.line; canvas.drawRoundRect(RectF(0f, 0f, width.toFloat(), h), r, r, p)
         p.color = if (fraction > 0.9f) pal.warn else pal.accent
-        canvas.drawRoundRect(RectF(0f, 0f, maxOf(h, width * fraction.coerceIn(0f, 1f)), h), r, r, p)
+        val fw = maxOf(h, width * fraction.coerceIn(0f, 1f))
+        // fills from the start edge: the right side in right-to-left
+        if (layoutDirection == LAYOUT_DIRECTION_RTL) canvas.drawRoundRect(RectF(width - fw, 0f, width.toFloat(), h), r, r, p)
+        else canvas.drawRoundRect(RectF(0f, 0f, fw, h), r, r, p)
     }
 }
 
