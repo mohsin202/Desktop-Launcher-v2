@@ -24,21 +24,36 @@ object DavAccts {
     private fun e(s: String) = URLEncoder.encode(s, "UTF-8")
     private fun d(s: String) = URLDecoder.decode(s, "UTF-8")
 
-    fun all(c: Context): List<Dav.Acct> = Store.list(c, "dav").mapNotNull { line ->
+    private fun davAll(c: Context): List<Dav.Acct> = Store.list(c, "dav").mapNotNull { line ->
         val f = line.split("&")
         if (f.size < 6) null else try { Dav.Acct(d(f[0]), d(f[1]), d(f[2]), d(f[3]), d(f[4]), f[5] == "1") } catch (_: Exception) { null }
     }
 
-    fun byId(c: Context, id: String): Dav.Acct? = all(c).firstOrNull { it.id == id }
+    /** Every saved account, WebDAV and SMB together. */
+    fun all(c: Context): List<Remote> =
+        davAll(c).map { Remote(it.id, it.name, "WebDAV", DavFs(it)) } + SmbAccts.all(c).map { Remote(it.id, it.name, "SMB", SmbFs(it)) } +
+            SafAccts.all(c).map { Remote(it.id, it.name, "App folder", SafFs(c.applicationContext, it)) }
+
+    fun byId(c: Context, id: String): Remote? = all(c).firstOrNull { it.id == id }
 
     private fun save(c: Context, l: List<Dav.Acct>) =
         Store.setList(c, "dav", l.map { listOf(e(it.id), e(it.name), e(it.url), e(it.user), e(it.pass), if (it.trustAll) "1" else "0").joinToString("&") })
 
-    fun add(c: Context, a: Dav.Acct) = save(c, all(c) + a)
-    fun remove(c: Context, id: String) = save(c, all(c).filter { it.id != id })
+    fun add(c: Context, a: Dav.Acct) = save(c, davAll(c) + a)
+    fun remove(c: Context, id: String) { if (id.startsWith("smb:")) SmbAccts.remove(c, id) else if (id.startsWith("saf:")) SafAccts.remove(c, id) else save(c, davAll(c).filter { it.id != id }) }
 
-    /** The form for a new account. [done] is called with the saved account after the connection was tested. */
-    fun addDialog(act: android.app.Activity, done: (Dav.Acct) -> Unit) {
+    /** Asks which kind of account, then shows its form. [done] gets the id of the saved account. */
+    fun addDialog(act: android.app.Activity, done: (Remote) -> Unit) {
+        AlertDialog.Builder(act).setTitle(T.t("Add an account"))
+            .setItems(arrayOf(T.t("WebDAV (Nextcloud, ownCloud, NAS)"), T.t("Windows share (SMB)"), T.t("Folder from another app (Google Drive, OneDrive, Dropbox…)"))) { _, i ->
+                if (i == 0) davDialog(act) { a -> done(Remote(a.id, a.name, "WebDAV", DavFs(a))) }
+                else if (i == 1) SmbAccts.addDialog(act) { a -> done(Remote(a.id, a.name, "SMB", SmbFs(a))) }
+                else SafAccts.addFromPicker(act) { a -> done(Remote(a.id, a.name, "App folder", SafFs(act.applicationContext, a))) }
+            }.setNegativeButton(T.t("Cancel"), null).show()
+    }
+
+    /** The form for a new WebDAV account. [done] is called with the saved account after the connection was tested. */
+    private fun davDialog(act: android.app.Activity, done: (Dav.Acct) -> Unit) {
         val p = Ui.pal(act)
         fun field(hint: String, pw: Boolean = false): EditText {
             val et = EditText(act); et.hint = T.t(hint); et.setSingleLine()
@@ -81,7 +96,7 @@ object DavAccts {
 class DavPage(private val host: Host, private val loc: Loc.Dav) : Page {
     private val c: Context = host.act
     private val p = Ui.pal(c)
-    private val acct = DavAccts.byId(c, loc.acct)
+    private val acct: RemoteFs? = DavAccts.byId(c, loc.acct)?.fs
     private var items: List<Dav.Entry> = emptyList()
     private var lastX = 0; private var lastY = 0
 
@@ -137,7 +152,7 @@ class DavPage(private val host: Host, private val loc: Loc.Dav) : Page {
         cmd.removeAllViews()
         val ok = acct != null
         btn("Paste", ok && Clip.has(c)) { paste() }
-        btn("New folder", ok) { Dialogs.ask(host.act, "New folder", "New folder", "Create") { n -> work { Dav.mkcol(acct!!, join(loc.path, n)) } } }
+        btn("New folder", ok) { Dialogs.ask(host.act, "New folder", "New folder", "Create") { n -> work { acct!!.mkcol(join(loc.path, n)) } } }
         btn("Refresh", ok) { load() }
     }
 
@@ -151,7 +166,7 @@ class DavPage(private val host: Host, private val loc: Loc.Dav) : Page {
         Thread {
             var err = ""
             var l: List<Dav.Entry> = emptyList()
-            try { l = Dav.list(a, loc.path) } catch (e: Exception) { err = e.message ?: "Could not connect" }
+            try { l = a.list(loc.path) } catch (e: Exception) { err = e.message ?: "Could not connect" }
             val sorted = l.sortedWith(compareBy<Dav.Entry>({ !it.dir }, { it.name.lowercase() }))
             c.mainExecutor.execute {
                 items = sorted; adapter.notifyDataSetChanged()
@@ -170,7 +185,7 @@ class DavPage(private val host: Host, private val loc: Loc.Dav) : Page {
         val job = Job("Preparing " + e.name)
         Jobs.start(job, { j ->
             j.total = e.size; j.detail = e.name
-            try { f.outputStream().use { o -> Dav.get(a, e.path, o, { n -> j.done += n }, { j.cancelled }) } }
+            try { f.outputStream().use { o -> a.get(e.path, o, { n -> j.done += n }, { j.cancelled }) } }
             catch (_: Exception) { j.failed++; f.delete() }
         }) { if (f.exists() && job.failed == 0 && !job.cancelled) host.openFile(f) else c.toast("Could not read the file") }
         host.showStatus()
@@ -184,21 +199,21 @@ class DavPage(private val host: Host, private val loc: Loc.Dav) : Page {
         }.start()
     }
 
-    private fun downloadTree(a: Dav.Acct, e: Dav.Entry, dest: File, j: Job): Boolean {
+    private fun downloadTree(a: RemoteFs, e: Dav.Entry, dest: File, j: Job): Boolean {
         if (j.cancelled) return false
         j.detail = e.name
         val target = Fs.unique(dest, e.name)
         if (e.dir) {
             target.mkdirs()
             var ok = true
-            for (k in Dav.list(a, e.path)) ok = downloadTree(a, k, target, j) && ok
+            for (k in a.list(e.path)) ok = downloadTree(a, k, target, j) && ok
             return ok
         }
-        return try { target.outputStream().use { o -> Dav.get(a, e.path, o, { n -> j.done += n }, { j.cancelled }) }; if (e.mtime > 0) target.setLastModified(e.mtime); true }
+        return try { target.outputStream().use { o -> a.get(e.path, o, { n -> j.done += n }, { j.cancelled }) }; if (e.mtime > 0) target.setLastModified(e.mtime); true }
         catch (_: Exception) { target.delete(); false }
     }
 
-    private fun sizeOf(a: Dav.Acct, e: Dav.Entry): Long = if (!e.dir) e.size else try { Dav.list(a, e.path).sumOf { sizeOf(a, it) } } catch (_: Exception) { 0L }
+    private fun sizeOf(a: RemoteFs, e: Dav.Entry): Long = if (!e.dir) e.size else try { a.list(e.path).sumOf { sizeOf(a, it) } } catch (_: Exception) { 0L }
 
     private fun save(e: Dav.Entry, dest: File) {
         val a = acct ?: return
@@ -207,17 +222,17 @@ class DavPage(private val host: Host, private val loc: Loc.Dav) : Page {
         host.showStatus()
     }
 
-    private fun uploadTree(a: Dav.Acct, f: File, dirPath: String, j: Job): Boolean {
+    private fun uploadTree(a: RemoteFs, f: File, dirPath: String, j: Job): Boolean {
         if (j.cancelled) return false
         j.detail = f.name
         val path = join(dirPath, f.name)
         if (f.isDirectory) {
-            try { Dav.mkcol(a, path) } catch (_: Exception) { }
+            try { a.mkcol(path) } catch (_: Exception) { }
             var ok = true
             for (k in f.listFiles() ?: emptyArray()) ok = uploadTree(a, k, path, j) && ok
             return ok
         }
-        return try { Dav.put(a, path, f, { n -> j.done += n }, { j.cancelled }); true } catch (_: Exception) { false }
+        return try { a.put(path, f, { n -> j.done += n }, { j.cancelled }); true } catch (_: Exception) { false }
     }
 
     private fun paste() {
@@ -243,10 +258,10 @@ class DavPage(private val host: Host, private val loc: Loc.Dav) : Page {
         host.otherPaneDir(0)?.let { d -> l += MenuItem("Copy to other pane") { save(e, d) } }
         l += null
         l += MenuItem("Rename") {
-            Dialogs.ask(host.act, "Rename", e.name, "Rename") { n -> work { Dav.move(a, e.path, join(e.path.trimEnd('/').substringBeforeLast('/', ""), n)) } }
+            Dialogs.ask(host.act, "Rename", e.name, "Rename") { n -> work { a.move(e.path, join(e.path.trimEnd('/').substringBeforeLast('/', ""), n)) } }
         }
         l += MenuItem("Delete", danger = true) {
-            Dialogs.confirm(host.act, "Delete permanently", "Delete 1 item permanently? This cannot be undone.", "Delete") { work { Dav.delete(a, e.path) } }
+            Dialogs.confirm(host.act, "Delete permanently", "Delete 1 item permanently? This cannot be undone.", "Delete") { work { a.delete(e.path) } }
         }
         Pop(c).showAt(root, lastX, lastY, l)
     }

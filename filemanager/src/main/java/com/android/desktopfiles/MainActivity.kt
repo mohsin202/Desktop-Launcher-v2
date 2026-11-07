@@ -78,6 +78,28 @@ open class MainActivity : Activity(), Host {
         super.attachBaseContext(base.createConfigurationContext(cfg))
     }
 
+    private var treeCb: ((Uri) -> Unit)? = null
+
+    /** Opens Android's folder picker (Google Drive, OneDrive, Dropbox and other apps appear in it) and hands back the chosen folder. */
+    fun pickTree(cb: (Uri) -> Unit) {
+        treeCb = cb
+        try {
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION), 7731)
+        } catch (_: Exception) { treeCb = null; toast("Could not open the picker") }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != 7731) return
+        val cb = treeCb; treeCb = null
+        val uri = data?.data
+        if (resultCode != RESULT_OK || uri == null || cb == null) return
+        try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) } catch (_: Exception) {}
+        cb(uri)
+    }
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         window.setDecorFitsSystemWindows(false)

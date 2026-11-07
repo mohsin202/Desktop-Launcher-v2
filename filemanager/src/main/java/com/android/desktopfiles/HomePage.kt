@@ -125,7 +125,7 @@ class HomePage(private val host: Host) : Page {
             val bar = LinearLayout(c); bar.gravity = Gravity.CENTER_VERTICAL
             bar.setPaddingRelative(c.dp(12), c.dp(8), c.dp(8), c.dp(8))
             bar.background = Ui.rounded(p.accentSoft, c.dpf(10f))
-            val t = Ui.text(c, "Cloud accounts (WebDAV: Nextcloud, ownCloud, NAS) can be added below. SMB will come later.", 13f, p.text)
+            val t = Ui.text(c, "Cloud (WebDAV) and Windows share (SMB) accounts can be added below.", 13f, p.text)
             bar.addView(t, LinearLayout.LayoutParams(0, WRAP, 1f))
             val b = Ui.text(c, "Disable", 13f, p.accent, true); b.setPaddingRelative(c.dp(12), c.dp(8), c.dp(12), c.dp(8))
             b.isClickable = true; b.background = Ui.ripple(c, p, null, c.dpf(8f))
@@ -173,10 +173,10 @@ class HomePage(private val host: Host) : Page {
                 f.addView(card(Glyph(Glyph.Kind.PHONE), Mtp.label(ph), 270, sub, click = { host.openPhone(ph) }))
             }
             for (a in DavAccts.all(c)) {
-                val sub = Ui.text(c, "Cloud (WebDAV)", 11f, p.sub)
+                val sub = Ui.text(c, a.kind, 11f, p.sub)
                 f.addView(card(Glyph(Glyph.Kind.DRIVE), a.name, 270, sub, click = { host.go(Loc.Dav(a.id)) }))
             }
-            f.addView(card(Glyph(Glyph.Kind.FOLDER), "Add cloud account…", 270, Ui.text(c, "WebDAV", 11f, p.sub), click = { DavAccts.addDialog(host.act) { a -> host.go(Loc.Dav(a.id)) } }))
+            f.addView(card(Glyph(Glyph.Kind.FOLDER), "Add cloud account…", 270, Ui.text(c, "WebDAV / SMB", 11f, p.sub), click = { DavAccts.addDialog(host.act) { a -> host.go(Loc.Dav(a.id)) } }))
             f
         }
 
