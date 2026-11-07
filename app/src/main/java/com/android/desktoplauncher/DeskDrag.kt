@@ -32,6 +32,15 @@ object DeskDrag {
         return Payload(s.substring(0, i), s.substring(i + 1))
     }
 
+    /** All files of a file drag: the first item is "file|<path>", further items are plain paths. */
+    fun files(cd: ClipData?): List<File> {
+        val first = parse(cd) ?: return emptyList()
+        if (first.kind != FILE || cd == null) return emptyList()
+        val out = arrayListOf(File(first.value))
+        for (i in 1 until cd.itemCount) { val s = cd.getItemAt(i).text?.toString() ?: continue; out.add(File(s)) }
+        return out.filter { it.exists() }
+    }
+
     private fun snapshot(c: Context, icon: Drawable?, px: Int): Bitmap {
         val bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
         if (icon != null) {

@@ -84,7 +84,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                     android.view.DragEvent.ACTION_DROP -> {
                         edgeStop(); extDrag = false; showHover(-1f, -1f, null)
                         val p = DeskDrag.parse(event.clipData)
-                        p != null && dropExternal(p, event.x, event.y)
+                        p != null && dropExternal(p, event.x, event.y, DeskDrag.files(event.clipData))
                     }
                     android.view.DragEvent.ACTION_DRAG_ENDED -> { extDrag = false; edgeStop(); showHover(-1f, -1f, null); true }
                     else -> true
@@ -301,34 +301,37 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     }
 
     /** A file / folder dropped from the drawer: copy it here, move it here or only make a shortcut. */
-    private fun askFileDrop(f: File, x: Float, y: Float) {
+    private fun askFileDrop(files: List<File>, x: Float, y: Float) {
         val c = context
         val loc = IntArray(2); getLocationOnScreen(loc)
-        fun finish(dest: File?) {
-            if (dest == null) { c.toast(UiText.text(c, "Could not create shortcut")); return }
-            placeAt("file:" + dest.absolutePath, x, y, null)
+        // the first item goes where it was dropped; the others find their own free places when the desktop reloads
+        fun finish(dests: List<File>) {
+            if (dests.isEmpty()) { c.toast(UiText.text(c, "Could not create shortcut")); return }
+            placeAt("file:" + dests[0].absolutePath, x, y, null)
             Bus.fire()
             reload()
         }
         fun transfer(move: Boolean) {
             Thread {
-                val dest = try {
+                val dests = ArrayList<File>()
+                for (f in files) try {
                     val d0 = Files.unique(Files.root(c), f.name)
-                    if (f.isDirectory && d0.absolutePath.startsWith(f.absolutePath + "/")) null
-                    else { if (move) Files.move(f, d0) else Files.copyRec(f, d0); d0.takeIf { it.exists() } }
-                } catch (_: Exception) { null }
-                post { finish(dest) }
+                    if (f.isDirectory && d0.absolutePath.startsWith(f.absolutePath + "/")) continue
+                    if (move) Files.move(f, d0) else Files.copyRec(f, d0)
+                    if (d0.exists()) dests.add(d0)
+                } catch (_: Exception) {}
+                post { finish(dests) }
             }.start()
         }
         PopupMenuX(c, this).show(loc[0] + x.toInt(), loc[1] + y.toInt(), listOf(
             MenuItem("Copy here") { transfer(false) },
             MenuItem("Move here") { transfer(true) },
-            MenuItem("Create shortcut") { finish(DeskDrag.makeShortcut(c, f)) }
+            MenuItem("Create shortcut") { finish(files.mapNotNull { DeskDrag.makeShortcut(c, it) }.map { it }) }
         ))
     }
 
     /** An app or file dropped from the drawer / search. */
-    private fun dropExternal(p: DeskDrag.Payload, x: Float, y: Float): Boolean {
+    private fun dropExternal(p: DeskDrag.Payload, x: Float, y: Float, all: List<File> = emptyList()): Boolean {
         val c = context
         val key: String
         when (p.kind) {
@@ -340,9 +343,9 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
                 key = "app:" + p.value
             }
             DeskDrag.FILE -> {
-                val f = File(p.value)
-                if (!f.exists()) return false
-                askFileDrop(f, x, y)
+                val fl = all.ifEmpty { listOf(File(p.value)).filter { it.exists() } }
+                if (fl.isEmpty()) return false
+                askFileDrop(fl, x, y)
                 return true
             }
             else -> return false
