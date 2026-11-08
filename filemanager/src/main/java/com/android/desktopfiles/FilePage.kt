@@ -51,6 +51,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     private var message = ""
     private var lastMeta = 0; private var lastX = 0; private var lastY = 0
     private var lpFired = false
+    private var emptyDown = false
     private var fingerTouch = false
     private var armed = false
     private var showDate = true; private var showType = true
@@ -162,7 +163,18 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         for (v in listOf<View>(list, grid)) {
             if (dir != null) DnD.attach(host, v) { dir }
             v.setOnContextClickListener { ctxMenu(null, lastX, lastY); true }
-            v.setOnTouchListener { _, e -> if (e.actionMasked == MotionEvent.ACTION_DOWN) { lastMeta = e.metaState; lastX = e.rawX.toInt(); lastY = e.rawY.toInt() }; false }
+            v.setOnTouchListener { lv, e ->
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        lastMeta = e.metaState; lastX = e.rawX.toInt(); lastY = e.rawY.toInt()
+                        emptyDown = (lv as AbsListView).pointToPosition(e.x.toInt(), e.y.toInt()) < 0
+                    }
+                    // a click (not a scroll or drag) on an empty spot: nothing stays selected
+                    MotionEvent.ACTION_UP -> if (emptyDown && sel.isNotEmpty() && Math.hypot((e.rawX - lastX).toDouble(), (e.rawY - lastY).toDouble()) < c.dp(8)) { sel.clear(); changed() }
+                    MotionEvent.ACTION_CANCEL -> emptyDown = false
+                }
+                false
+            }
         }
         root.addView(frame, LinearLayout.LayoutParams(MATCH, 0, 1f))
         status.setPaddingRelative(c.dp(14), c.dp(6), c.dp(14), c.dp(6))
@@ -343,7 +355,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         sep()
         ibtn("cut", "Cut", n > 0) { doCut(selFiles()) }
         ibtn("copy", "Copy", n > 0) { doCopy(selFiles()) }
-        ibtn("paste", "Paste", canEdit && Clip.has(c)) { doPaste(dir!!) }
+        ibtn("paste", "Paste", canEdit && (Clip.has(c) || MtpClip.has())) { doPaste(dir!!) }
         ibtn("rename", "Rename", n == 1) { rename(selFiles()[0]) }
         ibtn("share", "Share", n > 0 && selFiles().any { it.isFile }) { Fs.share(c, selFiles()) }
         ibtn("delete", "Delete", n > 0) { delete(selFiles(), false) }
@@ -472,6 +484,14 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     // ---------- selection ----------
     private fun selFiles(): List<File> = items.filter { it.absolutePath in sel }
 
+    /** Where a tap closed a menu: on an empty spot of the list, the selection goes too. */
+    private fun clearIfEmpty(x: Int, y: Int) {
+        val v: AbsListView = if (isGrid()) grid else list
+        val xy = IntArray(2); v.getLocationOnScreen(xy)
+        val lx = x - xy[0]; val ly = y - xy[1]
+        if (lx in 0 until v.width && ly in 0 until v.height && v.pointToPosition(lx, ly) < 0 && sel.isNotEmpty()) { sel.clear(); changed() }
+    }
+
     private fun changed() { adapter.notifyDataSetChanged(); updateStatus(); buildBar(); host.selectionChanged(selFiles()) }
 
     private fun toggle(i: Int) {
@@ -511,9 +531,9 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         }
     }
 
-    private fun doCut(files: List<File>) { if (files.isEmpty()) return; Clip.set(c, files, true); c.toast("Cut " + files.size); buildBar() }
-    private fun doCopy(files: List<File>) { if (files.isEmpty()) return; Clip.set(c, files, false); c.toast("Copied " + files.size); buildBar() }
-    private fun doPaste(d: File) { if (!Ops.paste(c, d) { host.refreshAll() }) c.toast("Nothing to paste") }
+    private fun doCut(files: List<File>) { if (files.isEmpty()) return; MtpClip.clear(); Clip.set(c, files, true); c.toast("Cut " + files.size); buildBar() }
+    private fun doCopy(files: List<File>) { if (files.isEmpty()) return; MtpClip.clear(); Clip.set(c, files, false); c.toast("Copied " + files.size); buildBar() }
+    private fun doPaste(d: File) { if (MtpClip.has()) { MtpClip.toLocal(host, d) { host.refreshAll() }; return }; if (!Ops.paste(c, d) { host.refreshAll() }) c.toast("Nothing to paste") }
 
     private fun rename(f: File) {
         Dialogs.ask(host.act, "Rename", f.name, "Rename") { n ->
@@ -637,7 +657,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
                 menu += MenuItem("Open in new tab") { host.newTab(Loc.Dir(target.absolutePath)) }
                 menu += MenuItem("Open in new window") { host.newWindow(Loc.Dir(target.absolutePath)) }
                 if (Apks.installable(target)) menu += MenuItem("Install app") { Apks.install(host.act, target) }
-                if (Clip.has(c)) menu += MenuItem("Paste into folder") { doPaste(target) }
+                if ((Clip.has(c) || MtpClip.has())) menu += MenuItem("Paste into folder") { doPaste(target) }
                 val pk = "dir:" + target.absolutePath
                 menu += if (Store.isPinned(c, pk)) MenuItem("Unpin from Quick access") { Store.unpin(c, pk); host.pinsChanged(); c.toast("Unpinned") }
                     else MenuItem("Pin to Quick access") { Store.pin(c, pk); host.pinsChanged(); c.toast("Pinned") }
@@ -670,7 +690,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         } else {
             if (dir != null) {
                 menu += MenuItem("New", sub = newItems())
-                menu += MenuItem("", row = listOf(MenuItem("Paste", Clip.has(c), icon = "paste") { doPaste(dir) }))
+                menu += MenuItem("", row = listOf(MenuItem("Paste", (Clip.has(c) || MtpClip.has()), icon = "paste") { doPaste(dir) }))
                 menu += null
             }
             menu += MenuItem("Select all") { selectAll() }
@@ -684,7 +704,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
                 menu += MenuItem("Properties") { properties(emptyList()) }
             }
         }
-        Pop(c).showAt(root, x, y, menu)
+        Pop(c).showAt(root, x, y, menu, outside = { px, py -> clearIfEmpty(px, py) })
     }
 
     private var cursor = -1

@@ -62,13 +62,16 @@ class HomePage(private val host: Host) : Page {
     private val p = Ui.pal(c)
     private val scroll = ScrollView(c)
     private val col = LinearLayout(c)
-    override val view: View get() = scroll
+    private val wrap = android.widget.FrameLayout(c)
+    override val view: View get() = wrap
 
     init {
         col.orientation = LinearLayout.VERTICAL
         col.setPaddingRelative(c.dp(16), c.dp(8), c.dp(16), c.dp(24))
         scroll.addView(col, MATCH, WRAP)
         scroll.setBackgroundColor(0)
+        wrap.addView(scroll, android.widget.FrameLayout.LayoutParams(MATCH, MATCH))
+        DeskScroll.attachScroll(wrap, p, scroll)
         if (RootSu.state == 0) RootSu.check { build() }
         build()
     }

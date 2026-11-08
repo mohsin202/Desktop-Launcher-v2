@@ -148,3 +148,63 @@ object Mtp {
 
     fun delete(m: MtpDevice, h: Int): Boolean = synchronized(m) { m.deleteObject(h) }
 }
+
+/** What was copied / cut on a phone (the items stay on the phone until they are pasted). Paste works in a phone or in a folder of this device. */
+object MtpClip {
+    class Data(val dev: String, val storage: Int, val items: List<Mtp.Item>, val cut: Boolean)
+    @Volatile var data: Data? = null
+    fun set(d: Data) { data = d }
+    fun clear() { data = null }
+    fun has(): Boolean = data != null
+
+    private fun tmp(): File = File(Fs.ext(), ".deskphone/tmp").also { it.deleteRecursively(); it.mkdirs() }
+
+    /** Phone items into a folder of this device (a cut one is removed from the phone afterwards). */
+    fun toLocal(host: Host, dest: File, then: () -> Unit) {
+        val d = data ?: return
+        val m = Mtp.device(d.dev) ?: run { host.act.toast("The phone is not connected"); return }
+        val job = Job((if (d.cut) "Moving " else "Copying ") + d.items.size + (if (d.items.size == 1) " item to " else " items to ") + dest.name)
+        Jobs.start(job, { j ->
+            j.total = d.items.sumOf { Mtp.sizeOf(m, d.storage, it) }
+            for (it in d.items) { if (j.cancelled) break; if (!Mtp.download(m, d.storage, it, dest, j)) j.failed++ else if (d.cut) Mtp.delete(m, it.handle) }
+        }) { if (d.cut && job.failed == 0 && !job.cancelled) clear(); then() }
+        host.showStatus()
+    }
+
+    /** Phone items into a folder of a phone (the same one or another): through a temporary copy here. */
+    fun toPhone(host: Host, m: MtpDevice, st: Int, parent: Int, then: () -> Unit) {
+        val d = data ?: return
+        val src = Mtp.device(d.dev) ?: run { host.act.toast("The phone is not connected"); return }
+        val job = Job((if (d.cut) "Moving " else "Copying ") + d.items.size + (if (d.items.size == 1) " item" else " items") + " on the phone")
+        Jobs.start(job, { j ->
+            val t = tmp()
+            try {
+                j.total = d.items.sumOf { Mtp.sizeOf(src, d.storage, it) } * 2
+                for ((i, it) in d.items.withIndex()) {
+                    if (j.cancelled) break
+                    val sub = File(t, i.toString()).also { x -> x.mkdirs() }
+                    if (!Mtp.download(src, d.storage, it, sub, j)) { j.failed++; continue }
+                    if (!Mtp.upload(m, st, parent, File(sub, it.name), j)) j.failed++ else if (d.cut) Mtp.delete(src, it.handle)
+                    sub.deleteRecursively()
+                }
+            } finally { t.deleteRecursively() }
+        }) { if (d.cut && job.failed == 0 && !job.cancelled) clear(); then() }
+        host.showStatus()
+    }
+
+    /** A phone has no rename: copy under the new name, then remove the old one. */
+    fun rename(host: Host, m: MtpDevice, st: Int, parent: Int, it: Mtp.Item, name: String, then: () -> Unit) {
+        val job = Job("Renaming " + it.name)
+        Jobs.start(job, { j ->
+            val t = tmp()
+            try {
+                j.total = Mtp.sizeOf(m, st, it) * 2
+                if (!Mtp.download(m, st, it, t, j)) { j.failed++; return@start }
+                val f = File(t, it.name); val n = File(t, name)
+                if (!f.renameTo(n)) { j.failed++; return@start }
+                if (Mtp.upload(m, st, parent, n, j)) { if (!Mtp.delete(m, it.handle)) j.failed++ } else j.failed++
+            } finally { t.deleteRecursively() }
+        }) { then() }
+        host.showStatus()
+    }
+}

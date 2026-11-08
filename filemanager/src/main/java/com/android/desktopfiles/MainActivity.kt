@@ -536,7 +536,10 @@ open class MainActivity : Activity(), Host {
         }
         row(Glyph(Glyph.Kind.FOLDER), "Add cloud account…", false, null, click = { DavAccts.addDialog(this) { a -> go(Loc.Dav(a.id)) } })
         sv.post { paintSide() }
-        return sv
+        val wrap = FrameLayout(this)
+        wrap.addView(sv, FrameLayout.LayoutParams(MATCH, MATCH))
+        DeskScroll.attachScroll(wrap, p, sv)
+        return wrap
     }
 
     private fun sideVisible() = sidebar?.visibility == View.VISIBLE && (wide || sideOpen)

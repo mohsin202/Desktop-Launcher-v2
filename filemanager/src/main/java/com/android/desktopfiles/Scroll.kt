@@ -18,7 +18,7 @@ import android.widget.ListView
  * A scroll bar for lists and grids that works with the mouse: an arrow at each end (click or hold to scroll), a thumb that can be
  * dragged, and a click on the track to move a page. (The system's bar only drags a ScrollView, not a ListView / GridView.)
  */
-class DeskScroll(c: Context, private val p: Pal, private val targets: List<AbsListView>) : View(c) {
+class DeskScroll(c: Context, private val p: Pal, private val targets: List<AbsListView>, private val sv: android.widget.ScrollView? = null) : View(c) {
     private val h = Handler(Looper.getMainLooper())
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val arrow = c.dp(16)
@@ -32,6 +32,10 @@ class DeskScroll(c: Context, private val p: Pal, private val targets: List<AbsLi
 
     /** offset, total, extent of what is scrolled, in pixels; null when there is nothing to scroll. */
     private fun metrics(): FloatArray? {
+        if (sv != null) {
+            val ch = sv.getChildAt(0) ?: return null
+            return floatArrayOf(sv.scrollY.toFloat(), ch.height.toFloat(), (sv.height - sv.paddingTop - sv.paddingBottom).toFloat())
+        }
         val t = cur() ?: return null
         val n = t.adapter?.count ?: 0
         if (n == 0 || t.childCount == 0) return null
@@ -46,16 +50,23 @@ class DeskScroll(c: Context, private val p: Pal, private val targets: List<AbsLi
         return floatArrayOf(offset, total, extent)
     }
 
+    private var lastKey = ""
+    private var needed = false
+
+    /** Called on every frame (cheap): redraws only when something about the scrolling changed. Never hides the view itself, so it cannot get stuck hidden. */
     fun update() {
         val m = metrics()
         val need = m != null && m[1] > m[2] + 1
-        val vis = if (need) VISIBLE else GONE
-        if (visibility != vis) visibility = vis
-        if (need) invalidate()
+        val key = if (m == null) "-" else "${m[0].toInt()}/${m[1].toInt()}/${m[2].toInt()}/$need"
+        if (key != lastKey || need != needed) { lastKey = key; needed = need; invalidate() }
     }
+
+    private val pre = android.view.ViewTreeObserver.OnPreDrawListener { update(); true }
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); viewTreeObserver.addOnPreDrawListener(pre); update() }
 
     override fun onDraw(cv: Canvas) {
         val m = metrics() ?: return
+        if (m[1] <= m[2] + 1) return
         val w = width.toFloat(); val hh = height.toFloat()
         val trackTop = arrow.toFloat(); val trackLen = hh - 2 * arrow
         if (trackLen <= 0) return
@@ -76,7 +87,7 @@ class DeskScroll(c: Context, private val p: Pal, private val targets: List<AbsLi
         val dn = Path(); dn.moveTo(cx - a, hh - arrow * 0.62f); dn.lineTo(cx, hh - arrow * 0.62f + a); dn.lineTo(cx + a, hh - arrow * 0.62f); cv.drawPath(dn, paint)
     }
 
-    private fun scrollBy(px: Int) { cur()?.scrollListBy(px); update() }
+    private fun scrollBy(px: Int) { if (sv != null) sv.scrollBy(0, px) else cur()?.scrollListBy(px); update() }
 
     private val repeat = object : Runnable {
         override fun run() {
@@ -106,6 +117,7 @@ class DeskScroll(c: Context, private val p: Pal, private val targets: List<AbsLi
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (!needed && mode == 0) return false
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
@@ -125,6 +137,7 @@ class DeskScroll(c: Context, private val p: Pal, private val targets: List<AbsLi
     }
 
     override fun onHoverEvent(e: MotionEvent): Boolean {
+        if (!needed) return false
         when (e.actionMasked) {
             MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> { val o = e.y in thumbTop..(thumbTop + thumbLen); if (o != hover) { hover = o; invalidate() } }
             MotionEvent.ACTION_HOVER_EXIT -> { hover = false; invalidate() }
@@ -132,7 +145,7 @@ class DeskScroll(c: Context, private val p: Pal, private val targets: List<AbsLi
         return true
     }
 
-    override fun onDetachedFromWindow() { super.onDetachedFromWindow(); h.removeCallbacks(repeat) }
+    override fun onDetachedFromWindow() { super.onDetachedFromWindow(); h.removeCallbacks(repeat); try { viewTreeObserver.removeOnPreDrawListener(pre) } catch (_: Exception) {} }
 
     companion object {
         /** Puts the bar at the end edge of [frame], on top of the given lists / grids (the system's own bar is switched off). */
@@ -150,7 +163,17 @@ class DeskScroll(c: Context, private val p: Pal, private val targets: List<AbsLi
                 l.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> bar.update() }
             }
             frame.addView(bar, FrameLayout.LayoutParams(c.dp(16), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.END))
-            bar.visibility = GONE
+            return bar
+        }
+
+        /** The same bar for a ScrollView (the sidebar, the Home page). */
+        fun attachScroll(frame: FrameLayout, p: Pal, sv: android.widget.ScrollView): DeskScroll {
+            val c = frame.context
+            val bar = DeskScroll(c, p, emptyList(), sv)
+            sv.isVerticalScrollBarEnabled = false
+            sv.setPaddingRelative(sv.paddingStart, sv.paddingTop, c.dp(14), sv.paddingBottom)
+            sv.clipToPadding = false
+            frame.addView(bar, FrameLayout.LayoutParams(c.dp(14), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.END))
             return bar
         }
     }

@@ -211,7 +211,7 @@ class Pop(private val c: Context) {
      * Shows the menu with its top-left corner at the screen point (x, y). It stays inside the visible area (below the status bar and above
      * the taskbar) and scrolls when it is taller than that. [alignEnd] puts its right edge at x instead.
      */
-    fun showAt(anchor: View, x: Int, y: Int, items: List<MenuItem?>, alignEnd: Boolean = false) {
+    fun showAt(anchor: View, x: Int, y: Int, items: List<MenuItem?>, alignEnd: Boolean = false, outside: ((Int, Int) -> Unit)? = null) {
         dismiss()
         try {
             val top = anchor.rootView
@@ -219,7 +219,8 @@ class Pop(private val c: Context) {
             if (vis.isEmpty) { val dm = c.resources.displayMetrics; vis.set(0, 0, dm.widthPixels, dm.heightPixels) }
             val fl = FrameLayout(c)
             fl.layoutDirection = Dir.value()
-            fl.setOnClickListener { dismiss() }
+            // a tap outside the menu closes it, and tells where it was (so the page can clear its selection when that was an empty spot)
+            fl.setOnTouchListener { _, e -> if (e.actionMasked == android.view.MotionEvent.ACTION_DOWN) { dismiss(); outside?.invoke(e.rawX.toInt(), e.rawY.toInt()) }; true }
             layer = fl
             val v = build(items, Ui.pal(c), c.dp(230), 0)
             levels.add(v)
