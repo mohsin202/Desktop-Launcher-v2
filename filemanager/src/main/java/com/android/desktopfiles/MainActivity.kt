@@ -54,8 +54,8 @@ open class MainActivity : Activity(), Host {
     private var rwBtn: TextView? = null
     private var addrBox: FrameLayout? = null
     private var searchBox: EditText? = null
-    private var navBack: TextView? = null
-    private var navFwd: TextView? = null
+    private var navBack: View? = null
+    private var navFwd: View? = null
     private var tabStrip: LinearLayout? = null
     private var editing = false
     private var hadAccess = false
@@ -254,11 +254,11 @@ open class MainActivity : Activity(), Host {
 
     private fun buildToolbar(): View {
         val bar = LinearLayout(this); bar.gravity = Gravity.CENTER_VERTICAL; bar.setPaddingRelative(dp(6), 0, dp(6), 0)
-        if (!wide) bar.addView(Ui.glyphButton(this, p, "☰", 18f) { setSide(!sideOpen) })
-        navBack = Ui.glyphButton(this, p, if (T.rtl) "→" else "←", 18f) { back() }; bar.addView(navBack)
-        navFwd = Ui.glyphButton(this, p, if (T.rtl) "←" else "→", 18f) { forward() }; bar.addView(navFwd)
-        bar.addView(Ui.glyphButton(this, p, "↑", 18f) { up() })
-        bar.addView(Ui.glyphButton(this, p, "⟳", 18f) { refreshAll() })
+        if (!wide) bar.addView(Ui.iconButton(this, p, "menu") { setSide(!sideOpen) })
+        navBack = Ui.iconButton(this, p, if (T.rtl) "fwd" else "back") { back() }; bar.addView(navBack)
+        navFwd = Ui.iconButton(this, p, if (T.rtl) "back" else "fwd") { forward() }; bar.addView(navFwd)
+        bar.addView(Ui.iconButton(this, p, "up") { up() })
+        bar.addView(Ui.iconButton(this, p, "refresh") { refreshAll() })
         val ab = FrameLayout(this); addrBox = ab
         ab.background = Ui.rounded(p.card, dpf(18f), p.line, 1)
         bar.addView(ab, LinearLayout.LayoutParams(0, dp(36), 1f).also { it.marginStart = dp(6); it.marginEnd = dp(6) })

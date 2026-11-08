@@ -70,6 +70,15 @@ object Ui {
         if (!tr) it.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
     }
 
+    /** A flat button with a thin line icon (see MenuIcon), like the Windows 11 toolbar. */
+    fun iconButton(c: Context, p: Pal, icon: String, w: Int = 40, h: Int = 40, click: (View) -> Unit): android.widget.ImageView {
+        val v = android.widget.ImageView(c)
+        v.setImageDrawable(MenuIcon(icon, p.text, c.dp(20))); v.scaleType = android.widget.ImageView.ScaleType.CENTER
+        v.background = ripple(c, p, null, c.dpf(8f)); v.isClickable = true
+        v.layoutParams = LinearLayout.LayoutParams(c.dp(w), c.dp(h)); v.setOnClickListener(click)
+        return v
+    }
+
     /** A flat round / rounded button made of a text glyph. */
     fun glyphButton(c: Context, p: Pal, glyph: String, size: Float = 18f, w: Int = 40, h: Int = 40, click: (View) -> Unit): TextView {
         val t = text(c, glyph, size, p.text)
@@ -90,14 +99,21 @@ class MenuItem(val label: String, val enabled: Boolean = true, val checked: Bool
                val sub: List<MenuItem>? = null, val row: List<MenuItem>? = null, val icon: String? = null, val hint: String? = null,
                val action: () -> Unit = {})
 
-/** Rounded popup menu (also used as the right-click / long-press menu). A null entry is a thin separator. */
+/** Rounded popup menu (also used as the right-click / long-press menu). A null entry is a thin separator. Sub-menus open beside the menu, which stays. */
 class Pop(private val c: Context) {
     private var win: PopupWindow? = null
-    private var origin: View? = null    // the screen the first menu was opened on: sub-menus hang from it, not from the menu above them
+    private var layer: FrameLayout? = null
+    private val levels = ArrayList<View>()      // the open columns: the menu, then its sub-menu, then that one's sub-menu…
+    private var vis = android.graphics.Rect()
 
-    fun dismiss() { try { win?.dismiss() } catch (_: Exception) {}; win = null }
+    fun dismiss() { try { win?.dismiss() } catch (_: Exception) {}; win = null; layer = null; levels.clear() }
 
-    private fun build(items: List<MenuItem?>, p: Pal, minW: Int): View {
+    private fun closeAbove(level: Int) {
+        while (levels.size > level + 1) { layer?.removeView(levels.removeAt(levels.size - 1)) }
+    }
+
+    private fun build(items: List<MenuItem?>, p: Pal, minW: Int, level: Int): View {
+        var col: View? = null
         val box = LinearLayout(c)
         box.orientation = LinearLayout.VERTICAL
         box.background = Ui.rounded(p.card, c.dpf(10f), p.line, 1)
@@ -119,7 +135,7 @@ class Pop(private val c: Context) {
                     cell.alpha = if (q.enabled) 1f else 0.4f
                     cell.background = Ui.ripple(c, p, null, c.dpf(6f)); cell.isClickable = q.enabled
                     cell.setOnClickListener { if (q.enabled) { dismiss(); q.action() } }
-                    line.addView(cell, LinearLayout.LayoutParams(0, c.dp(56), 1f).also { it.marginStart = c.dp(1); it.marginEnd = c.dp(1) })
+                    line.addView(cell, (if (m.row.size == 1) LinearLayout.LayoutParams(c.dp(76), c.dp(56)) else LinearLayout.LayoutParams(0, c.dp(56), 1f)).also { it.marginStart = c.dp(1); it.marginEnd = c.dp(1) })
                 }
                 box.addView(line, LinearLayout.LayoutParams(MATCH, WRAP))
                 continue
@@ -140,13 +156,14 @@ class Pop(private val c: Context) {
             row.isClickable = m.enabled
             row.setOnClickListener {
                 if (!m.enabled) return@setOnClickListener
-                if (m.sub != null) {
-                    val loc = IntArray(2); row.getLocationOnScreen(loc)
-                    val old = win; win = null
-                    // the sub-menu opens beside this one: to its right, or to its left in right-to-left
-                    showAt(row.rootView, if (T.rtl) loc[0] else loc[0] + row.width, loc[1], m.sub, alignEnd = T.rtl)
-                    try { old?.dismiss() } catch (_: Exception) {}
-                } else { dismiss(); m.action() }
+                if (m.sub != null) openSub(level, col!!, row, m.sub) else { dismiss(); m.action() }
+            }
+            // a mouse resting on a line opens its sub-menu (or closes the one beside it) without a click
+            row.setOnHoverListener { _, e ->
+                if (e.actionMasked == android.view.MotionEvent.ACTION_HOVER_ENTER) {
+                    if (m.enabled && m.sub != null) openSub(level, col!!, row, m.sub) else closeAbove(level)
+                }
+                false
             }
             box.addView(row, LinearLayout.LayoutParams(MATCH, c.dp(36)))
         }
@@ -157,36 +174,65 @@ class Pop(private val c: Context) {
         fl.layoutDirection = Dir.value()
         fl.setPaddingRelative(c.dp(6), c.dp(6), c.dp(6), c.dp(6))
         fl.addView(sv, FrameLayout.LayoutParams(maxOf(minW, c.dp(190)), WRAP))
+        fl.isClickable = true
+        col = fl
         return fl
+    }
+
+    private fun place(v: View, wantX: Int, y: Int) {
+        v.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        val m = c.dp(8)
+        val maxH = maxOf(c.dp(120), vis.height() - 2 * m)
+        val h = minOf(v.measuredHeight, maxH)
+        val px = wantX.coerceIn(vis.left + m, maxOf(vis.left + m, vis.right - m - v.measuredWidth))
+        val py = y.coerceIn(vis.top + m, maxOf(vis.top + m, vis.bottom - m - h))
+        val lp = FrameLayout.LayoutParams(v.measuredWidth, h)
+        lp.leftMargin = px - vis.left; lp.topMargin = py - vis.top
+        layer?.addView(v, lp)
+    }
+
+    private fun openSub(level: Int, parent: View, row: View, sub: List<MenuItem?>) {
+        if (levels.size > level + 1 && levels[level + 1].tag === sub) return
+        closeAbove(level)
+        val v = build(sub, Ui.pal(c), c.dp(230), level + 1)
+        v.tag = sub
+        v.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        val pl = IntArray(2); parent.getLocationOnScreen(pl)
+        val rl = IntArray(2); row.getLocationOnScreen(rl)
+        val w = v.measuredWidth
+        val right = pl[0] + parent.width - c.dp(8)      // beside the menu, a little over its edge
+        val left = pl[0] - w + c.dp(8)
+        val wantX = if (T.rtl) (if (left >= vis.left) left else right) else (if (right + w <= vis.right) right else left)
+        levels.add(v)
+        place(v, wantX, rl[1] - c.dp(6))
     }
 
     /**
      * Shows the menu with its top-left corner at the screen point (x, y). It stays inside the visible area (below the status bar and above
-     * the taskbar) and scrolls when it is taller than that. [alignEnd] puts its right edge at x instead (sub-menus in right-to-left).
+     * the taskbar) and scrolls when it is taller than that. [alignEnd] puts its right edge at x instead.
      */
     fun showAt(anchor: View, x: Int, y: Int, items: List<MenuItem?>, alignEnd: Boolean = false) {
         dismiss()
         try {
-            val top = origin ?: anchor.rootView.also { origin = it }
-            val p = Ui.pal(c)
-            val v = build(items, p, c.dp(230))
-            v.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
-            val vis = android.graphics.Rect(); top.getWindowVisibleDisplayFrame(vis)
+            val top = anchor.rootView
+            top.getWindowVisibleDisplayFrame(vis)
             if (vis.isEmpty) { val dm = c.resources.displayMetrics; vis.set(0, 0, dm.widthPixels, dm.heightPixels) }
-            val m = c.dp(8)
-            val maxH = maxOf(c.dp(120), vis.height() - 2 * m)
-            val w = PopupWindow(v, v.measuredWidth, minOf(v.measuredHeight, maxH), true)
+            val fl = FrameLayout(c)
+            fl.layoutDirection = Dir.value()
+            fl.setOnClickListener { dismiss() }
+            layer = fl
+            val v = build(items, Ui.pal(c), c.dp(230), 0)
+            levels.add(v)
+            v.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            place(v, if (alignEnd) x - v.measuredWidth else x, y)
+            val w = PopupWindow(fl, vis.width(), vis.height(), true)
             w.isOutsideTouchable = true
-            w.elevation = c.dpf(12f)
             w.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
-            val wantX = if (alignEnd) x - v.measuredWidth else x
-            val px = wantX.coerceIn(vis.left + m, maxOf(vis.left + m, vis.right - m - v.measuredWidth))
-            val py = y.coerceIn(vis.top + m, maxOf(vis.top + m, vis.bottom - m - w.height))
             win = w
-            w.showAtLocation(top, Gravity.NO_GRAVITY, px, py)
+            w.showAtLocation(top, Gravity.NO_GRAVITY, vis.left, vis.top)
         } catch (e: Exception) {
             // never take the whole app down for a menu: say what went wrong instead
-            win = null
+            win = null; layer = null; levels.clear()
             android.widget.Toast.makeText(c.applicationContext, "Menu: " + e.javaClass.simpleName + " " + (e.message ?: ""), android.widget.Toast.LENGTH_LONG).show()
         }
     }
@@ -206,7 +252,36 @@ fun <V : android.widget.TextView> V.atStart(): V { textAlignment = View.TEXT_ALI
 /** The layout direction of this app's own windows (dialogs, menus): right-to-left when Urdu is on. */
 object Dir {
     fun value(): Int = if (T.rtl) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
-    fun apply(d: android.app.Dialog) { d.window?.decorView?.layoutDirection = value() }
+    fun apply(d: android.app.Dialog) {
+        d.window?.decorView?.layoutDirection = value()
+        if (d is android.app.AlertDialog) try { style(d) } catch (_: Exception) {}
+    }
+
+    /** Dress a dialog like the rest of this app: rounded card, accent title, boxed input, filled main button. */
+    private fun style(d: android.app.AlertDialog) {
+        val c = d.context; val p = Ui.pal(c)
+        d.window?.setBackgroundDrawable(Ui.rounded(p.card, c.dpf(22f)))
+        val tid = c.resources.getIdentifier("alertTitle", "id", "android")
+        (d.findViewById<View>(tid) as? android.widget.TextView)?.let {
+            it.setTextColor(p.accent); it.textSize = 20f; it.setTypeface(it.typeface, android.graphics.Typeface.BOLD); it.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+        }
+        (d.findViewById<View>(android.R.id.message) as? android.widget.TextView)?.let { it.setTextColor(p.text); it.textSize = 15f; it.textAlignment = View.TEXT_ALIGNMENT_VIEW_START }
+        fun walk(v: View) {
+            if (v is android.widget.EditText) {
+                v.background = Ui.rounded(p.card, c.dpf(10f), p.accent, c.dp(2))
+                v.setPadding(c.dp(12), c.dp(10), c.dp(12), c.dp(10)); v.setTextColor(p.text); v.textSize = 17f
+                v.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+            } else if (v is android.view.ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+        }
+        d.window?.decorView?.let { walk(it) }
+        for (which in intArrayOf(android.app.AlertDialog.BUTTON_POSITIVE, android.app.AlertDialog.BUTTON_NEGATIVE, android.app.AlertDialog.BUTTON_NEUTRAL)) {
+            val b = d.getButton(which) ?: continue
+            b.isAllCaps = false; b.textSize = 15f; b.minWidth = c.dp(84); b.minHeight = c.dp(40); b.setPadding(c.dp(16), 0, c.dp(16), 0)
+            if (which == android.app.AlertDialog.BUTTON_POSITIVE) { b.setTextColor(0xFFFFFFFF.toInt()); b.background = Ui.rounded(p.accent, c.dpf(10f)) }
+            else { b.setTextColor(p.accent); b.background = Ui.rounded(0, c.dpf(10f), p.accent, c.dp(1)) }
+            (b.layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.let { it.marginEnd = c.dp(6); it.marginStart = c.dp(6) }
+        }
+    }
 }
 
 /** Like show(), and the dialog follows the app's direction. */

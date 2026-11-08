@@ -23,7 +23,16 @@ object DnD {
         val ic = Thumbs.icon(files[0]); ic.setBounds(0, 0, px, px); ic.draw(Canvas(bmp))
         val shadow = object : View.DragShadowBuilder(v) {
             override fun onProvideShadowMetrics(size: Point, touch: Point) { size.set(px, px); touch.set(px / 2, px / 2) }
-            override fun onDrawShadow(canvas: Canvas) { canvas.drawBitmap(bmp, 0f, 0f, null) }
+            override fun onDrawShadow(canvas: Canvas) {
+                canvas.drawBitmap(bmp, 0f, 0f, null)
+                if (files.size > 1) {   // how many files travel together
+                    val r = c.dpf(10f); val cx = px - r; val cy = r
+                    val pt = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                    pt.color = Ui.pal(c).accent; canvas.drawCircle(cx, cy, r, pt)
+                    pt.color = 0xFFFFFFFF.toInt(); pt.textSize = c.dpf(12f); pt.textAlign = android.graphics.Paint.Align.CENTER; pt.isFakeBoldText = true
+                    canvas.drawText(files.size.toString(), cx, cy + c.dpf(4f), pt)
+                }
+            }
         }
         val cd = ClipData.newPlainText(LABEL, "file|" + files[0].absolutePath)
         for (f in files.drop(1)) cd.addItem(ClipData.Item(f.absolutePath))

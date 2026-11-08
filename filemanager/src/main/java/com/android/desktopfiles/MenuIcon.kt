@@ -55,6 +55,45 @@ class MenuIcon(private val kind: String, private val color: Int, private val siz
                 head.moveTo(16.5f, 6.3f); head.lineTo(20f, 9.5f); head.lineTo(16.5f, 12.7f)
                 c.drawPath(head, paint)
             }
+            "paste" -> {        // a clipboard with a sheet on it
+                val board = Path()
+                board.moveTo(9f, 5.5f); board.lineTo(7f, 5.5f); board.quadTo(4.5f, 5.5f, 4.5f, 8f); board.lineTo(4.5f, 19f)
+                board.quadTo(4.5f, 21.5f, 7f, 21.5f); board.lineTo(11f, 21.5f)
+                c.drawPath(board, paint)
+                val top = Path()
+                top.moveTo(15f, 5.5f); top.lineTo(17f, 5.5f); top.quadTo(19.5f, 5.5f, 19.5f, 8f); top.lineTo(19.5f, 9f)
+                c.drawPath(top, paint)
+                rrect(c, 8.5f, 3f, 15.5f, 7.5f, 1.8f)
+                rrect(c, 10.5f, 10.5f, 20f, 21.5f, 2f)
+            }
+            "back", "fwd" -> {  // a thin arrow, like the Windows 11 navigation buttons
+                val sg = if (kind == "back") 1f else -1f
+                val x0 = if (kind == "back") 4.5f else 19.5f
+                c.drawLine(x0, 12f, 24f - x0, 12f, paint)
+                val head = Path(); head.moveTo(x0 + sg * 6f, 5.8f); head.lineTo(x0, 12f); head.lineTo(x0 + sg * 6f, 18.2f)
+                c.drawPath(head, paint)
+            }
+            "up" -> {
+                c.drawLine(12f, 19.5f, 12f, 4.5f, paint)
+                val head = Path(); head.moveTo(5.8f, 10.5f); head.lineTo(12f, 4.5f); head.lineTo(18.2f, 10.5f)
+                c.drawPath(head, paint)
+            }
+            "refresh" -> {      // an open circle with an arrow head
+                val start = -35f
+                c.drawArc(android.graphics.RectF(4.5f, 4.5f, 19.5f, 19.5f), start, 300f, false, paint)
+                val a = Math.toRadians(start.toDouble())
+                val tx = (12 + 7.5 * Math.cos(a)).toFloat(); val ty = (12 + 7.5 * Math.sin(a)).toFloat()
+                val dir = Math.atan2(-Math.cos(a), Math.sin(a))     // counter-clockwise along the circle
+                val p = Path()
+                for ((i, off) in doubleArrayOf(0.7, -0.7).withIndex()) {
+                    val bx = (tx - 4.5 * Math.cos(dir + off)).toFloat(); val by = (ty - 4.5 * Math.sin(dir + off)).toFloat()
+                    if (i == 0) p.moveTo(bx, by) else { p.lineTo(tx, ty); p.lineTo(bx, by) }
+                }
+                c.drawPath(p, paint)
+            }
+            "menu" -> {
+                c.drawLine(4f, 7f, 20f, 7f, paint); c.drawLine(4f, 12f, 20f, 12f, paint); c.drawLine(4f, 17f, 20f, 17f, paint)
+            }
             "delete" -> {       // a bin
                 c.drawLine(4f, 6.5f, 20f, 6.5f, paint)
                 val handle = Path()

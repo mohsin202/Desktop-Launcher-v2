@@ -50,6 +50,8 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     private var loading = true
     private var message = ""
     private var lastMeta = 0; private var lastX = 0; private var lastY = 0
+    private var lpFired = false
+    private var fingerTouch = false
     private var armed = false
     private var showDate = true; private var showType = true
 
@@ -317,6 +319,16 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         cmd.addView(t, LinearLayout.LayoutParams(WRAP, c.dp(36)))
     }
 
+    /** A toolbar button with a line icon only (the name shows as a tooltip), like the Windows 11 command bar. */
+    private fun ibtn(icon: String, label: String, on: Boolean, click: (View) -> Unit) {
+        val v = android.widget.ImageView(c)
+        v.setImageDrawable(MenuIcon(icon, p.text, c.dp(20))); v.scaleType = android.widget.ImageView.ScaleType.CENTER
+        v.alpha = if (on) 1f else 0.35f
+        v.contentDescription = T.t(label); v.tooltipText = T.t(label)
+        if (on) { v.isClickable = true; v.background = Ui.ripple(c, p, null, c.dpf(8f)); v.setOnClickListener(click) }
+        cmd.addView(v, LinearLayout.LayoutParams(c.dp(40), c.dp(36)))
+    }
+
     private fun sep() {
         val v = View(c); v.setBackgroundColor(p.line)
         cmd.addView(v, LinearLayout.LayoutParams(1, c.dp(20)).also { it.marginStart = c.dp(4); it.marginEnd = c.dp(4) })
@@ -328,12 +340,12 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         val canEdit = dir != null
         btn("+ New ▾", canEdit) { v -> Pop(c).showBelow(v, newItems()) }
         sep()
-        btn("Cut", n > 0) { doCut(selFiles()) }
-        btn("Copy", n > 0) { doCopy(selFiles()) }
-        btn("Paste", canEdit && Clip.has(c)) { doPaste(dir!!) }
-        btn("Rename", n == 1) { rename(selFiles()[0]) }
-        btn("Share", n > 0) { Fs.share(c, selFiles()) }
-        btn("Delete", n > 0) { delete(selFiles(), false) }
+        ibtn("cut", "Cut", n > 0) { doCut(selFiles()) }
+        ibtn("copy", "Copy", n > 0) { doCopy(selFiles()) }
+        ibtn("paste", "Paste", canEdit && Clip.has(c)) { doPaste(dir!!) }
+        ibtn("rename", "Rename", n == 1) { rename(selFiles()[0]) }
+        ibtn("share", "Share", n > 0 && selFiles().any { it.isFile }) { Fs.share(c, selFiles()) }
+        ibtn("delete", "Delete", n > 0) { delete(selFiles(), false) }
         sep()
         if ((loc as? Loc.Dir)?.only?.isNotEmpty() == true) btn("Show all files") { host.go(Loc.Dir(loc.path)) }
         btn("Sort ▾") { v -> Pop(c).showBelow(v, sortItems()) }
@@ -419,22 +431,40 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     lastMeta = e.metaState; lastX = e.rawX.toInt(); lastY = e.rawY.toInt()
-                    armed = e.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE && (e.buttonState and MotionEvent.BUTTON_PRIMARY) != 0
+                    val mouse = e.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE
+                    fingerTouch = !mouse; lpFired = false
+                    armed = mouse && (e.buttonState and MotionEvent.BUTTON_PRIMARY) != 0
                 }
-                MotionEvent.ACTION_MOVE -> if (armed && Math.hypot((e.rawX - lastX).toDouble(), (e.rawY - lastY).toDouble()) > c.dp(10)) {
+                MotionEvent.ACTION_MOVE -> {
+                    val far = Math.hypot((e.rawX - lastX).toDouble(), (e.rawY - lastY).toDouble()) > c.dp(if (fingerTouch) 8 else 10)
+                    // mouse: press and move; finger: press and hold, then move
+                    if ((armed || lpFired) && far) {
+                        armed = false; lpFired = false
+                        val it = items[i]
+                        val files = if (it.absolutePath in sel) selFiles() else listOf(it)
+                        if (DnD.start(v, files)) {
+                            v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                            if (it.absolutePath !in sel) { sel.clear(); sel.add(it.absolutePath); anchor = i; changed() }
+                        }
+                    }
+                }
+                MotionEvent.ACTION_UP -> {
                     armed = false
-                    val it = items[i]
-                    val files = if (it.absolutePath in sel) selFiles() else listOf(it)
-                    if (DnD.start(v, files) && it.absolutePath !in sel) { sel.clear(); sel.add(it.absolutePath); anchor = i; changed() }
+                    // a finger that held and lifted without moving: the menu
+                    if (lpFired) { lpFired = false; ctxMenu(items[i], lastX, lastY) }
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> armed = false
+                MotionEvent.ACTION_CANCEL -> { armed = false; lpFired = false }
             }
             false
         }
         val folder = (Fs.target(f) ?: f).takeIf { it.isDirectory }
         if (folder != null) DnD.attach(host, h.root) { folder } else h.root.setOnDragListener(null)
         h.root.setOnClickListener { tap(i) }
-        h.root.setOnLongClickListener { ctxMenu(items[i], lastX, lastY); true }
+        h.root.setOnLongClickListener { v ->
+            if (fingerTouch) { lpFired = true; v.parent?.requestDisallowInterceptTouchEvent(true); v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) }
+            else ctxMenu(items[i], lastX, lastY)
+            true
+        }
         h.root.setOnContextClickListener { ctxMenu(items[i], lastX, lastY); true }
     }
 
@@ -637,7 +667,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         } else {
             if (dir != null) {
                 menu += MenuItem("New", sub = newItems())
-                menu += MenuItem("Paste", Clip.has(c)) { doPaste(dir) }
+                menu += MenuItem("", row = listOf(MenuItem("Paste", Clip.has(c), icon = "paste") { doPaste(dir) }))
                 menu += null
             }
             menu += MenuItem("Select all") { selectAll() }
