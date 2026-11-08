@@ -49,6 +49,35 @@
                 <data android:mimeType="vnd.android.document/root" />
                 <data android:mimeType="vnd.android.document/directory" />
             </intent-filter>
+            <!-- Other apps open an APK or a split-APK bundle (.apks .apkm .apk+ .xapk) here: this window installs it. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/vnd.android.package-archive" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.apks" />
+                <data android:pathPattern=".*\\.apkm" />
+                <data android:pathPattern=".*\\.xapk" />
+                <data android:pathPattern=".*\\.apk+" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:pathPattern=".*\\.apks" />
+                <data android:pathPattern=".*\\.apkm" />
+                <data android:pathPattern=".*\\.xapk" />
+                <data android:pathPattern=".*\\.apk+" />
+            </intent-filter>
             <!-- The launcher opens folders here: extra "path". -->
             <intent-filter>
                 <action android:name="com.android.desktopfiles.OPEN" />
