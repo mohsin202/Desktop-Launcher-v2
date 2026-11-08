@@ -46,4 +46,7 @@ android {
 dependencies {
     // Windows shares (SMB 2/3). The library brings its own BouncyCastle (MD4 / crypto that Android does not offer) and slf4j.
     implementation("eu.agno3.jcifs:jcifs-ng:2.1.10")
+    // 7z, tar.bz2, tar.xz and tar.lz4 archives (zip and tar.gz are written by the app itself)
+    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("org.tukaani:xz:1.10")
 }
