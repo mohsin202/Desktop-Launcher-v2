@@ -230,13 +230,19 @@ class AppsPage(private val host: Host) : Page {
 
     private fun apkCopy(a: App, dest: File, then: (File) -> Unit) {
         val src = File(a.info.sourceDir)
+        val split = !a.info.splitSourceDirs.isNullOrEmpty()
         val job = Job("Copying APK of " + a.label)
         dest.mkdirs()
-        val out = Fs.unique(dest, a.label.replace('/', '_') + ".apk")
-        Jobs.start(job, { j -> j.total = src.length(); src.inputStream().use { i -> out.outputStream().use { o ->
-            val buf = ByteArray(256 * 1024)
-            while (true) { if (j.cancelled) break; val n = i.read(buf); if (n < 0) break; o.write(buf, 0, n); j.done += n }
-        } } }) { then(out) }
+        val name = a.label.replace('/', '_')
+        // an app made of several parts goes into one installable file: base + splits + its icon
+        val out = if (split) Fs.unique(dest, name + (if (a.version.isNotEmpty()) "_" + a.version else "") + ".apk+") else Fs.unique(dest, name + ".apk")
+        Jobs.start(job, { j ->
+            if (split) Apks.pack(c, a.info, a.label, a.version, out, j)
+            else { j.total = src.length(); src.inputStream().use { i -> out.outputStream().use { o ->
+                val buf = ByteArray(256 * 1024)
+                while (true) { if (j.cancelled) break; val n = i.read(buf); if (n < 0) break; o.write(buf, 0, n); j.done += n }
+            } } }
+        }) { then(out) }
     }
 
     private fun menu(a: App) {

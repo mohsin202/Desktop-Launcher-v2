@@ -631,9 +631,11 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             menu += null
             menu += MenuItem("Open", one, hint = "Enter") { open(fs[0]) }
             if (one && target != null && target.isFile) menu += MenuItem("Open with…") { Fs.view(c, target, true) }
+            if (one && target != null && target.isFile && Apks.installable(target)) menu += MenuItem("Install app") { Apks.install(host.act, target) }
             if (one && target != null && target.isDirectory) {
                 menu += MenuItem("Open in new tab") { host.newTab(Loc.Dir(target.absolutePath)) }
                 menu += MenuItem("Open in new window") { host.newWindow(Loc.Dir(target.absolutePath)) }
+                if (Apks.installable(target)) menu += MenuItem("Install app") { Apks.install(host.act, target) }
                 if (Clip.has(c)) menu += MenuItem("Paste into folder") { doPaste(target) }
                 val pk = "dir:" + target.absolutePath
                 menu += if (Store.isPinned(c, pk)) MenuItem("Unpin from Quick access") { Store.unpin(c, pk); host.pinsChanged(); c.toast("Unpinned") }

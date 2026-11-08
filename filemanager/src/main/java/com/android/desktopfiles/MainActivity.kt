@@ -111,6 +111,7 @@ open class MainActivity : Activity(), Host {
         hadAccess = Environment.isExternalStorageManager()
         buildUi()
         openedFromSystemDrive()
+        openedWithApk()
     }
 
     /** Started from the system's "Open with" list for a connected drive or phone (the MTP host): go straight to the connected phone. */
@@ -122,6 +123,30 @@ open class MainActivity : Activity(), Host {
         if (!fromDrive) return
         val phones = Mtp.list(this)
         if (phones.size == 1) openPhone(phones[0]) else if (phones.isEmpty()) toast("No phone found")
+    }
+
+    /** Another app opened an APK or a split-APK bundle with this one ("Open with"): copy it aside and show the install window. */
+    private fun openedWithApk() {
+        val i = intent ?: return
+        val u = i.data ?: return
+        if (i.action != Intent.ACTION_VIEW) return
+        val mime = i.type ?: ""
+        Thread {
+            try {
+                val dir = File(cacheDir, "incoming"); dir.deleteRecursively(); dir.mkdirs()
+                val file: File = if (u.scheme == "file") File(u.path ?: return@Thread) else {
+                    var name = u.lastPathSegment?.substringAfterLast('/') ?: "app.apk"
+                    contentResolver.query(u, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cu ->
+                        if (cu.moveToFirst()) cu.getString(0)?.let { name = it }
+                    }
+                    if (!Apks.installable(File(name)) && mime == "application/vnd.android.package-archive") name += ".apk"
+                    val out = File(dir, name.replace('/', '_'))
+                    contentResolver.openInputStream(u)?.use { inp -> out.outputStream().use { o -> inp.copyTo(o) } } ?: return@Thread
+                    out
+                }
+                runOnUiThread { Apks.install(this, file) }
+            } catch (_: Throwable) { runOnUiThread { toast("Could not open this file") } }
+        }.start()
     }
 
     override fun onDestroy() { super.onDestroy(); Jobs.unlisten(jobListener); page?.destroy(); page2?.destroy() }
@@ -676,6 +701,7 @@ open class MainActivity : Activity(), Host {
     override fun openFile(f: File) {
         if (!f.canRead() && RootSu.state == 1) { openViaRoot(f); return }
         Store.setList(this, "recentfiles", (listOf(f.absolutePath) + Store.list(this, "recentfiles").filter { it != f.absolutePath }).take(20))
+        if (Apks.isBundle(f)) { Apks.install(this, f); return }
         Fs.view(this, f)
     }
 

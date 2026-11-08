@@ -28,7 +28,7 @@ object Thumbs {
         "doc", "docx" -> 0xFF1E5FBF
         "xls", "xlsx", "csv" -> 0xFF1E8E4E
         "ppt", "pptx" -> 0xFFD35400
-        "apk" -> 0xFF2E7D32
+        "apk", "apks", "apkm", "apk+", "xapk" -> 0xFF2E7D32
         "zip", "rar", "7z", "tar", "gz" -> 0xFFF57C00
         else -> 0xFF1E88E5
     }.toInt()
@@ -50,7 +50,7 @@ object Thumbs {
         val real = Fs.target(f) ?: f
         if (real.isDirectory) { iv.tag = null; return }
         val e = real.extension.lowercase()
-        val isApk = e == "apk"
+        val isApk = e == "apk" || e in Apks.ZIPS
         if (!Fs.isImage(real) && !Fs.isVideo(real) && !isApk) { iv.tag = null; return }
         val key = real.absolutePath + "@" + px + "@" + real.lastModified()
         iv.tag = key
@@ -59,7 +59,7 @@ object Thumbs {
         ex.execute {
             val bmp: Bitmap? = try {
                 when {
-                    isApk -> apkIcon(iv.context, real, px)
+                    isApk -> if (e == "apk") apkIcon(iv.context, real, px) else Apks.bundleIcon(iv.context, real, px)
                     Fs.isImage(real) -> ThumbnailUtils.createImageThumbnail(real, Size(px, px), null)
                     else -> ThumbnailUtils.createVideoThumbnail(real, Size(px, px), null)
                 }
