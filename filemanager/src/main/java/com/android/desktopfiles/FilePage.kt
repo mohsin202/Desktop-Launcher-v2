@@ -158,6 +158,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         frame.addView(list, FrameLayout.LayoutParams(MATCH, MATCH))
         frame.addView(grid, FrameLayout.LayoutParams(MATCH, MATCH))
         frame.addView(emptyView, FrameLayout.LayoutParams(MATCH, MATCH))
+        DeskScroll.attach(frame, p, list, grid)
         for (v in listOf<View>(list, grid)) {
             if (dir != null) DnD.attach(host, v) { dir }
             v.setOnContextClickListener { ctxMenu(null, lastX, lastY); true }
@@ -686,6 +687,40 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         Pop(c).showAt(root, x, y, menu)
     }
 
+    private var cursor = -1
+
+    /** Arrow keys, Home / End, Page Up / Down: the selection (its soft highlight) moves; Shift widens it. */
+    private fun moveKey(code: Int, shift: Boolean): Boolean {
+        if (items.isEmpty()) return code in intArrayOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MOVE_HOME, KeyEvent.KEYCODE_MOVE_END, KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_PAGE_DOWN)
+        val g = isGrid()
+        val cols = if (g) maxOf(1, grid.numColumns) else 1
+        val t: AbsListView = if (g) grid else list
+        val rowsOnScreen = maxOf(1, t.height / maxOf(1, (t.getChildAt(0)?.height ?: c.dp(44))))
+        val horizontal = if (T.rtl) -1 else 1
+        val delta: Int = when (code) {
+            KeyEvent.KEYCODE_DPAD_DOWN -> cols
+            KeyEvent.KEYCODE_DPAD_UP -> -cols
+            KeyEvent.KEYCODE_DPAD_RIGHT -> if (g) horizontal else return true
+            KeyEvent.KEYCODE_DPAD_LEFT -> if (g) -horizontal else return true
+            KeyEvent.KEYCODE_PAGE_DOWN -> rowsOnScreen * cols
+            KeyEvent.KEYCODE_PAGE_UP -> -rowsOnScreen * cols
+            KeyEvent.KEYCODE_MOVE_HOME -> -items.size
+            KeyEvent.KEYCODE_MOVE_END -> items.size
+            else -> return false
+        }
+        val from = if (cursor in items.indices && items[cursor].absolutePath in sel) cursor
+            else if (sel.isNotEmpty()) items.indexOfFirst { it.absolutePath in sel }.takeIf { it >= 0 } ?: -1 else -1
+        val n = if (from < 0) (if (delta > 0) 0 else items.size - 1) else (from + delta).coerceIn(0, items.size - 1)
+        cursor = n
+        if (shift && anchor in items.indices) {
+            sel.clear(); for (k in minOf(anchor, n)..maxOf(anchor, n)) sel.add(items[k].absolutePath)
+        } else { sel.clear(); sel.add(items[n].absolutePath); anchor = n }
+        changed()
+        if (n < t.firstVisiblePosition || n > t.lastVisiblePosition) t.smoothScrollToPosition(n)
+        else t.getChildAt(n - t.firstVisiblePosition)?.let { v -> if (v.top < 0 || v.bottom > t.height) t.smoothScrollToPosition(n) }
+        return true
+    }
+
     override fun onKey(code: Int, ctrl: Boolean, shift: Boolean): Boolean {
         val d = dir
         when {
@@ -699,6 +734,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             code == KeyEvent.KEYCODE_F2 && sel.size == 1 -> rename(selFiles()[0])
             (code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) && sel.size == 1 -> open(selFiles()[0])
             code == KeyEvent.KEYCODE_ESCAPE && sel.isNotEmpty() -> { sel.clear(); changed() }
+            !ctrl && moveKey(code, shift) -> {}
             else -> return false
         }
         return true

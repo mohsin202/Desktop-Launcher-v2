@@ -69,6 +69,7 @@ class TrashPage(private val host: Host) : Page {
         list.divider = null; list.adapter = adapter; list.selector = android.graphics.drawable.ColorDrawable(0)
         val fr = FrameLayout(c)
         fr.addView(list, FrameLayout.LayoutParams(MATCH, MATCH))
+        DeskScroll.attach(fr, p, list)
         empty.gravity = Gravity.CENTER
         fr.addView(empty, FrameLayout.LayoutParams(MATCH, MATCH))
         root.addView(fr, LinearLayout.LayoutParams(MATCH, 0, 1f))

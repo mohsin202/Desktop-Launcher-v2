@@ -11,6 +11,7 @@ import android.os.Environment
 import android.provider.Settings
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -48,6 +49,9 @@ open class MainActivity : Activity(), Host {
     private lateinit var p: Pal
     private var content: FrameLayout? = null
     private var sidebar: View? = null
+    private var focusSide = false                       // keys go to the sidebar (true) or to the page (false)
+    private var sideCursor = -1
+    private val sideRows = ArrayList<Pair<View, () -> Unit>>()
     private var sideOpen = false
     private var wide = true
     private var statusBtn: View? = null
@@ -131,15 +135,17 @@ open class MainActivity : Activity(), Host {
         val u = i.data ?: return
         if (i.action != Intent.ACTION_VIEW) return
         val mime = i.type ?: ""
+        if (mime.startsWith("vnd.android.document/") || u.authority == "com.android.mtp.documents") return
         Thread {
             try {
                 val dir = File(cacheDir, "incoming"); dir.deleteRecursively(); dir.mkdirs()
-                val file: File = if (u.scheme == "file") File(u.path ?: return@Thread) else {
+                val file: File = if (u.scheme == "file") File(u.path ?: return@Thread).also { if (!Apks.installable(it)) return@Thread } else {
                     var name = u.lastPathSegment?.substringAfterLast('/') ?: "app.apk"
                     contentResolver.query(u, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cu ->
                         if (cu.moveToFirst()) cu.getString(0)?.let { name = it }
                     }
                     if (!Apks.installable(File(name)) && mime == "application/vnd.android.package-archive") name += ".apk"
+                    if (!Apks.installable(File(name))) return@Thread      // a video, text, zip…: not for the installer
                     val out = File(dir, name.replace('/', '_'))
                     contentResolver.openInputStream(u)?.use { inp -> out.outputStream().use { o -> inp.copyTo(o) } } ?: return@Thread
                     out
@@ -470,6 +476,7 @@ open class MainActivity : Activity(), Host {
         val col = LinearLayout(this); col.orientation = LinearLayout.VERTICAL; col.setPaddingRelative(dp(8), dp(8), dp(8), dp(16))
         sv.addView(col)
         val here = tabs[cur].loc
+        sideRows.clear()
         fun row(icon: android.graphics.drawable.Drawable, label: String, selected: Boolean, loc: Loc?, badge: Boolean = false, long: ((View) -> Unit)? = null, click: (() -> Unit)? = null) {
             val r = LinearLayout(this); r.gravity = Gravity.CENTER_VERTICAL; r.setPaddingRelative(dp(10), 0, dp(10), 0); r.isClickable = true
             r.background = Ui.ripple(this, p, if (selected) Ui.rounded(p.accentSoft, dpf(10f)) else null, dpf(10f))
@@ -478,7 +485,10 @@ open class MainActivity : Activity(), Host {
             val t = Ui.text(this, label, 14f, p.text, selected).atStart(); t.maxLines = 1; t.ellipsize = android.text.TextUtils.TruncateAt.END
             r.addView(t, LinearLayout.LayoutParams(0, WRAP, 1f))
             if (badge) r.addView(Ui.text(this, "!", 11f, 0xFFFFFFFF.toInt(), true).also { it.gravity = Gravity.CENTER; it.background = Ui.rounded(0xFFE53935.toInt(), dpf(8f)) }, LinearLayout.LayoutParams(dp(16), dp(16)))
-            r.setOnClickListener { if (click != null) click() else if (loc != null) go(loc); if (!wide) setSide(false) }
+            val act: () -> Unit = { if (click != null) click() else if (loc != null) go(loc); if (!wide) setSide(false) }
+            val idx = sideRows.size
+            sideRows.add(r to act)
+            r.setOnClickListener { focusSide = true; sideCursor = idx; act() }
             if (long != null) { r.setOnLongClickListener { long(it); true }; r.setOnContextClickListener { long(it); true } }
             if (loc is Loc.Dir) DnD.attach(this, r) { File(loc.path) } else if (loc is Loc.Trash) DnD.attachTrash(this, r)
             col.addView(r, LinearLayout.LayoutParams(MATCH, dp(40)))
@@ -525,7 +535,44 @@ open class MainActivity : Activity(), Host {
             })
         }
         row(Glyph(Glyph.Kind.FOLDER), "Add cloud account…", false, null, click = { DavAccts.addDialog(this) { a -> go(Loc.Dav(a.id)) } })
+        sv.post { paintSide() }
         return sv
+    }
+
+    private fun sideVisible() = sidebar?.visibility == View.VISIBLE && (wide || sideOpen)
+
+    /** The soft outline on the sidebar line the keyboard is on (only while the keyboard is in the sidebar). */
+    private fun paintSide() {
+        for ((i, r) in sideRows.withIndex()) r.first.foreground = if (focusSide && i == sideCursor && sideVisible()) Ui.rounded(0, dpf(10f), p.accent, dp(2)) else null
+    }
+
+    private fun sideKey(code: Int): Boolean {
+        if (sideRows.isEmpty()) return false
+        val toPage = if (T.rtl) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+        val n = sideRows.size
+        when (code) {
+            KeyEvent.KEYCODE_DPAD_DOWN -> sideCursor = if (sideCursor < 0) 0 else minOf(n - 1, sideCursor + 1)
+            KeyEvent.KEYCODE_DPAD_UP -> sideCursor = if (sideCursor < 0) n - 1 else maxOf(0, sideCursor - 1)
+            KeyEvent.KEYCODE_MOVE_HOME -> sideCursor = 0
+            KeyEvent.KEYCODE_MOVE_END -> sideCursor = n - 1
+            KeyEvent.KEYCODE_PAGE_DOWN -> sideCursor = minOf(n - 1, maxOf(0, sideCursor) + 8)
+            KeyEvent.KEYCODE_PAGE_UP -> sideCursor = maxOf(0, maxOf(0, sideCursor) - 8)
+            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> { if (sideCursor in 0 until n) sideRows[sideCursor].second(); return true }
+            toPage -> { focusSide = false; paintSide(); return true }
+            else -> return false
+        }
+        paintSide()
+        sideRows.getOrNull(sideCursor)?.first?.let { v -> v.requestRectangleOnScreen(android.graphics.Rect(0, -dp(8), v.width, v.height + dp(8)), false) }
+        return true
+    }
+
+    private fun touchArea(e: MotionEvent) {
+        val x = e.rawX.toInt(); val y = e.rawY.toInt()
+        val r = android.graphics.Rect()
+        val inSide = sideVisible() && sidebar?.getGlobalVisibleRect(r) == true && r.contains(x, y)
+        val inPage = !inSide && content?.getGlobalVisibleRect(r) == true && r.contains(x, y)
+        if (inSide && !focusSide) { focusSide = true; paintSide() }
+        else if (inPage && focusSide) { focusSide = false; paintSide() }
     }
 
     // ---------- navigation ----------
@@ -680,6 +727,7 @@ open class MainActivity : Activity(), Host {
     }
 
     override fun dispatchTouchEvent(e: android.view.MotionEvent): Boolean {
+        if (e.actionMasked == android.view.MotionEvent.ACTION_DOWN) touchArea(e)
         if (e.actionMasked == android.view.MotionEvent.ACTION_DOWN && page2 != null) {
             val v2 = page2!!.view; val xy = IntArray(2); v2.getLocationOnScreen(xy)
             activePane = if (e.rawX >= xy[0]) 1 else 0
@@ -723,6 +771,8 @@ open class MainActivity : Activity(), Host {
                 e.keyCode == KeyEvent.KEYCODE_F5 -> { refreshAll(); return true }
                 !typing && e.keyCode == KeyEvent.KEYCODE_DEL -> { back(); return true }
                 alt && e.keyCode == KeyEvent.KEYCODE_P -> { Store.setBool(this, "pane", !Store.bool(this, "pane", false)); showTab(); return true }
+                !typing && !ctrl && !alt && (e.keyCode == KeyEvent.KEYCODE_TAB || e.keyCode == KeyEvent.KEYCODE_F6) && sideVisible() -> { focusSide = !focusSide; if (focusSide && sideCursor < 0) sideCursor = 0; paintSide(); return true }
+                !typing && !ctrl && !alt && focusSide && sideVisible() && sideKey(e.keyCode) -> return true
                 !typing && (if (activePane == 1 && page2 != null) page2 else page)?.onKey(e.keyCode, ctrl, shift) == true -> return true
             }
         }

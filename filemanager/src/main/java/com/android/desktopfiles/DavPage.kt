@@ -144,6 +144,7 @@ class DavPage(private val host: Host, private val loc: Loc.Dav) : Page {
         val fr = FrameLayout(c)
         fr.addView(list, FrameLayout.LayoutParams(MATCH, MATCH))
         grid.adapter = adapter; fr.addView(grid, FrameLayout.LayoutParams(MATCH, MATCH))
+        DeskScroll.attach(fr, p, list, grid)
         empty.gravity = Gravity.CENTER; fr.addView(empty, FrameLayout.LayoutParams(MATCH, MATCH))
         root.addView(fr, LinearLayout.LayoutParams(MATCH, 0, 1f))
         buildBar(); load(); applyView()
