@@ -350,6 +350,13 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     private fun buildBar() {
         cmd.removeAllViews()
         val n = sel.size
+        if (pendingArchive != null) {
+            val t = Ui.text(c, "Select the items to compress", 13f, p.accent, true); t.setPaddingRelative(c.dp(12), 0, c.dp(12), 0); t.gravity = Gravity.CENTER
+            cmd.addView(t, LinearLayout.LayoutParams(WRAP, c.dp(36)))
+            btn(T.t("Compress") + " (" + n + ")", n > 0) { finishPending() }
+            btn("Cancel") { pendingArchive = null; buildBar() }
+            return
+        }
         val canEdit = dir != null
         btn("+ New ▾", canEdit) { v -> Pop(c).showBelow(v, newItems()) }
         sep()
@@ -582,18 +589,39 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         host.showStatus()
     }
 
-    private fun compress(files: List<File>) {
-        val parent = files[0].parentFile ?: return
-        val name = if (files.size == 1) files[0].nameWithoutExtension.ifEmpty { files[0].name } else "Archive"
-        val out = Fs.unique(parent, "$name.zip")
-        Jobs.start(Job("Compressing " + files.size + " item(s) to " + out.name), { Ops.zip(files, out, it) }) { sel.clear(); host.refreshAll() }
-        host.showStatus()
+    /** Set when the Create archive window was opened from an empty spot: the person now picks what to pack. */
+    private var pendingArchive: ArchSpec? = null
+
+    /** The Create archive window. With [files] the archive is made at once; with null the person picks the items afterwards. */
+    private fun compressDialog(files: List<File>?) {
+        val here = dir ?: files?.firstOrNull()?.parentFile ?: return
+        val one = files?.singleOrNull()
+        val name = if (one != null) (if (one.isDirectory) one.name else one.nameWithoutExtension.ifEmpty { one.name }) else "Archive"
+        val spec = ArchSpec(name, here)
+        ArchiveDialog.load(c, spec)
+        val places = ArrayList<Pair<String, File>>()
+        places += T.t("Current folder") to here
+        places += "Download" to File(Fs.ext(), "Download")
+        places += "Desktop" to Fs.desktop()
+        host.otherPaneDir(pane)?.let { places += T.t("Other pane") to it }
+        ArchiveDialog.show(host.act, spec, places) { s ->
+            if (files != null) ArchiveDialog.run(host, files, s) { sel.clear(); host.refreshAll() }
+            else { pendingArchive = s; sel.clear(); changed(); c.toast("Select the items to compress, then press Compress") }
+        }
+    }
+
+    private fun finishPending() {
+        val s = pendingArchive ?: return
+        val fs = selFiles(); if (fs.isEmpty()) return
+        pendingArchive = null
+        ArchiveDialog.run(host, fs, s) { sel.clear(); host.refreshAll() }
+        buildBar()
     }
 
     private fun extract(zip: File, intoFolder: Boolean) {
         val parent = zip.parentFile ?: return
-        val dest = if (intoFolder) Fs.unique(parent, zip.nameWithoutExtension) else parent
-        Jobs.start(Job("Extracting " + zip.name), { Ops.unzip(zip, dest, it) }) { host.refreshAll() }
+        val dest = if (intoFolder) Fs.unique(parent, zip.nameWithoutExtension.removeSuffix(".tar")) else parent
+        Jobs.start(Job("Extracting " + zip.name), { Unpack.extract(zip, dest, it) }) { host.refreshAll() }
         host.showStatus()
     }
 
@@ -662,11 +690,12 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
                 menu += if (Store.isPinned(c, pk)) MenuItem("Unpin from Quick access") { Store.unpin(c, pk); host.pinsChanged(); c.toast("Unpinned") }
                     else MenuItem("Pin to Quick access") { Store.pin(c, pk); host.pinsChanged(); c.toast("Pinned") }
             }
-            if (one && target != null && target.isFile && target.extension.equals("zip", true)) {
+            if (one && target != null && Unpack.supported(target)) {
+                menu += MenuItem("Open in new tab") { Unpack.openInTab(host, target) }
                 menu += MenuItem("Extract to folder") { extract(target, true) }
                 menu += MenuItem("Extract here") { extract(target, false) }
             }
-            menu += MenuItem("Compress to…", dir != null || loc is Loc.Search, sub = listOf(MenuItem("ZIP file") { compress(fs) }))
+            menu += MenuItem("Compress to…", dir != null || loc is Loc.Search) { compressDialog(fs) }
             menu += MenuItem("Copy as path", hint = "Ctrl+Shift+C") { copyPath(fs) }
             menu += MenuItem("Properties") { properties(fs) }
             menu += null
@@ -690,6 +719,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         } else {
             if (dir != null) {
                 menu += MenuItem("New", sub = newItems())
+                menu += MenuItem("Compress to…") { compressDialog(null) }
                 menu += MenuItem("", row = listOf(MenuItem("Paste", (Clip.has(c) || MtpClip.has()), icon = "paste") { doPaste(dir) }))
                 menu += null
             }
@@ -753,6 +783,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             code == KeyEvent.KEYCODE_FORWARD_DEL -> delete(selFiles(), shift)
             code == KeyEvent.KEYCODE_F2 && sel.size == 1 -> rename(selFiles()[0])
             (code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) && sel.size == 1 -> open(selFiles()[0])
+            code == KeyEvent.KEYCODE_ESCAPE && pendingArchive != null -> { pendingArchive = null; buildBar() }
             code == KeyEvent.KEYCODE_ESCAPE && sel.isNotEmpty() -> { sel.clear(); changed() }
             !ctrl && moveKey(code, shift) -> {}
             else -> return false
