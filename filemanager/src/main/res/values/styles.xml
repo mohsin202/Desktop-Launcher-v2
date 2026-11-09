@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Files" parent="@android:style/Theme.DeviceDefault.DayNight">
+    <!-- Android 7-9: a plain light theme (the app draws its own colours); dark mode and Android 10+ have their own versions below -->
+    <style name="Theme.Files" parent="@android:style/Theme.DeviceDefault.Light">
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowBackground">@color/files_window_bg</item>
