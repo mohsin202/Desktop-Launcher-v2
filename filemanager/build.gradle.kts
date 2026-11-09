@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.android.desktopfiles"
-        minSdk = 31
+        minSdk = 24
         targetSdk = sdkVer
         versionCode = 1
         versionName = "1.0"
@@ -36,6 +36,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // Android 7-8 lack some newer Java classes (java.time, Optional, …) that libraries such as the SMB one may use
+        isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions { jvmTarget = "17" }
     lint { abortOnError = false; checkReleaseBuilds = false }
@@ -44,6 +46,7 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     // Windows shares (SMB 2/3). The library brings its own BouncyCastle (MD4 / crypto that Android does not offer) and slf4j.
     implementation("eu.agno3.jcifs:jcifs-ng:2.1.10")
     // 7z, tar.bz2, tar.xz and tar.lz4 archives (zip and tar.gz are written by the app itself)
