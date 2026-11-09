@@ -103,7 +103,7 @@ open class MainActivity : Activity(), Host {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        window.setDecorFitsSystemWindows(false)
+        if (android.os.Build.VERSION.SDK_INT >= 30) window.setDecorFitsSystemWindows(false)
         val path = intent.getStringExtra("path")
         val first: Loc = when {
             startLoc() != null -> startLoc()!!
@@ -115,10 +115,13 @@ open class MainActivity : Activity(), Host {
         Jobs.appCtx = applicationContext
         Tags.init(applicationContext)
         Jobs.listen(jobListener)
-        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
-            try { requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7) } catch (_: Exception) {}
-        onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { onBack() }
-        hadAccess = Environment.isExternalStorageManager()
+        // notifications (Android 13+) and, from Android 17, the permission to talk to devices on the local network (Nearby share, SMB, WebDAV)
+        val ask = ArrayList<String>()
+        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) ask += "android.permission.POST_NOTIFICATIONS"
+        if (android.os.Build.VERSION.SDK_INT >= 37 && checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") != android.content.pm.PackageManager.PERMISSION_GRANTED) ask += "android.permission.ACCESS_LOCAL_NETWORK"
+        if (ask.isNotEmpty()) try { requestPermissions(ask.toTypedArray(), 7) } catch (_: Exception) {}
+        if (android.os.Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { onBack() }
+        hadAccess = hasAllFiles()
         buildUi()
         openedFromSystemDrive()
         openedWithApk()
@@ -165,7 +168,7 @@ open class MainActivity : Activity(), Host {
 
     override fun onResume() {
         super.onResume()
-        val now = Environment.isExternalStorageManager()
+        val now = hasAllFiles()
         if (now != hadAccess) { hadAccess = now; buildUi() } else page?.refresh()
         if (now) { Nearby.resume(this); NearUi.install(this); Nearby.listen(nearL); nearL() }
     }
@@ -175,7 +178,17 @@ open class MainActivity : Activity(), Host {
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)
         Nearby.permResult(code, res.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED, this)
+        if (code == 7741) {
+            // storage permission on Android 7-10: when "don't ask again" was chosen, Android's own settings page is the only way
+            if (hasAllFiles()) buildUi()
+            else if (!shouldShowRequestPermissionRationale("android.permission.WRITE_EXTERNAL_STORAGE"))
+                try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) } catch (_: Exception) {}
+        }
+        if (code == 7 && android.os.Build.VERSION.SDK_INT >= 37) Nearby.restart(this)
     }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() { if (android.os.Build.VERSION.SDK_INT >= 33) @Suppress("DEPRECATION") super.onBackPressed() else onBack() }
 
     private val openReceived: (File) -> Unit = { f -> if (f.isDirectory) go(Loc.Dir(f.absolutePath)) else openFile(f) }
 
@@ -229,14 +242,25 @@ open class MainActivity : Activity(), Host {
         p = Ui.pal(this)
         page?.destroy(); page = null; page2?.destroy(); page2 = null
         window.decorView.setBackgroundColor(p.bg)
-        window.insetsController?.setSystemBarsAppearance(
-            if (p.dark) 0 else WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
-            WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS)
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            window.insetsController?.setSystemBarsAppearance(
+                if (p.dark) 0 else WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+                WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS)
+        } else {
+            // Android 7-10: the system draws the bars, so only their colour and icon shade are set
+            @Suppress("DEPRECATION") run {
+                var f = window.decorView.systemUiVisibility
+                val light = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or (if (android.os.Build.VERSION.SDK_INT >= 26) View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR else 0)
+                f = if (p.dark) f and light.inv() else f or light
+                window.decorView.systemUiVisibility = f
+            }
+            window.statusBarColor = p.bar; window.navigationBarColor = p.bg
+        }
         wide = widthDp() >= 720
 
         val root = LinearLayout(this); root.orientation = LinearLayout.VERTICAL
         root.setBackgroundColor(p.bg)
-        root.setOnApplyWindowInsetsListener { v, ins ->
+        if (android.os.Build.VERSION.SDK_INT >= 30) root.setOnApplyWindowInsetsListener { v, ins ->
             val bars = ins.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
             val ime = ins.getInsets(WindowInsets.Type.ime())
             v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom)); WindowInsets.CONSUMED
@@ -245,7 +269,7 @@ open class MainActivity : Activity(), Host {
         window.decorView.layoutDirection = root.layoutDirection
         setContentView(root)
 
-        if (!Environment.isExternalStorageManager()) { permissionScreen(root); return }
+        if (!hasAllFiles()) { permissionScreen(root); return }
 
         // top area: tabs + toolbar
         val top = LinearLayout(this); top.orientation = LinearLayout.VERTICAL
@@ -277,8 +301,10 @@ open class MainActivity : Activity(), Host {
         val b = Ui.text(this, "Allow access", 15f, 0xFFFFFFFF.toInt(), true); b.gravity = Gravity.CENTER
         b.background = Ui.rounded(p.accent.let { if (p.dark) p.accentSoft else it }, dpf(22f))
         b.setOnClickListener {
-            try { startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))) }
-            catch (_: Exception) { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                try { startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))) }
+                catch (_: Exception) { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+            } else requestPermissions(arrayOf("android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE"), 7741)
         }
         box.addView(b, LinearLayout.LayoutParams(dp(180), dp(44)).also { it.topMargin = dp(20) })
         root.addView(box, LinearLayout.LayoutParams(MATCH, MATCH))
@@ -359,7 +385,7 @@ open class MainActivity : Activity(), Host {
         val rw = Ui.text(this, "RW", 12f, 0xFFFFFFFF.toInt(), true); rwBtn = rw
         rw.gravity = Gravity.CENTER; rw.visibility = View.GONE; rw.isClickable = true
         bar.addView(rw, LinearLayout.LayoutParams(dp(40), dp(28)).also { it.marginEnd = dp(4) })
-        bar.addView(Ui.iconButton(this, p, "history") { openHistory() }.also { it.contentDescription = T.t("Received files"); it.tooltipText = T.t("Received files") })
+        bar.addView(Ui.iconButton(this, p, "history") { openHistory() }.also { it.contentDescription = T.t("Received files"); it.tip(T.t("Received files")) })
         val sb = StatusBtn(this, p) { if (StatusPanel.showing()) StatusPanel.hide() else showStatus() }
         statusBtn = sb
         bar.addView(sb, LinearLayout.LayoutParams(dp(40), dp(40)))
@@ -802,7 +828,7 @@ open class MainActivity : Activity(), Host {
 
     // ---------- keyboard ----------
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
-        if (e.action == KeyEvent.ACTION_DOWN && Environment.isExternalStorageManager()) {
+        if (e.action == KeyEvent.ACTION_DOWN && hasAllFiles()) {
             val ctrl = e.isCtrlPressed; val alt = e.isAltPressed; val shift = e.isShiftPressed
             val typing = currentFocus is EditText
             when {

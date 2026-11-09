@@ -119,7 +119,7 @@ class MtpPage(private val host: Host, private val loc: Loc.Mtp) : Page {
         val v = ImageView(c)
         v.setImageDrawable(MenuIcon(icon, p.text, c.dp(20))); v.scaleType = ImageView.ScaleType.CENTER
         v.alpha = if (on) 1f else 0.35f
-        v.contentDescription = T.t(label); v.tooltipText = T.t(label)
+        v.contentDescription = T.t(label); v.tip(T.t(label))
         if (on) { v.isClickable = true; v.background = Ui.ripple(c, p, null, c.dpf(8f)); v.setOnClickListener(click) }
         cmd.addView(v, LinearLayout.LayoutParams(c.dp(40), c.dp(36)))
     }
@@ -353,7 +353,7 @@ class MtpPage(private val host: Host, private val loc: Loc.Mtp) : Page {
                 if (st != -1) l = Mtp.children(m, st, loc.parent)
             } catch (_: Exception) {}
             val sorted = l.sortedWith(compareBy<Mtp.Item>({ !it.dir }, { it.name.lowercase() }))
-            c.mainExecutor.execute {
+            c.mainExec.execute {
                 storage = st; items = sorted; sel.clear(); adapter.notifyDataSetChanged()
                 empty.text = T.t("This folder is empty"); empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
                 buildBar()
@@ -375,7 +375,7 @@ class MtpPage(private val host: Host, private val loc: Loc.Mtp) : Page {
     }
 
     private fun work(then: () -> Boolean) {
-        Thread { val ok = try { then() } catch (_: Exception) { false }; c.mainExecutor.execute { if (!ok) c.toast("The phone did not accept that"); load() } }.start()
+        Thread { val ok = try { then() } catch (_: Exception) { false }; c.mainExec.execute { if (!ok) c.toast("The phone did not accept that"); load() } }.start()
     }
 
     private fun save(fs: List<Mtp.Item>, dest: File) {

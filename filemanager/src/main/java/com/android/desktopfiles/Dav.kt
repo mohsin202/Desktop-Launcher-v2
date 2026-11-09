@@ -13,7 +13,6 @@ import java.net.URLEncoder
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.text.SimpleDateFormat
-import java.util.Base64
 import java.util.Locale
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocketFactory
@@ -95,7 +94,7 @@ object Dav {
         try {
             val out = sock.getOutputStream().buffered(65536)
             val h = StringBuilder("$method $target HTTP/1.1\r\nHost: $host" + (if (port != (if (https) 443 else 80)) ":$port" else "") + "\r\n")
-            if (a.user.isNotEmpty()) h.append("Authorization: Basic " + Base64.getEncoder().encodeToString((a.user + ":" + a.pass).toByteArray()) + "\r\n")
+            if (a.user.isNotEmpty()) h.append("Authorization: Basic " + android.util.Base64.encodeToString((a.user + ":" + a.pass).toByteArray(), android.util.Base64.NO_WRAP) + "\r\n")
             h.append("User-Agent: DesktopFiles\r\nConnection: close\r\n")
             for ((k, v) in hdr) h.append("$k: $v\r\n")
             if (writer != null || method == "PUT" || method == "PROPFIND" || method == "MKCOL") h.append("Content-Length: $len\r\n")

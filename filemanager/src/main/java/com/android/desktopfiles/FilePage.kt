@@ -224,13 +224,13 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
                                 if (n.startsWith(".") || n.lowercase() in skip) continue
                                 if (out.size < 600 && n.lowercase().contains(q)) out.add(f)
                                 val isDir = try { f.isDirectory } catch (_: Throwable) { false }
-                                if (isDir && !(try { java.nio.file.Files.isSymbolicLink(f.toPath()) } catch (_: Throwable) { false })) queue.add(f)
+                                if (isDir && !(Compat.isLink(f))) queue.add(f)
                             }
                             val now = System.currentTimeMillis()
                             if (out.size != shown && now - last > 400) {
                                 last = now; shown = out.size
                                 val part = sortList(ArrayList(out).filter { hidden || !it.name.startsWith(".") })
-                                c.mainExecutor.execute { if (!dead) { items = part; adapter.notifyDataSetChanged(); updateEmpty(); updateStatus() } }
+                                c.mainExec.execute { if (!dead) { items = part; adapter.notifyDataSetChanged(); updateEmpty(); updateStatus() } }
                             }
                         }
                         found = out
@@ -245,7 +245,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             } catch (_: Throwable) {}
             val vis = found.filter { hidden || !it.name.startsWith(".") }.filter { !it.name.startsWith(".trashed-") && it.name != ".deskclip" }
             val sorted = sortList(vis)
-            c.mainExecutor.execute {
+            c.mainExec.execute {
                 items = sorted; message = if (msg.isEmpty() && sorted.isEmpty()) "This folder is empty" else msg
                 loading = false
                 sel.retainAll(items.map { it.absolutePath }.toSet().let { s -> keep.filter { it in s }.toSet() })
@@ -342,7 +342,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         val v = android.widget.ImageView(c)
         v.setImageDrawable(MenuIcon(icon, p.text, c.dp(20))); v.scaleType = android.widget.ImageView.ScaleType.CENTER
         v.alpha = if (on) 1f else 0.35f
-        v.contentDescription = T.t(label); v.tooltipText = T.t(label)
+        v.contentDescription = T.t(label); v.tip(T.t(label))
         if (on) { v.isClickable = true; v.background = Ui.ripple(c, p, null, c.dpf(8f)); v.setOnClickListener(click) }
         cmd.addView(v, LinearLayout.LayoutParams(c.dp(40), c.dp(36)))
     }
@@ -554,7 +554,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             Thread {
                 val msg = if (RootSu.exists(t)) "That name already exists"
                     else if (f.renameTo(t) || (RootSu.ensure() && RootSu.sh("mv " + RootSu.q(f) + " " + RootSu.q(t)))) { Tags.move(f.absolutePath, t.absolutePath); "" } else "Could not rename"
-                c.mainExecutor.execute { if (msg.isNotEmpty()) c.toast(msg); sel.clear(); host.refreshAll() }
+                c.mainExec.execute { if (msg.isNotEmpty()) c.toast(msg); sel.clear(); host.refreshAll() }
             }.start()
         }
     }
@@ -644,7 +644,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
                 val t = if (d.canWrite()) Fs.unique(d, n) else File(d, n)
                 var ok = try { if (folder) t.mkdirs() else t.createNewFile() } catch (_: Exception) { false }
                 if (!ok && RootSu.ensure() && !RootSu.exists(t)) ok = RootSu.sh((if (folder) "mkdir -p " else "touch ") + RootSu.q(t))
-                c.mainExecutor.execute { if (!ok) c.toast("Could not create it"); host.refreshAll() }
+                c.mainExec.execute { if (!ok) c.toast("Could not create it"); host.refreshAll() }
             }.start()
         }
     }

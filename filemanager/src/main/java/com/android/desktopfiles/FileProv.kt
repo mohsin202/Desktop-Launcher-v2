@@ -23,7 +23,7 @@ class FileProv : ContentProvider() {
         l += Environment.getExternalStorageDirectory().absolutePath
         try {
             val sm = context?.getSystemService(android.os.storage.StorageManager::class.java)
-            sm?.storageVolumes?.forEach { v -> v.directory?.let { d -> l += d.absolutePath } }
+            sm?.storageVolumes?.forEach { v -> Vols.dirOf(v)?.let { d -> l += d.absolutePath } }
         } catch (_: Exception) {}
         l += "/storage"
         return l
@@ -31,7 +31,7 @@ class FileProv : ContentProvider() {
 
     private fun fileOf(uri: Uri): File? {
         // checked on the written-out path (no ".." tricks) and on the real path behind any link; a drive is often reached through a link
-        val plain = File(uri.path ?: return null).toPath().normalize().toString()
+        val plain = Compat.normalPath(uri.path ?: return null)
         val real = try { File(plain).canonicalPath } catch (_: Exception) { plain }
         val ok = roots().any { r -> plain == r || plain.startsWith("$r/") || real == r || real.startsWith("$r/") } ||
             real.startsWith("/mnt/media_rw/") || real.startsWith("/mnt/pass_through/")

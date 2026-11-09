@@ -32,14 +32,14 @@ object TrashStore {
             if (!f.exists() || out.containsKey(f.absolutePath)) return
             out[f.absolutePath] = Item(f, m.groupValues[2], m.groupValues[1].toLongOrNull() ?: 0L)
         }
-        try {
+        if (android.os.Build.VERSION.SDK_INT >= 30) try {
             val b = Bundle()
             b.putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_ONLY)
             c.contentResolver.query(MediaStore.Files.getContentUri("external"), arrayOf(MediaStore.Files.FileColumns.DATA), b, null)?.use {
                 while (it.moveToNext()) it.getString(0)?.let { p -> add(File(p)) }
             }
         } catch (_: Exception) {}
-        if (Environment.isExternalStorageManager()) {
+        if (c.hasAllFiles()) {
             fun walk(d: File, depth: Int) {
                 if (depth > 6) return
                 val kids = try { d.listFiles() } catch (_: Exception) { null } ?: return

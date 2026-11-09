@@ -112,6 +112,19 @@ object Nearby {
         // devices heard a moment ago stay listed while a picker or dialog was in front (they expire 8 s after the next silence)
         val now = System.currentTimeMillis(); peerMap.values.forEach { it.seen = now }
         if (running) return
+        startThreads(c)
+    }
+
+    /** Starts the sockets again (after the local-network permission was granted, which Android 17 asks for on first start). */
+    @Synchronized fun restart(c: Context) {
+        if (users <= 0) return
+        running = false
+        try { udp?.close() } catch (_: Exception) {}
+        try { server?.close() } catch (_: Exception) {}
+        startThreads(c)
+    }
+
+    private fun startThreads(c: Context) {
         running = true
         try {
             val wm = c.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager

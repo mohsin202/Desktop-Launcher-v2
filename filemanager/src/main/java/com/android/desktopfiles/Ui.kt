@@ -43,17 +43,18 @@ object Ui {
 
     fun pal(c: Context): Pal {
         val dark = isDark(c)
-        fun col(id: Int) = try { c.getColor(id) } catch (_: Exception) { 0xFF888888.toInt() }
+        // wallpaper colours exist from Android 12; older systems get a fixed blue palette
+        fun col(id: Int, fb: Long) = if (android.os.Build.VERSION.SDK_INT >= 31) (try { c.getColor(id) } catch (_: Exception) { fb.toInt() }) else fb.toInt()
         return if (dark) Pal(true,
-            bg = col(android.R.color.system_neutral1_900), bar = col(android.R.color.system_accent1_900), barEnd = col(android.R.color.system_accent2_900),
-            card = col(android.R.color.system_neutral1_800), line = 0x33FFFFFF, text = col(android.R.color.system_neutral1_50),
-            sub = col(android.R.color.system_neutral2_300), accent = col(android.R.color.system_accent1_200),
-            accentSoft = col(android.R.color.system_accent1_700), hover = 0x22FFFFFF, sel = 0x44A0C4FF, warn = 0xFFFFB4AB.toInt())
+            bg = col(android.R.color.system_neutral1_900, 0xFF1B1B1FL), bar = col(android.R.color.system_accent1_900, 0xFF041E49L), barEnd = col(android.R.color.system_accent2_900, 0xFF001D35L),
+            card = col(android.R.color.system_neutral1_800, 0xFF303033L), line = 0x33FFFFFF, text = col(android.R.color.system_neutral1_50, 0xFFF1F0F4L),
+            sub = col(android.R.color.system_neutral2_300, 0xFFC4C6D0L), accent = col(android.R.color.system_accent1_200, 0xFFA8C7FAL),
+            accentSoft = col(android.R.color.system_accent1_700, 0xFF0842A0L), hover = 0x22FFFFFF, sel = 0x44A0C4FF, warn = 0xFFFFB4AB.toInt())
         else Pal(false,
-            bg = col(android.R.color.system_neutral1_50), bar = col(android.R.color.system_accent1_100), barEnd = col(android.R.color.system_accent2_100),
-            card = col(android.R.color.system_neutral1_10), line = 0x1F000000, text = col(android.R.color.system_neutral1_900),
-            sub = col(android.R.color.system_neutral2_600), accent = col(android.R.color.system_accent1_600),
-            accentSoft = col(android.R.color.system_accent1_100), hover = 0x14000000, sel = 0x33478CFF, warn = 0xFFBA1A1A.toInt())
+            bg = col(android.R.color.system_neutral1_50, 0xFFF1F0F4L), bar = col(android.R.color.system_accent1_100, 0xFFD3E3FDL), barEnd = col(android.R.color.system_accent2_100, 0xFFDDE3EAL),
+            card = col(android.R.color.system_neutral1_10, 0xFFFDFBFFL), line = 0x1F000000, text = col(android.R.color.system_neutral1_900, 0xFF1B1B1FL),
+            sub = col(android.R.color.system_neutral2_600, 0xFF5C5F69L), accent = col(android.R.color.system_accent1_600, 0xFF0B57D0L),
+            accentSoft = col(android.R.color.system_accent1_100, 0xFFD3E3FDL), hover = 0x14000000, sel = 0x33478CFF, warn = 0xFFBA1A1A.toInt())
     }
 
     fun rounded(color: Int, r: Float, stroke: Int = 0, sw: Int = 0): GradientDrawable = GradientDrawable().also {

@@ -30,15 +30,15 @@ class JobsService : Service() {
         val pct = (Jobs.fraction() * 100).toInt()
         val title = if (act.size == 1) act[0].title else act.size.toString() + " operations running"
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_IMMUTABLE)
-        return Notification.Builder(this, "jobs")
+        return (if (android.os.Build.VERSION.SDK_INT >= 26) Notification.Builder(this, "jobs") else Notification.Builder(this).setPriority(Notification.PRIORITY_LOW))
             .setSmallIcon(android.R.drawable.stat_notify_sync).setContentTitle("Desktop Files").setContentText(title)
             .setProgress(100, pct, act.all { it.total <= 0 }).setOngoing(true).setOnlyAlertOnce(true).setContentIntent(open).build()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel("jobs", "File operations", NotificationManager.IMPORTANCE_LOW))
-        try { startForeground(1, build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) } catch (_: Exception) { stopSelf(); return START_NOT_STICKY }
+        if (android.os.Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(NotificationChannel("jobs", "File operations", NotificationManager.IMPORTANCE_LOW))
+        try { if (android.os.Build.VERSION.SDK_INT >= 29) startForeground(1, build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else startForeground(1, build()) } catch (_: Exception) { stopSelf(); return START_NOT_STICKY }
         h.removeCallbacks(tick); h.post(tick)
         return START_NOT_STICKY
     }

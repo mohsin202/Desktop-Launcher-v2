@@ -43,7 +43,7 @@ object Jobs {
     fun start(job: Job, work: (Job) -> Unit, then: () -> Unit = {}) {
         list.add(job)
         changed()
-        appCtx?.let { try { it.startForegroundService(Intent(it, JobsService::class.java)) } catch (_: Exception) {} }
+        appCtx?.let { try { val si = Intent(it, JobsService::class.java); if (android.os.Build.VERSION.SDK_INT >= 26) it.startForegroundService(si) else it.startService(si) } catch (_: Exception) {} }
         Thread {
             try { work(job) } catch (_: Throwable) { job.failed++ }
             job.finished = true

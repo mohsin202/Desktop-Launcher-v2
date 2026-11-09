@@ -433,7 +433,7 @@ class SendPage(private val host: Host, private val kind: String) : Page {
                     i = j
                 }
             }
-            c.mainExecutor.execute {
+            c.mainExec.execute {
                 entries = out; rows = rs; sel.retainAll(out.map { it.key }.toSet())
                 empty.text = T.t("Nothing found"); empty.visibility = if (out.isEmpty()) View.VISIBLE else View.GONE
                 changed()

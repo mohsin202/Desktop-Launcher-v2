@@ -122,7 +122,7 @@ class MediaPage(private val host: Host, private val kind: String) : Page {
                 }
             } catch (_: Exception) {}
             val out = map.values.filter { it.dir.exists() }.sortedWith(compareByDescending<Group> { it.count }.thenBy { it.dir.name.lowercase() })
-            c.mainExecutor.execute {
+            c.mainExec.execute {
                 groups = out; loading = false; adapter.notifyDataSetChanged()
                 empty.text = T.t("No " + Kinds.title(kind).lowercase() + " found")
                 empty.visibility = if (groups.isEmpty()) View.VISIBLE else View.GONE
@@ -219,7 +219,7 @@ class AppsPage(private val host: Host) : Page {
                     App(it.packageName, try { it.loadLabel(pm).toString() } catch (_: Exception) { it.packageName }, it, v, it.flags and ApplicationInfo.FLAG_SYSTEM != 0)
                 }.sortedBy { it.label.lowercase() }
             } catch (_: Exception) { emptyList() }
-            c.mainExecutor.execute { all = l; filter() }
+            c.mainExec.execute { all = l; filter() }
         }.start()
     }
 

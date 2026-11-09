@@ -90,13 +90,19 @@ class Vol(val name: String, val dir: File?, val kind: Kind, val total: Long, val
 }
 
 object Vols {
+    /** The folder a storage volume is mounted at: VolumeDirectory from Android 11, the volume's id under /storage before that. */
+    fun dirOf(v: android.os.storage.StorageVolume): File? =
+        if (android.os.Build.VERSION.SDK_INT >= 30) v.directory
+        else if (v.isPrimary) android.os.Environment.getExternalStorageDirectory()
+        else v.uuid?.let { File("/storage/$it") }?.takeIf { it.exists() }
+
     fun list(c: Context): List<Vol> {
         val out = ArrayList<Vol>()
         out += Vol("Root", File("/"), Vol.Kind.ROOT, 0, 0)
         try {
             val sm = c.getSystemService(StorageManager::class.java)
             for (v in sm.storageVolumes) {
-                val d = v.directory ?: continue
+                val d = dirOf(v) ?: continue
                 if (v.state != android.os.Environment.MEDIA_MOUNTED && v.state != android.os.Environment.MEDIA_MOUNTED_READ_ONLY) continue
                 var total = 0L; var free = 0L
                 try { val s = StatFs(d.path); total = s.totalBytes; free = s.availableBytes } catch (_: Exception) {}

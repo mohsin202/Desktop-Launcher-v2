@@ -73,7 +73,7 @@ class ColumnsPage(private val host: Host, private val start: File) : Page {
                     else -> compareBy<File> { it.name.lowercase() }
                 }
                 val s = vis.sortedWith(cmp).let { if (asc) it else it.reversed() }.sortedBy { if (it.isDirectory) 0 else 1 }
-                c.mainExecutor.execute { items = s; loading = false; adapter.notifyDataSetChanged() }
+                c.mainExec.execute { items = s; loading = false; adapter.notifyDataSetChanged() }
             }.start()
         }
     }

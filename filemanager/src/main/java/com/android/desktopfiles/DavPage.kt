@@ -184,7 +184,7 @@ class DavPage(private val host: Host, private val loc: Loc.Dav) : Page {
             var l: List<Dav.Entry> = emptyList()
             try { l = a.list(loc.path) } catch (e: Exception) { err = e.message ?: "Could not connect" }
             val sorted = l.sortedWith(compareBy<Dav.Entry>({ !it.dir }, { it.name.lowercase() }))
-            c.mainExecutor.execute {
+            c.mainExec.execute {
                 items = sorted; adapter.notifyDataSetChanged()
                 empty.text = if (err.isNotEmpty()) T.t(err) else T.t("This folder is empty")
                 empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
@@ -211,7 +211,7 @@ class DavPage(private val host: Host, private val loc: Loc.Dav) : Page {
         Thread {
             var err = ""
             try { then() } catch (e: Exception) { err = e.message ?: "Failed" }
-            c.mainExecutor.execute { if (err.isNotEmpty()) c.toast(err); load() }
+            c.mainExec.execute { if (err.isNotEmpty()) c.toast(err); load() }
         }.start()
     }
 

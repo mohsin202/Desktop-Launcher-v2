@@ -60,8 +60,8 @@ object Thumbs {
             val bmp: Bitmap? = try {
                 when {
                     isApk -> if (e == "apk") apkIcon(iv.context, real, px) else Apks.bundleIcon(iv.context, real, px)
-                    Fs.isImage(real) -> ThumbnailUtils.createImageThumbnail(real, Size(px, px), null)
-                    else -> ThumbnailUtils.createVideoThumbnail(real, Size(px, px), null)
+                    Fs.isImage(real) -> if (android.os.Build.VERSION.SDK_INT >= 29) ThumbnailUtils.createImageThumbnail(real, Size(px, px), null) else oldImage(real, px)
+                    else -> if (android.os.Build.VERSION.SDK_INT >= 29) ThumbnailUtils.createVideoThumbnail(real, Size(px, px), null) else oldVideo(real, px)
                 }
             } catch (_: Throwable) { null }
             if (bmp != null) {
@@ -69,6 +69,30 @@ object Thumbs {
                 main.post { if (iv.tag == key) iv.setImageDrawable(wrap(iv.context, bmp, badge)) }
             }
         }
+    }
+
+    /** Android 7-9: a picture shrunk while it is read, turned upright by its EXIF note. */
+    private fun oldImage(f: File, px: Int): Bitmap? {
+        val o = android.graphics.BitmapFactory.Options(); o.inJustDecodeBounds = true
+        android.graphics.BitmapFactory.decodeFile(f.path, o)
+        if (o.outWidth <= 0) return null
+        var s = 1; while (o.outWidth / (s * 2) >= px && o.outHeight / (s * 2) >= px) s *= 2
+        val d = android.graphics.BitmapFactory.Options(); d.inSampleSize = s
+        val b = android.graphics.BitmapFactory.decodeFile(f.path, d) ?: return null
+        val deg = try { when (android.media.ExifInterface(f.path).getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1)) { 6 -> 90f; 3 -> 180f; 8 -> 270f; else -> 0f } } catch (_: Exception) { 0f }
+        val m = android.graphics.Matrix(); if (deg != 0f) m.postRotate(deg)
+        val k = px.toFloat() / maxOf(b.width, b.height); if (k < 1f) m.postScale(k, k)
+        return if (m.isIdentity) b else Bitmap.createBitmap(b, 0, 0, b.width, b.height, m, true)
+    }
+
+    private fun oldVideo(f: File, px: Int): Bitmap? {
+        val r = android.media.MediaMetadataRetriever()
+        return try {
+            r.setDataSource(f.path)
+            val b = r.getFrameAtTime(-1) ?: return null
+            val k = px.toFloat() / maxOf(b.width, b.height)
+            if (k < 1f) Bitmap.createScaledBitmap(b, (b.width * k).toInt().coerceAtLeast(1), (b.height * k).toInt().coerceAtLeast(1), true) else b
+        } catch (_: Exception) { null } finally { try { r.release() } catch (_: Exception) {} }
     }
 
     private fun wrap(c: Context, b: Bitmap, badge: Boolean): Drawable {

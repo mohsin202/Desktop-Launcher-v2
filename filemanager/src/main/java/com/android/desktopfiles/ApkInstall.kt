@@ -194,7 +194,7 @@ object Apks {
 
     private fun run(act: Activity, pack: Pack, chosen: List<Part>) {
         val pmgr = act.packageManager
-        if (!pmgr.canRequestPackageInstalls()) {
+        if (android.os.Build.VERSION.SDK_INT >= 26 && !pmgr.canRequestPackageInstalls()) {
             act.toast("Allow this app to install apps, then try again")
             try { act.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + act.packageName))) } catch (_: Exception) {}
             return
@@ -243,7 +243,7 @@ object Apks {
             try {
                 val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
                 if (pack.pkg.contains('.')) params.setAppPackageName(pack.pkg)
-                params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                if (android.os.Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
                 val id = pi.createSession(params)
                 val s = pi.openSession(id); session = s
                 val total = chosen.sumOf { maxOf(it.size, 0L) }.coerceAtLeast(1L)
@@ -283,8 +283,8 @@ object Apks {
                     }
                 }
                 rcv = r
-                act.registerReceiver(r, IntentFilter(action), Context.RECEIVER_NOT_EXPORTED)
-                val pend = PendingIntent.getBroadcast(act, id, Intent(action).setPackage(act.packageName), PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                Compat.registerPrivate(act, r, IntentFilter(action))
+                val pend = PendingIntent.getBroadcast(act, id, Intent(action).setPackage(act.packageName), Compat.MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                 s.commit(pend.intentSender)
             } catch (e: Throwable) {
                 try { rcv?.let { act.unregisterReceiver(it) } } catch (_: Exception) {}

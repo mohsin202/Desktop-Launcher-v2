@@ -54,7 +54,7 @@ object Mtp {
                     else { val x = MtpDevice(d); if (x.open(conn)) m = x else err = "The phone did not answer. Set its USB mode to File transfer." }
                 } catch (e: Exception) { err = e.message ?: "Error" }
                 if (m != null) synchronized(open) { open[d.deviceName] = m }
-                c.mainExecutor.execute { done(m, err) }
+                c.mainExec.execute { done(m, err) }
             }.start()
         }
         if (um.hasPermission(d)) { openNow(); return }
@@ -64,8 +64,8 @@ object Mtp {
                 if (i.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) openNow() else done(null, "USB permission was not given")
             }
         }
-        c.applicationContext.registerReceiver(rcv, IntentFilter(PERM), Context.RECEIVER_NOT_EXPORTED)
-        val pi = PendingIntent.getBroadcast(c, 0, Intent(PERM).setPackage(c.packageName), PendingIntent.FLAG_MUTABLE)
+        Compat.registerPrivate(c.applicationContext, rcv, IntentFilter(PERM))
+        val pi = PendingIntent.getBroadcast(c, 0, Intent(PERM).setPackage(c.packageName), Compat.MUTABLE)
         um.requestPermission(d, pi)
     }
 

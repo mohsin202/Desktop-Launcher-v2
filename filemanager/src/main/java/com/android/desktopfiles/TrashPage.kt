@@ -109,7 +109,7 @@ class TrashPage(private val host: Host) : Page {
         loading = true; updateStatus()
         Thread {
             val l = TrashStore.list(c)
-            c.mainExecutor.execute {
+            c.mainExec.execute {
                 items = l; loading = false
                 val keep = l.map { it.file.absolutePath }.toSet(); sel.retainAll(keep)
                 adapter.notifyDataSetChanged(); buildBar(); updateStatus()

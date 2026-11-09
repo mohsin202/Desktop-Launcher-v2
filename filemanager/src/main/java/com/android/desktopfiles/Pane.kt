@@ -42,7 +42,7 @@ class DetailsPane(private val c: Context) {
             val v = row("Total size", "calculating…")
             Thread {
                 val t = files.sumOf { Ops.sizeOf(it) }
-                c.mainExecutor.execute { if (g == gen) v.text = Fs.size(c, t) }
+                c.mainExec.execute { if (g == gen) v.text = Fs.size(c, t) }
             }.start()
             return
         }
@@ -60,7 +60,7 @@ class DetailsPane(private val c: Context) {
         row("Modified", Fs.date(real.lastModified()))
         if (real.isDirectory) Thread {
             val t = Ops.sizeOf(real)
-            c.mainExecutor.execute { if (g == gen) sz.text = Fs.size(c, t) }
+            c.mainExec.execute { if (g == gen) sz.text = Fs.size(c, t) }
         }.start()
         val e = real.extension.lowercase()
         if (real.isFile && e in setOf("txt", "md", "log", "csv", "json", "xml", "html", "kt", "java", "py", "js", "css", "ini", "conf", "yml", "yaml", "srt") && real.length() < 400_000) {
@@ -70,7 +70,7 @@ class DetailsPane(private val c: Context) {
             col.addView(tv)
             Thread {
                 val s = try { real.bufferedReader().use { r -> val cb = CharArray(2000); val n = r.read(cb); if (n > 0) String(cb, 0, n) else "" } } catch (_: Exception) { "" }
-                c.mainExecutor.execute { if (g == gen) tv.text = s }
+                c.mainExec.execute { if (g == gen) tv.text = s }
             }.start()
         }
     }
