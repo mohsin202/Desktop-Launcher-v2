@@ -185,7 +185,12 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
 
     // ---------- loading ----------
     @Volatile private var dead = false
-    override fun destroy() { dead = true }
+    private var hadPeers = Nearby.connected()
+    private val nearL: () -> Unit = { if (Nearby.connected() != hadPeers) { hadPeers = !hadPeers; buildBar() } }
+
+    init { Nearby.listen(nearL) }
+
+    override fun destroy() { dead = true; Nearby.unlisten(nearL) }
 
     override fun refresh() {
         loading = true; updateEmpty()
@@ -366,6 +371,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         ibtn("rename", "Rename", n == 1) { rename(selFiles()[0]) }
         ibtn("share", "Share", n > 0 && selFiles().any { it.isFile }) { Fs.share(c, selFiles()) }
         ibtn("delete", "Delete", n > 0) { delete(selFiles(), false) }
+        if (Nearby.connected()) ibtn("send", "Send to nearby device", n > 0) { v -> NearUi.sendFiles(host.act, v, selFiles()) }
         sep()
         if ((loc as? Loc.Dir)?.only?.isNotEmpty() == true) btn("Show all files") { host.go(Loc.Dir(loc.path)) }
         btn("Sort ▾") { v -> Pop(c).showBelow(v, sortItems()) }
@@ -695,6 +701,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
                 menu += MenuItem("Extract to folder") { extract(target, true) }
                 menu += MenuItem("Extract here") { extract(target, false) }
             }
+            if (Nearby.connected()) menu += MenuItem("Send to nearby device", sub = Nearby.peers().map { pr -> MenuItem(pr.name) { Nearby.send(c, pr, "Sending " + fs.size + " item(s)") { Nearby.itemsOf(fs) }; host.showStatus() } })
             menu += MenuItem("Compress to…", dir != null || loc is Loc.Search) { compressDialog(fs) }
             menu += MenuItem("Copy as path", hint = "Ctrl+Shift+C") { copyPath(fs) }
             menu += MenuItem("Properties") { properties(fs) }

@@ -30,6 +30,9 @@ class DetailsPane(private val c: Context) {
         col.addView(v); return v
     }
 
+    /** Shows another view (the transfers of a device, the history of received files) instead of file details. */
+    fun showView(v: View) { gen++; col.removeAllViews(); col.addView(v) }
+
     fun show(files: List<File>) {
         val g = ++gen
         col.removeAllViews()

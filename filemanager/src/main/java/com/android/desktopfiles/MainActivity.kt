@@ -55,6 +55,12 @@ open class MainActivity : Activity(), Host {
     private var sideOpen = false
     private var wide = true
     private var statusBtn: View? = null
+    private var peerBar: PeerBar? = null
+    private var peerSig = ""
+    private val nearL: () -> Unit = {
+        val sig = Nearby.peers().joinToString(",") { it.id + it.name }
+        if (sig != peerSig) { peerSig = sig; peerBar?.rebuild(); if (tabs.getOrNull(cur)?.loc is Loc.Home) page?.refresh() }
+    }
     private var rwBtn: TextView? = null
     private var addrBox: FrameLayout? = null
     private var searchBox: EditText? = null
@@ -76,10 +82,10 @@ open class MainActivity : Activity(), Host {
     private var treeCb: ((Uri) -> Unit)? = null
 
     /** Opens Android's folder picker (Google Drive, OneDrive, Dropbox and other apps appear in it) and hands back the chosen folder. */
-    fun pickTree(cb: (Uri) -> Unit) {
+    fun pickTree(initial: Uri? = null, cb: (Uri) -> Unit) {
         treeCb = cb
         try {
-            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).also { if (initial != null) it.putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, initial) }.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
                 Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION), 7731)
         } catch (_: Exception) { treeCb = null; toast("Could not open the picker") }
     }
@@ -161,6 +167,28 @@ open class MainActivity : Activity(), Host {
         super.onResume()
         val now = Environment.isExternalStorageManager()
         if (now != hadAccess) { hadAccess = now; buildUi() } else page?.refresh()
+        if (now) { Nearby.resume(this); NearUi.install(this); Nearby.listen(nearL); nearL() }
+    }
+
+    override fun onPause() { super.onPause(); Nearby.unlisten(nearL); Nearby.pause() }
+
+    override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
+        super.onRequestPermissionsResult(code, perms, res)
+        Nearby.permResult(code, res.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED, this)
+    }
+
+    private val openReceived: (File) -> Unit = { f -> if (f.isDirectory) go(Loc.Dir(f.absolutePath)) else openFile(f) }
+
+    private fun paneOn() = Store.bool(this, "pane", false) && widthDp() >= 900
+
+    private fun onPeerTap(peer: Nearby.Peer) {
+        val d = details
+        if (paneOn() && d != null) d.showView(XferView(this, peer.id, false, openReceived)) else go(Loc.Special("xfer:" + peer.id))
+    }
+
+    private fun openHistory() {
+        val d = details
+        if (paneOn() && d != null) d.showView(XferView(this, null, true, openReceived)) else go(Loc.Special("history"))
     }
 
     override fun onConfigurationChanged(n: Configuration) { cfgW = n.screenWidthDp; super.onConfigurationChanged(n); buildUi() }
@@ -190,7 +218,10 @@ open class MainActivity : Activity(), Host {
         is Loc.Dir -> if (l.only.isNotEmpty()) File(l.path).name + " (" + l.only + ")" else if (l.path == Fs.ext().absolutePath) "Internal storage" else if (l.path == "/") "Root" else File(l.path).name
         is Loc.Trash -> "Trash"
         is Loc.Search -> "Search: " + l.q
-        is Loc.Special -> if (l.kind.startsWith("tag:")) (Tags.byId(l.kind.substring(4))?.name ?: "Tag") else l.kind.replaceFirstChar { it.uppercase() }
+        is Loc.Special -> if (l.kind.startsWith("send:")) T.t("Send") + " " + T.t(when (l.kind.substring(5)) { "photos" -> "Pictures"; "videos" -> "Videos"; "music" -> "Music"; else -> "Apps" }).lowercase()
+            else if (l.kind.startsWith("xfer:")) (Nearby.peer(l.kind.substring(5))?.name ?: T.t("Transfers"))
+            else if (l.kind == "history") T.t("Received files")
+            else if (l.kind.startsWith("tag:")) (Tags.byId(l.kind.substring(4))?.name ?: "Tag") else l.kind.replaceFirstChar { it.uppercase() }
     }
 
     private fun buildUi() {
@@ -221,6 +252,8 @@ open class MainActivity : Activity(), Host {
         top.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(p.bar, p.barEnd))
         root.addView(top, LinearLayout.LayoutParams(MATCH, WRAP))
         top.addView(buildTabs(), LinearLayout.LayoutParams(MATCH, dp(40)))
+        val pb = PeerBar(this) { onPeerTap(it) }; peerBar = pb
+        top.addView(pb, LinearLayout.LayoutParams(MATCH, WRAP)); pb.rebuild()
         top.addView(buildToolbar(), LinearLayout.LayoutParams(MATCH, dp(50)))
 
         val body = FrameLayout(this)
@@ -326,6 +359,7 @@ open class MainActivity : Activity(), Host {
         val rw = Ui.text(this, "RW", 12f, 0xFFFFFFFF.toInt(), true); rwBtn = rw
         rw.gravity = Gravity.CENTER; rw.visibility = View.GONE; rw.isClickable = true
         bar.addView(rw, LinearLayout.LayoutParams(dp(40), dp(28)).also { it.marginEnd = dp(4) })
+        bar.addView(Ui.iconButton(this, p, "history") { openHistory() }.also { it.contentDescription = T.t("Received files"); it.tooltipText = T.t("Received files") })
         val sb = StatusBtn(this, p) { if (StatusPanel.showing()) StatusPanel.hide() else showStatus() }
         statusBtn = sb
         bar.addView(sb, LinearLayout.LayoutParams(dp(40), dp(40)))
@@ -343,6 +377,9 @@ open class MainActivity : Activity(), Host {
             null,
             MenuItem("Details pane (Alt+P)", checked = Store.bool(this, "pane", false)) { Store.setBool(this, "pane", !Store.bool(this, "pane", false)); showTab() },
             MenuItem("Dual pane", checked = Store.bool(this, "dual", false)) { Store.setBool(this, "dual", !Store.bool(this, "dual", false)); showTab() },
+            null,
+            MenuItem("Device name…") { Dialogs.ask(this, "Device name", Nearby.myName(this), "Save") { n -> Store.setStr(this, "nearName", n.trim()) } },
+            MenuItem("Connect by IP address…") { Dialogs.ask(this, "IP address of the other device (this device: " + Nearby.localIps().joinToString(", ") + ")", "", "Connect") { ip -> Nearby.addManual(this, ip) } },
             MenuItem("Language", sub = listOf(
                 MenuItem("System", checked = Store.str(this, "lang", "system") == "system") { Store.setStr(this, "lang", "system"); recreate() },
                 MenuItem("English", checked = Store.str(this, "lang", "system") == "en") { Store.setStr(this, "lang", "en"); recreate() },
@@ -594,7 +631,14 @@ open class MainActivity : Activity(), Host {
         is Loc.Dir -> if (Store.str(this, "view", "details") == "columns" && l.only.isEmpty() && !Store.bool(this, "dual", false)) ColumnsPage(this, File(l.path)) else FilePage(this, l)
         is Loc.Search -> FilePage(this, l)
         is Loc.Trash -> TrashPage(this)
-        is Loc.Special -> if (l.kind == "apps") AppsPage(this) else if (l.kind.startsWith("tag:")) FilePage(this, l) else MediaPage(this, l.kind)
+        is Loc.Special -> when {
+            l.kind == "apps" -> AppsPage(this)
+            l.kind.startsWith("send:") -> SendPage(this, l.kind.substring(5))
+            l.kind.startsWith("xfer:") -> XferPage(this, l.kind.substring(5), false)
+            l.kind == "history" -> XferPage(this, null, true)
+            l.kind.startsWith("tag:") -> FilePage(this, l)
+            else -> MediaPage(this, l.kind)
+        }
     }
 
     private fun showTab() {

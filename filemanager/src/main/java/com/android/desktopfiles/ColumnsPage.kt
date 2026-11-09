@@ -156,6 +156,7 @@ class ColumnsPage(private val host: Host, private val start: File) : Page {
             items += if (Store.isPinned(c, pk)) MenuItem("Unpin from Quick access") { Store.unpin(c, pk); host.pinsChanged(); c.toast("Unpinned") }
                 else MenuItem("Pin to Quick access") { Store.pin(c, pk); host.pinsChanged(); c.toast("Pinned") }
         }
+        if (Nearby.connected()) items += MenuItem("Send to nearby device", sub = Nearby.peers().map { pr -> MenuItem(pr.name) { Nearby.send(c, pr, "Sending 1 item(s)") { Nearby.itemsOf(listOf(f)) }; host.showStatus() } })
         items += null
         items += MenuItem("Cut") { Clip.set(c, listOf(f), true); c.toast("Cut 1") }
         items += MenuItem("Copy") { Clip.set(c, listOf(f), false); c.toast("Copied 1") }

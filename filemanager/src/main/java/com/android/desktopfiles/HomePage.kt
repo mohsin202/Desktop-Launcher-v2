@@ -137,6 +137,24 @@ class HomePage(private val host: Host) : Page {
             col.addView(bar, LinearLayout.LayoutParams(MATCH, WRAP).also { it.topMargin = c.dp(10) })
         }
 
+        if (Nearby.connected()) section("Send", "send") {
+            val f = flow()
+            val act = host.act
+            fun tile(icon: android.graphics.drawable.Drawable, name: String, go: (View) -> Unit) {
+                val h = arrayOfNulls<View>(1)
+                val cd = card(icon, name, 190, click = { h[0]?.let(go) }); h[0] = cd; f.addView(cd)
+            }
+            tile(NearUi.emoji(c, "👤", 0xFF2E5C8A.toInt()), "Contacts") { NearUi.sendContacts(act, it) }
+            tile(Glyph(Glyph.Kind.PICS), "Pictures") { host.go(Loc.Special("send:photos")) }
+            tile(Glyph(Glyph.Kind.MUSIC), "Music") { host.go(Loc.Special("send:music")) }
+            tile(Glyph(Glyph.Kind.VIDEOS), "Videos") { host.go(Loc.Special("send:videos")) }
+            tile(NearUi.emoji(c, "💬", 0xFF1F7A5A.toInt()), "Messages") { NearUi.sendMessages(act, it) }
+            tile(Glyph(Glyph.Kind.APPS), "Apps") { host.go(Loc.Special("send:apps")) }
+            tile(Glyph(Glyph.Kind.FOLDER), "Android/data") { NearUi.sendTree(act, it, "data") }
+            tile(Glyph(Glyph.Kind.FOLDER), "Android/obb") { NearUi.sendTree(act, it, "obb") }
+            f
+        }
+
         section("Quick access", "qa") {
             val f = flow()
             for (item in Store.pins(c)) {
@@ -168,7 +186,7 @@ class HomePage(private val host: Host) : Page {
                     box.addView(bar, LinearLayout.LayoutParams(MATCH, c.dp(6)).also { it.topMargin = c.dp(6); it.bottomMargin = c.dp(4) })
                     box.addView(Ui.text(c, Fs.size(c, v.free) + " free of " + Fs.size(c, v.total), 11f, p.sub))
                     val d = v.dir
-                    f.addView(card(Places.volGlyph(v), v.name, 270, box, click = { if (d != null) host.go(Loc.Dir(d.absolutePath)) }))
+                    f.addView(card(Places.volGlyph(v), v.name, 270, box, click = { if (d != null) host.go(Loc.Dir(d.absolutePath)) }, long = if (d != null) ({ vw -> volMenu(vw, d) }) else null))
                 }
             }
             for (ph in Mtp.list(c)) {
@@ -198,12 +216,32 @@ class HomePage(private val host: Host) : Page {
                 val loc = Ui.text(c, f.parent ?: "", 11f, p.sub); loc.maxLines = 1; loc.ellipsize = android.text.TextUtils.TruncateAt.START
                 row.addView(loc, LinearLayout.LayoutParams(c.dp(220), WRAP))
                 row.setOnClickListener { host.openFile(f) }
-                row.setOnContextClickListener { _ -> f.parentFile?.let { host.go(Loc.Dir(it.absolutePath)) }; true }
-                row.setOnLongClickListener { f.parentFile?.let { pf -> host.go(Loc.Dir(pf.absolutePath)) }; true }
+                fun recentMenu(v: View) {
+                    val xy = IntArray(2); v.getLocationOnScreen(xy)
+                    Pop(c).showAt(v, xy[0] + v.width / 2, xy[1] + v.height / 2, listOf(
+                        MenuItem("Open") { host.openFile(f) },
+                        MenuItem("Show in folder") { f.parentFile?.let { host.go(Loc.Dir(it.absolutePath)) } },
+                        if (Nearby.connected()) sendItem(f) else null))
+                }
+                row.setOnContextClickListener { recentMenu(row); true }
+                row.setOnLongClickListener { recentMenu(row); true }
                 box.addView(row)
             }
             box
         }
+    }
+
+    private fun sendItem(f: File) = MenuItem("Send to nearby device", sub = Nearby.peers().map { pr ->
+        MenuItem(pr.name) { Nearby.send(c, pr, "Sending 1 item(s)") { Nearby.itemsOf(listOf(f)) }; host.showStatus() }
+    })
+
+    private fun volMenu(v: View, d: File) {
+        val xy = IntArray(2); v.getLocationOnScreen(xy)
+        Pop(c).showAt(v, xy[0] + v.width / 2, xy[1] + v.height / 2, listOf(
+            MenuItem("Open") { host.go(Loc.Dir(d.absolutePath)) },
+            MenuItem("Open in new tab") { host.newTab(Loc.Dir(d.absolutePath)) },
+            MenuItem("Open in new window") { host.newWindow(Loc.Dir(d.absolutePath)) },
+            if (Nearby.connected()) sendItem(d) else null))
     }
 
     private fun placeMenu(v: View, item: String, loc: Loc) {
@@ -212,6 +250,7 @@ class HomePage(private val host: Host) : Page {
             MenuItem("Open") { host.go(loc) },
             MenuItem("Open in new tab") { host.newTab(loc) },
             MenuItem("Open in new window") { host.newWindow(loc) },
+            if (loc is Loc.Dir && Nearby.connected()) sendItem(File(loc.path)) else null,
             null,
             MenuItem("Unpin from Quick access") { Store.unpin(c, item); host.pinsChanged() }
         ))

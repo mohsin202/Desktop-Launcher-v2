@@ -91,6 +91,15 @@ class MenuIcon(private val kind: String, private val color: Int, private val siz
                 }
                 c.drawPath(p, paint)
             }
+            "send" -> {         // a paper plane
+                val pl = Path(); pl.moveTo(3f, 11f); pl.lineTo(21f, 3f); pl.lineTo(14f, 21f); pl.lineTo(11.5f, 13.5f); pl.close()
+                c.drawPath(pl, paint); c.drawLine(11.5f, 13.5f, 21f, 3f, paint)
+            }
+            "history" -> {      // a clock with a counter-clockwise arrow
+                c.drawCircle(12.5f, 12f, 8f, paint)
+                c.drawLine(12.5f, 7.5f, 12.5f, 12f, paint); c.drawLine(12.5f, 12f, 15.7f, 14f, paint)
+                c.drawLine(1.8f, 9.5f, 4.3f, 12.3f, paint); c.drawLine(4.3f, 12.3f, 7f, 9.8f, paint)
+            }
             "menu" -> {
                 c.drawLine(4f, 7f, 20f, 7f, paint); c.drawLine(4f, 12f, 20f, 12f, paint); c.drawLine(4f, 17f, 20f, 17f, paint)
             }
