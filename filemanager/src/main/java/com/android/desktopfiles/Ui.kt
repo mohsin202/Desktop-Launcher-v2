@@ -174,7 +174,7 @@ class Pop(private val c: Context) {
         val fl = FrameLayout(c)
         fl.layoutDirection = Dir.value()
         fl.setPaddingRelative(c.dp(6), c.dp(6), c.dp(6), c.dp(6))
-        fl.addView(sv, FrameLayout.LayoutParams(maxOf(minW, c.dp(190)), WRAP))
+        fl.addView(DeskScroll.wrap(sv, p, false), FrameLayout.LayoutParams(maxOf(minW, c.dp(190)), WRAP))
         fl.isClickable = true
         col = fl
         return fl
@@ -188,7 +188,7 @@ class Pop(private val c: Context) {
         val px = wantX.coerceIn(vis.left + m, maxOf(vis.left + m, vis.right - m - v.measuredWidth))
         val py = y.coerceIn(vis.top + m, maxOf(vis.top + m, vis.bottom - m - h))
         val lp = FrameLayout.LayoutParams(v.measuredWidth, h)
-        lp.leftMargin = px - vis.left; lp.topMargin = py - vis.top
+        lp.gravity = Gravity.LEFT or Gravity.TOP; lp.leftMargin = px - vis.left; lp.topMargin = py - vis.top
         layer?.addView(v, lp)
     }
 

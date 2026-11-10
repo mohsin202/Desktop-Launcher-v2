@@ -87,7 +87,7 @@ object StatusPanel {
         box.addView(head)
         val list = LinearLayout(c); list.orientation = LinearLayout.VERTICAL
         val sv = ScrollView(c); sv.addView(list)
-        box.addView(sv, LinearLayout.LayoutParams(MATCH, WRAP))
+        box.addView(DeskScroll.wrap(sv, p), LinearLayout.LayoutParams(MATCH, WRAP))
 
         fun fill() {
             list.removeAllViews()

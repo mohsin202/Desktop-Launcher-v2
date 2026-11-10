@@ -121,7 +121,7 @@ object SmbAccts {
         val box = LinearLayout(act); box.orientation = LinearLayout.VERTICAL; box.setPaddingRelative(act.dp(20), act.dp(8), act.dp(20), 0)
         for (v in listOf(name, server, user, pass, msg)) box.addView(v)
         val sv = ScrollView(act); sv.addView(box)
-        val dlg = AlertDialog.Builder(act).setTitle(T.t("Add a Windows share (SMB)")).setView(sv)
+        val dlg = AlertDialog.Builder(act).setTitle(T.t("Add a Windows share (SMB)")).setView(DeskScroll.wrap(sv, Ui.pal(act)))
             .setPositiveButton(T.t("Add"), null).setNegativeButton(T.t("Cancel"), null).create()
         dlg.show(); Dir.apply(dlg)
         dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { b ->

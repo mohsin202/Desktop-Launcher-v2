@@ -166,6 +166,18 @@ class DeskScroll(c: Context, private val p: Pal, private val targets: List<AbsLi
             return bar
         }
 
+        /** A ScrollView with the bar on it, as one view (for dialogs, menus and panes). [pad] keeps the content clear of the bar; menus pass false and let the thin bar overlay the end edge. */
+        fun wrap(sv: android.widget.ScrollView, p: Pal, pad: Boolean = true): FrameLayout {
+            val c = sv.context
+            val fr = FrameLayout(c)
+            fr.addView(sv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+            val bar = DeskScroll(c, p, emptyList(), sv)
+            sv.isVerticalScrollBarEnabled = false
+            if (pad) { sv.setPaddingRelative(sv.paddingStart, sv.paddingTop, c.dp(14), sv.paddingBottom); sv.clipToPadding = false }
+            fr.addView(bar, FrameLayout.LayoutParams(c.dp(if (pad) 14 else 10), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.END))
+            return fr
+        }
+
         /** The same bar for a ScrollView (the sidebar, the Home page). */
         fun attachScroll(frame: FrameLayout, p: Pal, sv: android.widget.ScrollView): DeskScroll {
             val c = frame.context

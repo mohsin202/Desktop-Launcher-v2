@@ -49,7 +49,7 @@ object RootUi {
         box.addView(og)
         val rec = CheckBox(act); rec.text = T.t("Apply to everything inside")
         if (f.isDirectory) box.addView(rec)
-        val d = AlertDialog.Builder(act).setTitle(T.t("Permissions: " + f.name)).setView(ScrollView(act).also { it.addView(box) })
+        val d = AlertDialog.Builder(act).setTitle(T.t("Permissions: " + f.name)).setView(DeskScroll.wrap(ScrollView(act).also { it.addView(box) }, Ui.pal(act)))
             .setPositiveButton(T.t("Apply")) { _, _ ->
                 var mode = special
                 for (r in 0..2) mode += (0..2).sumOf { if (grid[r][it]!!.isChecked) 4 shr it else 0 }

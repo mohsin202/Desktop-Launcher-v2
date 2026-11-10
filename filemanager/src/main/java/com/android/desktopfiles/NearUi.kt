@@ -140,7 +140,7 @@ class PeerBar(private val c: Context, private val onTap: (Nearby.Peer) -> Unit) 
         }
     }
 
-    init { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL or Gravity.END; setPaddingRelative(c.dp(12), c.dp(2), c.dp(12), c.dp(2)) }
+    init { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL or Gravity.START; setPaddingRelative(c.dp(12), c.dp(2), c.dp(12), c.dp(2)) }
 
     override fun onAttachedToWindow() { super.onAttachedToWindow(); h.post(tick) }
     override fun onDetachedFromWindow() { super.onDetachedFromWindow(); h.removeCallbacks(tick) }

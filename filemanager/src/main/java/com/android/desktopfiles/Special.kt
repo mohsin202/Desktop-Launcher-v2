@@ -197,7 +197,8 @@ class AppsPage(private val host: Host) : Page {
         })
         root.addView(search, LinearLayout.LayoutParams(MATCH, c.dp(38)).also { it.marginStart = c.dp(16); it.marginEnd = c.dp(16); it.bottomMargin = c.dp(6) })
         list.divider = null; list.adapter = adapter; list.selector = android.graphics.drawable.ColorDrawable(0)
-        root.addView(list, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        val fr2 = FrameLayout(c); fr2.addView(list, FrameLayout.LayoutParams(MATCH, MATCH)); DeskScroll.attach(fr2, p, list)
+        root.addView(fr2, LinearLayout.LayoutParams(MATCH, 0, 1f))
         refresh()
     }
 

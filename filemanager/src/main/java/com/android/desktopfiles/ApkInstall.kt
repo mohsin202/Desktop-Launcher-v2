@@ -187,7 +187,7 @@ object Apks {
         section(DPI, "Configuration: DPI Resources", T.t("Your device DPI is") + " " + pack.dpi)
         section(LANG, "Configuration: Language", null)
         section(FEATURE, "Optional features", null)
-        AlertDialog.Builder(act).setView(sv)
+        AlertDialog.Builder(act).setView(DeskScroll.wrap(sv, p))
             .setPositiveButton(T.t("Install")) { _, _ -> run(act, pack, pack.parts.filter { it.on || it.group == BASE }) }
             .setNegativeButton(T.t("Cancel"), null).showDir()
     }
@@ -224,7 +224,7 @@ object Apks {
         val pi = act.packageManager.packageInstaller
         var session: PackageInstaller.Session? = null
         var cancelled = false
-        val dlg = AlertDialog.Builder(act).setView(sv).setCancelable(false)
+        val dlg = AlertDialog.Builder(act).setView(DeskScroll.wrap(sv, p)).setCancelable(false)
             .setPositiveButton(T.t("Installing"), null)
             .setNegativeButton(T.t("Cancel")) { _, _ -> cancelled = true; try { session?.abandon() } catch (_: Exception) {} }.showDir()
         val ok = dlg.getButton(AlertDialog.BUTTON_POSITIVE); ok.isEnabled = false; ok.alpha = 0.6f

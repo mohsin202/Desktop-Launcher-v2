@@ -172,7 +172,7 @@ object ArchiveDialog {
         }
         refreshAll()
 
-        val dlg = AlertDialog.Builder(act).setView(sv)
+        val dlg = AlertDialog.Builder(act).setView(DeskScroll.wrap(sv, p))
             .setPositiveButton(T.t("OK"), null).setNegativeButton(T.t("Cancel"), null).showDir()
         dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             val n = nameBox.text.toString().trim().replace('/', '_')

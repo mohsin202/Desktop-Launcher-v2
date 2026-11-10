@@ -15,7 +15,8 @@ class DetailsPane(private val c: Context) {
     private val sv = ScrollView(c)
     private val col = LinearLayout(c)
     private var gen = 0
-    val view: View get() = sv
+    private val wrap: View by lazy { DeskScroll.wrap(sv, p) }
+    val view: View get() = wrap
 
     init {
         sv.setBackgroundColor(p.card)

@@ -59,7 +59,7 @@ open class MainActivity : Activity(), Host {
     private var peerSig = ""
     private val nearL: () -> Unit = {
         val sig = Nearby.peers().joinToString(",") { it.id + it.name }
-        if (sig != peerSig) { peerSig = sig; peerBar?.rebuild(); if (tabs.getOrNull(cur)?.loc is Loc.Home) page?.refresh() }
+        if (sig != peerSig) { peerSig = sig; peerBar?.rebuild(); refreshSidebar(); if (tabs.getOrNull(cur)?.loc is Loc.Home) page?.refresh() }
     }
     private var rwBtn: TextView? = null
     private var addrBox: FrameLayout? = null
@@ -540,7 +540,9 @@ open class MainActivity : Activity(), Host {
         sv.addView(col)
         val here = tabs[cur].loc
         sideRows.clear()
+        var skip = false
         fun row(icon: android.graphics.drawable.Drawable, label: String, selected: Boolean, loc: Loc?, badge: Boolean = false, long: ((View) -> Unit)? = null, click: (() -> Unit)? = null) {
+            if (skip) return
             val r = LinearLayout(this); r.gravity = Gravity.CENTER_VERTICAL; r.setPaddingRelative(dp(10), 0, dp(10), 0); r.isClickable = true
             r.background = Ui.ripple(this, p, if (selected) Ui.rounded(p.accentSoft, dpf(10f)) else null, dpf(10f))
             val iv = ImageView(this); iv.setImageDrawable(icon)
@@ -556,10 +558,32 @@ open class MainActivity : Activity(), Host {
             if (loc is Loc.Dir) DnD.attach(this, r) { File(loc.path) } else if (loc is Loc.Trash) DnD.attachTrash(this, r)
             col.addView(r, LinearLayout.LayoutParams(MATCH, dp(40)))
         }
-        fun head(s: String) { col.addView(Ui.text(this, s, 12f, p.sub, true).also { it.setPaddingRelative(dp(10), dp(14), 0, dp(6)) }) }
+        fun head(s: String, key: String) {
+            val closed = Store.collapsed(this, "side:$key")
+            skip = closed
+            val h = Ui.text(this, (if (closed) (if (T.rtl) "◂ " else "▸ ") else "▾ ") + s, 12f, p.sub, true).atStart()
+            h.setPaddingRelative(dp(10), dp(14), dp(10), dp(6)); h.isClickable = true
+            h.setOnClickListener { Store.setCollapsed(this, "side:$key", !closed); refreshSidebar() }
+            col.addView(h, LinearLayout.LayoutParams(MATCH, WRAP))
+        }
 
         row(Glyph(Glyph.Kind.HOME), "Home", here is Loc.Home, Loc.Home)
-        head("Quick access")
+        if (Nearby.connected()) {
+            head("Send", "send")
+            fun sendRow(icon: android.graphics.drawable.Drawable, label: String, go: (View) -> Unit) {
+                val n = sideRows.size
+                row(icon, label, false, null, click = { val v = sideRows.getOrNull(n)?.first; if (v != null) go(v) })
+            }
+            sendRow(NearUi.emoji(this, "👤", 0xFF2E5C8A.toInt()), "Contacts") { NearUi.sendContacts(this, it) }
+            sendRow(Glyph(Glyph.Kind.PICS), "Pictures") { go(Loc.Special("send:photos")) }
+            sendRow(Glyph(Glyph.Kind.MUSIC), "Music") { go(Loc.Special("send:music")) }
+            sendRow(Glyph(Glyph.Kind.VIDEOS), "Videos") { go(Loc.Special("send:videos")) }
+            sendRow(NearUi.emoji(this, "💬", 0xFF1F7A5A.toInt()), "Messages") { NearUi.sendMessages(this, it) }
+            sendRow(Glyph(Glyph.Kind.APPS), "Apps") { go(Loc.Special("send:apps")) }
+            sendRow(Glyph(Glyph.Kind.FOLDER), "Android/data") { NearUi.sendTree(this, it, "data") }
+            sendRow(Glyph(Glyph.Kind.FOLDER), "Android/obb") { NearUi.sendTree(this, it, "obb") }
+        }
+        head("Quick access", "qa")
         for (item in Store.pins(this)) {
             val loc = Places.loc(item) ?: continue
             row(Places.glyph(item), Places.label(item), here == loc, loc, long = { v ->
@@ -568,7 +592,7 @@ open class MainActivity : Activity(), Host {
             })
         }
         if (Tags.all().isNotEmpty()) {
-            head("Tags")
+            head("Tags", "tags")
             for (t in Tags.all()) {
                 val loc = Loc.Special("tag:" + t.id)
                 row(Tags.dot(this, t.color), t.name, here == loc, loc, long = { v ->
@@ -580,7 +604,7 @@ open class MainActivity : Activity(), Host {
                 })
             }
         }
-        head("Drives")
+        head("Drives", "drives")
         for (v in Vols.list(this)) {
             val d = v.dir ?: continue
             if (v.kind == Vol.Kind.ROOT) {
@@ -591,7 +615,7 @@ open class MainActivity : Activity(), Host {
         for (d in Mtp.list(this)) {
             row(Glyph(Glyph.Kind.PHONE), Mtp.label(d), here is Loc.Mtp && here.dev == d.deviceName, null, click = { openPhone(d) })
         }
-        head("Cloud")
+        head("Cloud", "cloud")
         for (a in DavAccts.all(this)) {
             row(Glyph(Glyph.Kind.DRIVE), a.name, here is Loc.Dav && here.acct == a.id, Loc.Dav(a.id), long = { v ->
                 val xy = IntArray(2); v.getLocationOnScreen(xy); Pop(this).showAt(v, xy[0] + v.width / 2, xy[1] + v.height / 2, listOf(MenuItem("Remove account", danger = true) { Dialogs.confirm(this, "Remove account", "Remove \"" + a.name + "\" from this app? Nothing is deleted on the server.", "Remove") { DavAccts.remove(this, a.id); if (here is Loc.Dav && here.acct == a.id) go(Loc.Home) else showTab() } }))

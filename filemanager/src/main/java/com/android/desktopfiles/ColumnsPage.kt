@@ -5,6 +5,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.AbsListView
 import android.widget.BaseAdapter
 import android.widget.HorizontalScrollView
@@ -30,6 +31,7 @@ class ColumnsPage(private val host: Host, private val start: File) : Page {
 
     private inner class Column(val dir: File) {
         val list = ListView(c)
+        val frame = FrameLayout(c).also { it.addView(list, FrameLayout.LayoutParams(MATCH, MATCH)); DeskScroll.attach(it, p, list) }
         var items: List<File> = emptyList()
         var selected: File? = null
         var loading = true
@@ -106,7 +108,7 @@ class ColumnsPage(private val host: Host, private val start: File) : Page {
 
     private fun addColumn(d: File) {
         val col = Column(d); cols.add(col)
-        strip.addView(col.list, LinearLayout.LayoutParams(c.dp(260), MATCH))
+        strip.addView(col.frame, LinearLayout.LayoutParams(c.dp(260), MATCH))
         val sep = View(c); sep.setBackgroundColor(p.line)
         strip.addView(sep, LinearLayout.LayoutParams(c.dp(1), MATCH))
         col.load()
@@ -119,7 +121,7 @@ class ColumnsPage(private val host: Host, private val start: File) : Page {
         while (cols.size > i + 1) cols.removeAt(cols.size - 1)
         strip.removeAllViews()
         for (col in cols) {
-            strip.addView(col.list, LinearLayout.LayoutParams(c.dp(260), MATCH))
+            strip.addView(col.frame, LinearLayout.LayoutParams(c.dp(260), MATCH))
             val sep = View(c); sep.setBackgroundColor(p.line)
             strip.addView(sep, LinearLayout.LayoutParams(c.dp(1), MATCH))
         }

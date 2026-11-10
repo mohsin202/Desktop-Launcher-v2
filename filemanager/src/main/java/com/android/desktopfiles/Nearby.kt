@@ -79,7 +79,7 @@ object Nearby {
     fun myName(c: Context): String = Store.str(c, "nearName", "").ifEmpty { Build.MODEL ?: "Android" }
     private fun myType(c: Context) = if (c.resources.configuration.smallestScreenWidthDp >= 600) "pc" else "phone"
 
-    fun peers(): List<Peer> { val now = System.currentTimeMillis(); return peerMap.values.filter { now - it.seen < 8000 }.sortedBy { it.name.lowercase() } }
+    fun peers(): List<Peer> { val now = System.currentTimeMillis(); return peerMap.values.filter { now - it.seen < 16000 }.sortedBy { it.name.lowercase() } }
     fun peer(id: String): Peer? = peers().firstOrNull { it.id == id }
     fun connected() = peers().isNotEmpty()
 
@@ -160,6 +160,7 @@ object Nearby {
                     if (port != 0) {
                         val b = beacon()
                         for (a in bcasts()) try { s.send(DatagramPacket(b, b.size, a, UDP)) } catch (_: Exception) {}
+                        for (pr in peerMap.values.toList()) try { s.send(DatagramPacket(b, b.size, InetAddress.getByName(pr.ip), UDP)) } catch (_: Exception) {}
                         for (ip in Store.list(ctx ?: break, "nearManual")) try { s.send(DatagramPacket(b, b.size, InetAddress.getByName(ip), UDP)) } catch (_: Exception) {}
                     }
                     Thread.sleep(2000)
@@ -183,8 +184,8 @@ object Nearby {
                 val prt = parts[3].toIntOrNull() ?: continue
                 val ip = pk.address.hostAddress ?: continue
                 val known = peerMap[parts[1]]
-                if (known == null) peerMap[parts[1]] = Peer(parts[1], parts[2], ip, prt, parts[4], System.currentTimeMillis()).also { changed() }
-                else { val was = System.currentTimeMillis() - known.seen > 8000; known.name = parts[2]; known.ip = ip; known.port = prt; known.type = parts[4]; known.seen = System.currentTimeMillis(); if (was) changed() }
+                if (known == null) { peerMap[parts[1]] = Peer(parts[1], parts[2], ip, prt, parts[4], System.currentTimeMillis()).also { changed() }; if (port != 0) try { val b = beacon(); s.send(DatagramPacket(b, b.size, pk.address, UDP)) } catch (_: Exception) {} }
+                else { val was = System.currentTimeMillis() - known.seen > 16000; known.name = parts[2]; known.ip = ip; known.port = prt; known.type = parts[4]; known.seen = System.currentTimeMillis(); if (was) changed() }
                 if (peers().size != lastCount) { lastCount = peers().size; changed() }
             }
         } catch (_: Exception) {}
