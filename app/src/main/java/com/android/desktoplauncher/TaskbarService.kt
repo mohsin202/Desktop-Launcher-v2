@@ -38,6 +38,9 @@ interface TaskbarHost {
     /** Long press on Back (0), Home (1) or Recents (2). */
     fun navLong(kind: Int) {}
     fun hideRunning(pkg: String)
+    /** Ends the app's tasks (like swiping it away in Recents); only possible when the launcher is a system app. */
+    fun closeApp(pkg: String) {}
+    fun canClose(): Boolean = false
     fun toggleDrawer()
     fun openSearch()
     val imeShown: Boolean
@@ -70,7 +73,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
     private val dismissed = HashSet<String>()
     private val handler = Handler(Looper.getMainLooper())
     private val pruneTick = object : Runnable {
-        override fun run() { pruneDead(); if (bar != null) { navWin = detectNavWin(); setBarShown(systemBarsVisible() || navWin) }; handler.postDelayed(this, 4000) }
+        override fun run() { if (!syncTasks()) pruneDead(); if (bar != null) { navWin = detectNavWin(); setBarShown(systemBarsVisible() || navWin) }; handler.postDelayed(this, if (SysTasks.trusted(this@TaskbarService)) 1500 else 4000) }
     }
 
     override fun onServiceConnected() {
@@ -195,6 +198,15 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
             }
         } catch (_: Exception) {}
         var changed = false
+        // As a system app the list comes from the system itself (the Recents list): an app is "running" exactly while its task exists.
+        if (syncTasks(fg)) {
+            var c2 = taskCh
+            if (fg != focused) { focused = fg; c2 = true }
+            val ime0 = imeWin || editing
+            if (ime0 != imeShown) { imeShown = ime0; c2 = true }
+            if (c2) bar?.refresh()
+            navWin = detectNavWin(); sync(false); return
+        }
         // Keep a short recent-app list, not just windows visible on this exact frame.
         // Order is kept (first opened = first) so the taskbar does not jump around while scrolling.
         val prevFocus = focused
@@ -214,7 +226,32 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
         sync(false)
     }
 
+    /**
+     * System-app mode: rebuilds [running] from the system's task list. Returns false (and changes nothing) when the system does not
+     * show other apps' tasks, i.e. when the launcher is an ordinary app.
+     */
+    private var taskCh = false
+    private fun syncTasks(fg: String? = null): Boolean {
+        val l = SysTasks.tasks(this) ?: return false
+        val homes = try {
+            packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0).map { it.activityInfo.packageName }.toSet()
+        } catch (_: Exception) { emptySet() }
+        val alive = LinkedHashSet<String>()
+        for (t in l) if (!skip(t.pkg) && t.pkg !in homes) alive += t.pkg
+        dismissed.retainAll(alive)          // a hidden app that has no task any more may come back when it is opened again
+        val f = fg ?: focused
+        val pk = LinkedHashSet<String>()
+        for (p in alive) { if (p in dismissed) { if (p == f && p != focused) dismissed.remove(p) else continue }; pk += p }
+        var ch = running.retainAll(pk)
+        for (p in pk) if (running.add(p)) ch = true
+        taskCh = ch
+        if (ch && bar != null && fg == null) bar?.refresh()
+        return true
+    }
+
     override fun hideRunning(pkg: String) { running.remove(pkg); dismissed.add(pkg); bar?.refresh() }
+    override fun closeApp(pkg: String) { Thread { SysTasks.removeApp(this, pkg); handler.post { running.remove(pkg); bar?.refresh() } }.start() }
+    override fun canClose(): Boolean = SysTasks.trusted(this)
     override fun global(action: Int) { performGlobalAction(action) }
 
     override fun navLong(kind: Int) {
@@ -739,6 +776,7 @@ class TaskbarView(private val ctx: Context, private val svc: TaskbarHost, privat
             items += MenuItem(if (pinned) "Unpin from taskbar" else "Pin to taskbar") {
                 Prefs.toggleInList(ctx, Prefs.K_PINNED, comp.flattenToString())
             }
+            if (running && svc.canClose()) items += MenuItem("Close") { svc.closeApp(comp.packageName) }
             if (running) items += MenuItem("Hide from taskbar") { svc.hideRunning(comp.packageName) }
             val loc = IntArray(2)
             getLocationOnScreen(loc)

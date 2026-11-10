@@ -19,6 +19,7 @@ class App : Application() {
         super.onCreate()
         AppRepo.register(this)
         Thread { AppRepo.load(this) }.start()
+        if (Prefs.bool(this, Prefs.K_FREEFORM, false)) RootSh.probe()
     }
 }
 

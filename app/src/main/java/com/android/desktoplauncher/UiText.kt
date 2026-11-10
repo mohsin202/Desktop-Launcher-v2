@@ -52,7 +52,7 @@ object UiText {
         "Clock layout" to "گھڑی کا لے آؤٹ", "Adaptive" to "اڈاپٹیو", "Single line clock" to "سنگل لائن گھڑی", "Double line clock" to "ڈبل لائن گھڑی",
         "Discover" to "ڈسکور", "Feed" to "فیڈ", "All" to "تمام", "Photos & Videos" to "تصاویر اور ویڈیوز", "Shortcuts" to "شارٹ کٹس", "Folders" to "فولڈرز",
         "Move to screen" to "اسکرین میں منتقل کریں", "Automatic" to "خودکار", "New screen" to "نئی اسکرین", "Delete screen" to "اسکرین حذف کریں",
-        "Open Google" to "گوگل کھولیں", "Google Discover opens in the Google app" to "گوگل ڈسکور گوگل ایپ میں کھلتا ہے"
+        "Open Google" to "گوگل کھولیں", "Close" to "بند کریں", "Google Discover opens in the Google app" to "گوگل ڈسکور گوگل ایپ میں کھلتا ہے"
     )
     fun text(c: Context, english: String): String = if (Prefs.language(c) == 1) ur[english] ?: english else english
     fun applyDirection(v: View, c: Context) {

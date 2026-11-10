@@ -419,6 +419,12 @@ object Launch {
 
     private var hiddenOpen = false
     private var hiddenErr: String? = null
+
+    /** Whether the hidden "launch in this windowing mode" call can be made (always true for a system app). */
+    fun winModeWorks(): Boolean {
+        unlockHidden()
+        return try { android.app.ActivityOptions::class.java.getMethod("setLaunchWindowingMode", Int::class.javaPrimitiveType); true } catch (_: Throwable) { false }
+    }
     /** Android hides some framework calls (here: asking for the freeform windowing mode). Lifts that restriction for this app. */
     private fun unlockHidden() {
         if (hiddenOpen) return
@@ -445,6 +451,10 @@ object Launch {
         for (k in listOf("enable_freeform_support", "force_resizable_activities", "freeform_window_management", "enable_non_resizable_multi_window", "force_desktop_mode_on_external_displays"))
             line("Global $k", try { Settings.Global.getString(c.contentResolver, k) } catch (_: Throwable) { "?" })
         line("WRITE_SECURE_SETTINGS", hasSecure(c))
+        line("System app (system partition)", SysTasks.isSystem(c))
+        line("REAL_GET_TASKS", SysTasks.hasRealTasks(c))
+        line("Task list from the system", SysTasks.tasks(c)?.let { it.size.toString() + " tasks: " + it.joinToString(", ") { t -> t.pkg + "#" + t.id + "/m" + t.mode } } ?: "not available (accessibility fallback in use)")
+        line("Root shell", RootSh.available())
         line("Setting: open apps in freeform", Prefs.bool(c, Prefs.K_FREEFORM, false))
         line("Setting: helper window", Prefs.bool(c, Prefs.K_FFHACK, false))
         line("Helper window running", FreeformHackActivity.running())
@@ -508,6 +518,10 @@ object Launch {
     }
 
     fun app(c: Context, comp: ComponentName, size: Int? = null) {
+        val ff = Prefs.bool(c, Prefs.K_FREEFORM, false) || size != null
+        if (ff) RootSh.probe()
+        if (ff && !winModeWorks() && RootSh.known()) { ensureFreeform(c); RootSh.startFreeform(comp); return }
+        if (ff) SysTasks.ensureFreeform(c, comp.packageName)
         start(c, Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setComponent(comp)
             .addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED), size)
     }
