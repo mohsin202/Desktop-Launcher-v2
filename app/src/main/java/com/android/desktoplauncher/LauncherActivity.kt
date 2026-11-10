@@ -65,7 +65,7 @@ class LauncherActivity : Activity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         swipe = makeSwipe()
-        window.setDecorFitsSystemWindows(false)
+        Compat.edgeToEdge(window)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
         host = AppWidgetHost(this, HOST_ID)
@@ -184,11 +184,17 @@ class LauncherActivity : Activity() {
         desktop.refreshTrashIcon(true)
     }
 
+    override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
+        super.onRequestPermissionsResult(code, perms, res)
+        if (code == 6001) { updateBanner(); desktop.refreshTrashIcon(true); try { desktop.reload() } catch (_: Throwable) {} }
+    }
+
     private fun updateBanner() {
-        if (!Environment.isExternalStorageManager()) {
+        if (!Compat.hasAllFiles(this)) {
             banner.text = "Tap: allow file access for the Desktop folder"
             banner.setOnClickListener {
-                try {
+                if (android.os.Build.VERSION.SDK_INT < 30) requestPermissions(arrayOf("android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE"), 6001)
+                else try {
                     startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")))
                 } catch (_: Exception) {
                     startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))

@@ -283,16 +283,30 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
 
     /** Which screen edge the system navigation bar is on when it is a side bar (phone in landscape); 0 otherwise. */
     private fun navSide(): Int = try {
-        val i = wm.currentWindowMetrics.windowInsets.getInsets(android.view.WindowInsets.Type.navigationBars())
-        if (i.right > 0) 2 else if (i.left > 0) 1 else 0
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            val i = wm.currentWindowMetrics.windowInsets.getInsets(android.view.WindowInsets.Type.navigationBars())
+            if (i.right > 0) 2 else if (i.left > 0) 1 else 0
+        } else @Suppress("DEPRECATION") {
+            // Android 7-10: the usable width is narrower than the real one when a bar sits on a side
+            val real = android.graphics.Point(); val app = android.graphics.Point()
+            wm.defaultDisplay.getRealSize(real); wm.defaultDisplay.getSize(app)
+            if (real.x - app.x > 0) (if (wm.defaultDisplay.rotation == android.view.Surface.ROTATION_270) 1 else 2) else 0
+        }
     } catch (_: Exception) { 0 }
+
+    /** Screen size in pixels (WindowMetrics exists from Android 11). */
+    private fun screenBounds(): android.graphics.Rect =
+        if (android.os.Build.VERSION.SDK_INT >= 30) wm.currentWindowMetrics.bounds
+        else @Suppress("DEPRECATION") run { val p = android.graphics.Point(); wm.defaultDisplay.getRealSize(p); android.graphics.Rect(0, 0, p.x, p.y) }
 
     /** False while both the navigation bar and the status bar are hidden. The metrics only count bars that are showing. */
     private fun systemBarsVisible(): Boolean = try {
+        if (android.os.Build.VERSION.SDK_INT < 30) true else {   // Android 7-10 cannot tell: the taskbar simply stays
         val w = wm.currentWindowMetrics.windowInsets
         val n = w.getInsets(android.view.WindowInsets.Type.navigationBars())
         val st = w.getInsets(android.view.WindowInsets.Type.statusBars())
         n.left + n.right + n.bottom + n.top + st.top > 0
+        }
     } catch (_: Exception) { true }
 
     /**
@@ -302,7 +316,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
     private var navWin = false
 
     private fun detectNavWin(): Boolean = try {
-        val b = wm.currentWindowMetrics.bounds
+        val b = screenBounds()
         val sw = b.width(); val sh = b.height()
         val r = android.graphics.Rect()
         windows.any { w ->
@@ -316,7 +330,8 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
     } catch (_: Exception) { false }
 
     private fun statusTop(): Int = try {
-        wm.currentWindowMetrics.windowInsets.getInsets(android.view.WindowInsets.Type.statusBars()).top
+        if (android.os.Build.VERSION.SDK_INT >= 30) wm.currentWindowMetrics.windowInsets.getInsets(android.view.WindowInsets.Type.statusBars()).top
+        else Compat.statusBarHeight(this)
     } catch (_: Exception) { 0 }
 
     private fun addBar() {
@@ -325,7 +340,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
             val side = navSide()
             val thick = uctx.dp(Prefs.tbDp(this))
             val top = if (side != 0) statusTop() else 0
-            val len = wm.currentWindowMetrics.bounds.height()
+            val len = screenBounds().height()
             v = TaskbarView(uctx, this, true, false, side, len, top)
             val lp = WindowManager.LayoutParams(
                 if (side != 0) thick else MATCH, if (side != 0) len else thick,
@@ -337,12 +352,12 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
                 PixelFormat.TRANSLUCENT
             )
             lp.gravity = if (side == 0) Gravity.BOTTOM else Gravity.TOP or (if (side == 2) Gravity.END else Gravity.START)
-            lp.setFitInsetsTypes(0)
+            if (android.os.Build.VERSION.SDK_INT >= 30) lp.setFitInsetsTypes(0)
             lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             // not under the punch hole or a side navigation bar in landscape
             val si = Insets.safe(uctx)
             if (side == 0 && si.left + si.right > 0) {
-                lp.width = wm.currentWindowMetrics.bounds.width() - si.left - si.right
+                lp.width = screenBounds().width() - si.left - si.right
                 lp.x = (si.left - si.right) / 2
             }
             lp.title = "DesktopTaskbar"
@@ -387,7 +402,8 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
 
     private fun sampleTint() {
         val b = bar ?: return
-        if (!Prefs.bool(this, Prefs.K_APPCOLOR, false)) { b.tint = null; tintKey = null; return }
+        // the colour sample uses AccessibilityService.takeScreenshot, which exists from Android 11
+        if (android.os.Build.VERSION.SDK_INT < 30 || !Prefs.bool(this, Prefs.K_APPCOLOR, false)) { b.tint = null; tintKey = null; return }
         if (!barShown || focused == null || focused == packageName) { b.tint = null; tintKey = null; return }
         // only look again when the app or the screen direction changed (the bar flickers for a moment while it is sampled)
         val key = "$focused|$barSide|${resources.configuration.orientation}"
@@ -449,7 +465,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
         if (drawer != null) return
         val barH = if (bar != null && barSide == 0) uctx.dp(Prefs.tbDp(this)) else 0
         val barW = if (bar != null && barSide != 0) uctx.dp(Prefs.tbDp(this)) else 0
-        val screenH = wm.currentWindowMetrics.bounds.height()
+        val screenH = screenBounds().height()
         val d = DrawerView(uctx, uctx.dp(8), false, if (barW > 0) barSide else 0) { closeDrawer() }
         d.dragHook = { on ->
             // while an icon is carried, the drawer window lets touches / drops through to the desktop
@@ -462,7 +478,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
             LauncherActivity.blurFromOverlay(!on && drawer === d)
         }
         val lp = WindowManager.LayoutParams(
-            if (barW > 0) wm.currentWindowMetrics.bounds.width() - barW else MATCH, screenH - barH - (if (barW > 0) statusTop() else 0),
+            if (barW > 0) screenBounds().width() - barW else MATCH, screenH - barH - (if (barW > 0) statusTop() else 0),
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
@@ -471,7 +487,7 @@ class TaskbarService : AccessibilityService(), TaskbarHost {
         )
         lp.gravity = Gravity.TOP or (if (barSide == 1) Gravity.END else Gravity.START)
         if (barW > 0) lp.y = statusTop()
-        lp.setFitInsetsTypes(0)
+        if (android.os.Build.VERSION.SDK_INT >= 30) lp.setFitInsetsTypes(0)
         lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
         lp.title = "DesktopDrawer"
         // Do not use BLUR_BEHIND on this full-screen touch layer: Android blurs the entire

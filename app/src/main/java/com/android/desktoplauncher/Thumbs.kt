@@ -42,7 +42,7 @@ object Thumbs {
     private fun badged(f: File, d: Drawable): Drawable = if (f.extension == "desktoplink") ShortcutBadged(d) else d
 
     private fun adaptive(res: Resources, bmp: Bitmap, bg: Int): Drawable =
-        AdaptiveIconDrawable(ColorDrawable(bg), BitmapDrawable(res, bmp))
+        Compat.adaptive(ColorDrawable(bg), BitmapDrawable(res, bmp))
 
     /** Shows the normal file icon right away, then swaps in a thumbnail when the file is a picture or video. */
     fun bind(iv: ImageView, f: File, px: Int) {
@@ -64,8 +64,8 @@ object Thumbs {
             val te = t.extension.lowercase()
             val bmp = try {
                 if (!t.exists()) null
-                else if (te in IMG) ThumbnailUtils.createImageThumbnail(t, Size(layer, layer), null)
-                else if (te in VID) ThumbnailUtils.createVideoThumbnail(t, Size(layer, layer), null)
+                else if (te in IMG) Compat.thumbImage(t, layer)
+                else if (te in VID) Compat.thumbVideo(t, layer)
                 else null
             } catch (_: Throwable) { null }
             if (bmp != null) {
@@ -164,7 +164,7 @@ object Thumbs {
     }
 
     private fun imageOf(f: File, px: Int): Bitmap? {
-        try { return ThumbnailUtils.createImageThumbnail(f, Size(px, px), null) } catch (_: Throwable) {}
+        if (android.os.Build.VERSION.SDK_INT >= 29) try { return ThumbnailUtils.createImageThumbnail(f, Size(px, px), null) } catch (_: Throwable) {}
         return try {
             val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
             android.graphics.BitmapFactory.decodeFile(f.absolutePath, o)
@@ -175,7 +175,7 @@ object Thumbs {
     }
 
     private fun videoOf(f: File, px: Int): Bitmap? {
-        try { return ThumbnailUtils.createVideoThumbnail(f, Size(px, px), null) } catch (_: Throwable) {}
+        if (android.os.Build.VERSION.SDK_INT >= 29) try { return ThumbnailUtils.createVideoThumbnail(f, Size(px, px), null) } catch (_: Throwable) {}
         return try {
             val r = android.media.MediaMetadataRetriever()
             try { r.setDataSource(f.absolutePath); r.getFrameAtTime(0) } finally { r.release() }

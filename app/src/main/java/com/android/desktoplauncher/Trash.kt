@@ -56,7 +56,7 @@ object TrashStore {
             out[f.absolutePath] = Item(f, m.groupValues[2], m.groupValues[1].toLongOrNull() ?: 0L)
         }
         // 1) what Android itself marked as trashed
-        try {
+        if (android.os.Build.VERSION.SDK_INT >= 30) try {
             val b = Bundle()
             b.putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_ONLY)
             c.contentResolver.query(MediaStore.Files.getContentUri("external"), arrayOf(MediaStore.Files.FileColumns.DATA), b, null)?.use {
@@ -64,7 +64,7 @@ object TrashStore {
             }
         } catch (_: Exception) {}
         // 2) anything named .trashed-* that the media index does not know about (also folders)
-        if (Environment.isExternalStorageManager()) {
+        if (Compat.hasAllFiles(c)) {
             fun walk(d: File, depth: Int) {
                 if (depth > 6) return
                 val kids = try { d.listFiles() } catch (_: Exception) { null } ?: return

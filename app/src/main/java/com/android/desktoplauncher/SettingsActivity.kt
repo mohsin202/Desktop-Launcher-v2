@@ -140,15 +140,14 @@ class SettingsActivity : Activity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)   // no "Desktop Launcher Settings" bar
-        window.setDecorFitsSystemWindows(false)
+        Compat.edgeToEdge(window)
         currentPage = b?.getString("page")
         root = FrameLayout(this)
         root.setBackgroundColor(Colors.surfaceSolid(this))
         setContentView(root)
         actionBar?.hide()
         // dark status bar icons on the light background
-        if (!Colors.night(this)) window.insetsController?.setSystemBarsAppearance(
-            android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS, android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)
+        if (!Colors.night(this)) Compat.lightStatusBar(window, true)
         root.setOnApplyWindowInsetsListener { v, ins ->
             val bars = Insets.of(ins)
             v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
@@ -590,7 +589,7 @@ class SettingsActivity : Activity() {
         note(UiText.text(this, "Special accesses the launcher can use. Each button opens the system screen where you turn it on."))
         val usageOn = try {
             val ao = getSystemService(android.app.AppOpsManager::class.java)
-            ao.unsafeCheckOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName) == android.app.AppOpsManager.MODE_ALLOWED
+            (if (android.os.Build.VERSION.SDK_INT >= 29) ao.unsafeCheckOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName) else @Suppress("DEPRECATION") ao.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)) == android.app.AppOpsManager.MODE_ALLOWED
         } catch (_: Throwable) { false }
         val pkgUri = Uri.parse("package:$packageName")
         fun perm(name: String, on: Boolean, open: () -> Unit) {
@@ -599,7 +598,7 @@ class SettingsActivity : Activity() {
         perm("Usage access", usageOn) { go(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, pkgUri)) }
         perm("Display over other apps", Settings.canDrawOverlays(this)) { go(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, pkgUri)) }
         perm("Modify system settings", Settings.System.canWrite(this)) { go(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, pkgUri)) }
-        perm("All files access", Environment.isExternalStorageManager()) { go(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, pkgUri)) }
+        perm("All files access", Compat.hasAllFiles(this)) { go(Intent(if (android.os.Build.VERSION.SDK_INT >= 30) Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION else Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkgUri)) }
         perm("Accessibility (taskbar)", TaskbarService.instance != null) { go(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         perm("Notification access", notifOn) { go(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
         card("More")

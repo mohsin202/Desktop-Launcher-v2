@@ -34,7 +34,7 @@ class WidgetEditActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        window.setDecorFitsSystemWindows(false)
+        Compat.edgeToEdge(window)
         wid = intent.getIntExtra("wid", 0)
         cfg = ClockCfg.load(this, wid)
         val sv = ScrollView(this)

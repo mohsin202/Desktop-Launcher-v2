@@ -289,7 +289,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
     }
 
     private fun hideKeyboardIfVisible(): Boolean {
-        val visible = try { rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true } catch (_: Exception) { false }
+        val visible = Compat.imeVisible(this)
         if (!visible && !search.hasFocus()) return false
         val imm = c.getSystemService(InputMethodManager::class.java)
         val token = search.windowToken
@@ -455,7 +455,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         if (e.action == KeyEvent.ACTION_UP && (e.keyCode == KeyEvent.KEYCODE_BACK || e.keyCode == KeyEvent.KEYCODE_ESCAPE)) {
-            val imeVisible = try { rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true } catch (_: Exception) { false }
+            val imeVisible = Compat.imeVisible(this)
             if (imeVisible) {
                 val imm = c.getSystemService(InputMethodManager::class.java)
                 imm?.hideSoftInputFromWindow(search.windowToken, 0)
@@ -554,7 +554,7 @@ class DrawerView(private val c: Context, private val bottomMargin: Int, private 
         bg.execute {
             try {
                 val la = c.getSystemService(LauncherApps::class.java)
-                if (!la.hasShortcutHostPermission()) return@execute
+                if (android.os.Build.VERSION.SDK_INT < 25 || !la.hasShortcutHostPermission()) return@execute
                 val out = ArrayList<ShortcutInfo>()
                 val flags = LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or
                     LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST or

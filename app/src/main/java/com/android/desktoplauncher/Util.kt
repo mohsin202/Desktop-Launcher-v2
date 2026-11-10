@@ -171,11 +171,11 @@ object Icons {
             val base = c.packageManager.getActivityIcon(comp)
             if (!on) base else {
                 var mono: Drawable? = null
-                if (Build.VERSION.SDK_INT >= 33 && base is AdaptiveIconDrawable) mono = base.monochrome
+                if (Build.VERSION.SDK_INT >= 33) mono = Compat.monochrome(base)
                 if (mono != null) {
                     val fg = mono.constantState?.newDrawable()?.mutate() ?: mono
                     fg.setTint(Colors.iconFg(c))
-                    AdaptiveIconDrawable(ColorDrawable(Colors.iconBg(c)), fg)
+                    Compat.adaptive(ColorDrawable(Colors.iconBg(c)), fg)
                 } else if (all) makeMono(c, base) else base
             }
         } catch (e: Exception) {
@@ -194,7 +194,7 @@ object Icons {
         val n = 216
         val bmp = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
         val cv = Canvas(bmp)
-        val adaptive = base is AdaptiveIconDrawable
+        val adaptive = Compat.isAdaptive(base)
         if (adaptive) base.setBounds(0, 0, n, n)
         else { val m = (n * 0.19f).toInt(); base.setBounds(m, m, n - m, n - m) }
         base.draw(cv)
@@ -252,7 +252,7 @@ object Icons {
         }
         bmp.setPixels(px, 0, n, 0, 0, n, n)
         val out = android.graphics.drawable.BitmapDrawable(c.resources, bmp)
-        return if (adaptive) out else AdaptiveIconDrawable(ColorDrawable(plate), out)
+        return if (adaptive) out else Compat.adaptive(ColorDrawable(plate), out)
     }
 
     /** The icon of a file; a shortcut (.desktoplink) carries the small arrow. */
@@ -330,7 +330,7 @@ object Files {
     const val AUTH = "com.android.desktoplauncher.files"
 
     fun root(c: Context): File {
-        val r = if (Environment.isExternalStorageManager()) File(Environment.getExternalStorageDirectory(), "Desktop")
+        val r = if (Compat.hasAllFiles(c)) File(Environment.getExternalStorageDirectory(), "Desktop")
         else File(c.getExternalFilesDir(null) ?: c.filesDir, "Desktop")
         r.mkdirs()
         return r
@@ -557,13 +557,27 @@ object Launch {
 
 /** Space taken by system bars and the display cutout (punch hole), so content never goes under them. */
 object Insets {
-    fun of(ins: android.view.WindowInsets): android.graphics.Insets =
-        ins.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+    fun of(ins: android.view.WindowInsets): Ins {
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            val i = ins.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+            return Ins(i.left, i.top, i.right, i.bottom)
+        }
+        @Suppress("DEPRECATION") var l = ins.systemWindowInsetLeft
+        @Suppress("DEPRECATION") var t = ins.systemWindowInsetTop
+        @Suppress("DEPRECATION") var r = ins.systemWindowInsetRight
+        @Suppress("DEPRECATION") var b = ins.systemWindowInsetBottom
+        if (android.os.Build.VERSION.SDK_INT >= 28) ins.displayCutout?.let { l = maxOf(l, it.safeInsetLeft); t = maxOf(t, it.safeInsetTop); r = maxOf(r, it.safeInsetRight); b = maxOf(b, it.safeInsetBottom) }
+        return Ins(l, t, r, b)
+    }
 
-    fun safe(c: Context): android.graphics.Insets = try {
-        c.getSystemService(android.view.WindowManager::class.java).currentWindowMetrics.windowInsets
-            .getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
-    } catch (_: Exception) { android.graphics.Insets.NONE }
+    /** Side margins to keep clear of the punch hole / a side navigation bar (known from Android 11; older systems report none here). */
+    fun safe(c: Context): Ins = try {
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            val i = c.getSystemService(android.view.WindowManager::class.java).currentWindowMetrics.windowInsets
+                .getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+            Ins(i.left, i.top, i.right, i.bottom)
+        } else Ins.NONE
+    } catch (_: Exception) { Ins.NONE }
 }
 
 
@@ -628,7 +642,7 @@ object IconShapes {
     }
 
     fun wrap(d: android.graphics.drawable.Drawable, id: Int): android.graphics.drawable.Drawable {
-        if (d is android.graphics.drawable.AdaptiveIconDrawable) return ShapedIcon(d.background, d.foreground, id)
+        Compat.layers(d)?.let { return ShapedIcon(it.first, it.second, id) }
         if (d is android.graphics.drawable.BitmapDrawable && d.intrinsicWidth == 216) return d   // a ready-made themed picture
         // an old-style icon: a white plate in the chosen shape with the picture on it
         val inset = android.graphics.drawable.InsetDrawable(d, 0.29f)

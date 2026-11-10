@@ -385,7 +385,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
         try {
             val mask = android.os.FileObserver.CREATE or android.os.FileObserver.DELETE or android.os.FileObserver.MOVED_FROM or
                 android.os.FileObserver.MOVED_TO or android.os.FileObserver.CLOSE_WRITE
-            val o = object : android.os.FileObserver(Files.root(context), mask) {
+            val o = object : android.os.FileObserver(Files.root(context).path, mask) {
                 override fun onEvent(event: Int, path: String?) { removeCallbacks(deskReload); postDelayed(deskReload, 400) }
             }
             o.startWatching(); deskObserver = o
@@ -1325,7 +1325,7 @@ class DesktopView(private val act: LauncherActivity) : FrameLayout(act) {
     }
 
     private fun trashDrawable(fg: android.graphics.Bitmap): android.graphics.drawable.Drawable =
-        android.graphics.drawable.AdaptiveIconDrawable(
+        Compat.adaptive(
             android.graphics.drawable.ColorDrawable(0xFFC5D3E4.toInt()),
             android.graphics.drawable.BitmapDrawable(resources, fg)
         )

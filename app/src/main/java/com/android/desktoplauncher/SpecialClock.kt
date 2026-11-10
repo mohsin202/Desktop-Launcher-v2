@@ -495,8 +495,8 @@ class BigDigitalClock(ctx: Context, private val outline: Boolean) : View(ctx) {
     }
 
     init {
-        p.typeface = Typeface.create(Typeface.DEFAULT, 900, false)
-        dp.typeface = Typeface.create(Typeface.DEFAULT, 500, false)
+        p.typeface = if (android.os.Build.VERSION.SDK_INT >= 28) Typeface.create(Typeface.DEFAULT, 900, false) else Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        dp.typeface = if (android.os.Build.VERSION.SDK_INT >= 28) Typeface.create(Typeface.DEFAULT, 500, false) else Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         dp.color = 0xFFFFFFFF.toInt()
         dp.setShadowLayer(ctx.dp(3).toFloat(), 0f, ctx.dp(1).toFloat(), 0x80000000.toInt())
         p.strokeJoin = Paint.Join.ROUND
