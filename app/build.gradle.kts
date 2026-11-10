@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.android.desktoplauncher"
-        minSdk = 31
+        minSdk = 24
         targetSdk = sdkVer
         versionCode = 1
         versionName = "1.0"
@@ -38,7 +38,13 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // Android 7-8 lack some newer Java classes (java.time, Optional, …)
+        isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions { jvmTarget = "17" }
     lint { abortOnError = false; checkReleaseBuilds = false }
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
