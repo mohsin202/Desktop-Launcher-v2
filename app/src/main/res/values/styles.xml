@@ -1,4 +1,5 @@
 <resources>
+    <!-- Android 7-9: plain light themes; Android 10+ (values-v29) follow the system dark mode -->
     <style name="Theme.Desktop" parent="@android:style/Theme.DeviceDefault.NoActionBar">
         <item name="android:windowShowWallpaper">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
@@ -6,10 +7,10 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
-    <style name="Theme.Desktop.Settings" parent="@android:style/Theme.DeviceDefault.DayNight">
+    <style name="Theme.Desktop.Settings" parent="@android:style/Theme.DeviceDefault.Light">
         <item name="android:windowShowWallpaper">false</item>
     </style>
-    <style name="Theme.Desktop.Floating" parent="@android:style/Theme.DeviceDefault.DayNight">
+    <style name="Theme.Desktop.Floating" parent="@android:style/Theme.DeviceDefault.Light">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowNoTitle">true</item>
@@ -19,7 +20,7 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
-    <style name="Theme.Desktop.Window" parent="@android:style/Theme.DeviceDefault.DayNight">
+    <style name="Theme.Desktop.Window" parent="@android:style/Theme.DeviceDefault.Light">
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionBar">false</item>
         <item name="android:windowShowWallpaper">false</item>
