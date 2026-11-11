@@ -94,7 +94,7 @@ object BulkRename {
                 val base = f.name.substringBeforeLast('.', f.name)
                 val ext = f.name.substringAfterLast('.', "")
                 var name = tpl.replace(TOKEN_NAME, base)
-                name = Regex("\\{n(?::(0+))?}").replace(name) { m ->
+                name = Regex("\\{n(?::(0+))?\\}").replace(name) { m ->
                     val pad = m.groupValues[1].length
                     val num = (i + 1).toString()
                     if (pad > 0) num.padStart(pad, '0') else num
