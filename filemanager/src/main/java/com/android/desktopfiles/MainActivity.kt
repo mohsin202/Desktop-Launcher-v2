@@ -561,7 +561,8 @@ open class MainActivity : Activity(), Host {
         fun head(s: String, key: String) {
             val closed = Store.collapsed(this, "side:$key")
             skip = closed
-            val h = Ui.text(this, (if (closed) (if (T.rtl) "◂ " else "▸ ") else "▾ ") + s, 12f, p.sub, true).atStart()
+            val arrow = if (closed) (if (T.rtl) "◂ " else "▸ ") else "▾ "
+            val h = Ui.text(this, arrow + T.t(s), 12f, p.sub, true, tr = false).atStart()
             h.setPaddingRelative(dp(10), dp(14), dp(10), dp(6)); h.isClickable = true
             h.setOnClickListener { Store.setCollapsed(this, "side:$key", !closed); refreshSidebar() }
             col.addView(h, LinearLayout.LayoutParams(MATCH, WRAP))

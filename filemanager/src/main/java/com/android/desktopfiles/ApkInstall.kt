@@ -144,7 +144,7 @@ object Apks {
 
     private fun c(a: Activity): Context = a
 
-    private fun header(act: Activity, p: Pal, title: String, pack: Pack, root: LinearLayout) {
+    private fun header(act: Activity, p: Pal, title: String, pack: Pack, root: LinearLayout): TextView {
         val t = Ui.text(act, title, 20f, p.accent, true); t.gravity = Gravity.CENTER
         root.addView(t, LinearLayout.LayoutParams(-1, -2).also { it.bottomMargin = act.dp(12) })
         if (pack.icon != null) {
@@ -154,6 +154,7 @@ object Apks {
         val n = Ui.text(act, pack.label, 16f, p.text, true, false); n.gravity = Gravity.CENTER
         root.addView(n, LinearLayout.LayoutParams(-1, -2).also { it.topMargin = act.dp(6) })
         if (pack.version.isNotEmpty()) root.addView(Ui.text(act, pack.version, 13f, p.sub, false, false).also { it.gravity = Gravity.CENTER }, LinearLayout.LayoutParams(-1, -2))
+        return t
     }
 
     private fun choose(act: Activity, pack: Pack) {
@@ -203,7 +204,7 @@ object Apks {
         val sv = ScrollView(act)
         val root = LinearLayout(act); root.orientation = LinearLayout.VERTICAL; root.setPadding(act.dp(20), act.dp(18), act.dp(20), act.dp(4))
         sv.addView(root)
-        header(act, p, "Installing", pack, root)
+        val titleView = header(act, p, "Installing", pack, root)
         val bar = ProgressBar(act, null, android.R.attr.progressBarStyleHorizontal); bar.max = 1000
         bar.progressTintList = android.content.res.ColorStateList.valueOf(p.accent)
         root.addView(bar, LinearLayout.LayoutParams(-1, act.dp(10)).also { it.topMargin = act.dp(16); it.bottomMargin = act.dp(14) })
@@ -231,7 +232,7 @@ object Apks {
 
         fun finish(good: Boolean, msg: String) {
             act.runOnUiThread {
-                if (good) { bar.progress = 1000 } else { result.text = msg; result.visibility = View.VISIBLE }
+                if (good) { bar.progress = 1000; titleView.text = T.t("Installed") } else { result.text = msg; result.visibility = View.VISIBLE }
                 ok.text = T.t(if (good) "Done" else "Close"); ok.isEnabled = true; ok.alpha = 1f
                 ok.setOnClickListener { dlg.dismiss() }
                 dlg.getButton(AlertDialog.BUTTON_NEGATIVE).visibility = View.GONE

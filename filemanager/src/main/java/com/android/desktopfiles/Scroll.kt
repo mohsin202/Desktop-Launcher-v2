@@ -7,6 +7,7 @@ import android.graphics.Path
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.View.MeasureSpec
 import android.view.MotionEvent
 import android.view.View
 import android.widget.AbsListView
@@ -52,6 +53,22 @@ class DeskScroll(c: Context, private val p: Pal, private val targets: List<AbsLi
 
     private var lastKey = ""
     private var needed = false
+
+    /**
+     * This view's layout height is MATCH_PARENT wherever it sits beside a list/ScrollView (see [attach], [attachScroll], [wrap]).
+     * When it is placed inside a container that itself wraps its content (e.g. [wrap]'s FrameLayout, used in dialogs and menus),
+     * a plain View asked to measure MATCH_PARENT against a non-EXACTLY (AT_MOST/UNSPECIFIED) spec would otherwise claim the whole
+     * available space (the Android default for View.onMeasure), which made the wrapping FrameLayout - and so the whole dialog -
+     * balloon to the size of the screen. Reporting 0 in that case costs nothing: the same child is re-measured with an EXACTLY
+     * spec in the container's second pass once its real (wrap_content) size is known, and this view only ever draws using its
+     * actual laid-out height anyway.
+     */
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val w = MeasureSpec.getSize(widthMeasureSpec)
+        val hMode = MeasureSpec.getMode(heightMeasureSpec)
+        val hh = if (hMode == MeasureSpec.EXACTLY) MeasureSpec.getSize(heightMeasureSpec) else 0
+        setMeasuredDimension(w, hh)
+    }
 
     /** Called on every frame (cheap): redraws only when something about the scrolling changed. Never hides the view itself, so it cannot get stuck hidden. */
     fun update() {

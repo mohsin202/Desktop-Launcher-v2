@@ -368,7 +368,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         ibtn("cut", "Cut", n > 0) { doCut(selFiles()) }
         ibtn("copy", "Copy", n > 0) { doCopy(selFiles()) }
         ibtn("paste", "Paste", canEdit && (Clip.has(c) || MtpClip.has())) { doPaste(dir!!) }
-        ibtn("rename", "Rename", n == 1) { rename(selFiles()[0]) }
+        ibtn("rename", "Rename", n >= 1) { val fs = selFiles(); if (fs.size == 1) rename(fs[0]) else BulkRename.show(host.act, fs) { sel.clear(); host.refreshAll() } }
         ibtn("share", "Share", n > 0 && selFiles().any { it.isFile }) { Fs.share(c, selFiles()) }
         ibtn("delete", "Delete", n > 0) { delete(selFiles(), false) }
         if (Nearby.connected()) ibtn("send", "Send to nearby device", n > 0) { v -> NearUi.sendFiles(host.act, v, selFiles()) }
@@ -680,7 +680,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             menu += MenuItem("", row = listOf(
                 MenuItem("Cut", icon = "cut") { doCut(fs) },
                 MenuItem("Copy", icon = "copy") { doCopy(fs) },
-                MenuItem("Rename", one, icon = "rename") { rename(fs[0]) },
+                MenuItem("Rename", fs.isNotEmpty(), icon = "rename") { if (fs.size == 1) rename(fs[0]) else BulkRename.show(host.act, fs) { sel.clear(); host.refreshAll() } },
                 MenuItem("Share", files, icon = "share") { Fs.share(c, fs) },
                 MenuItem("Delete", danger = true, icon = "delete") { delete(fs, false) }))
             menu += null
