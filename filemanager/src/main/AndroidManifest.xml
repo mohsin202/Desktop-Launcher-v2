@@ -108,6 +108,32 @@
             </intent-filter>
         </activity>
 
+        <!-- Plays video and audio files, either from this app or opened "with Desktop Files" from any other app. -->
+        <activity
+            android:name=".VideoPlayerActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|uiMode|keyboard|keyboardHidden|navigation"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:mimeType="video/*" />
+                <data android:scheme="file" android:mimeType="video/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:mimeType="audio/*" />
+                <data android:scheme="file" android:mimeType="audio/*" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".JobsService"
             android:exported="false"
