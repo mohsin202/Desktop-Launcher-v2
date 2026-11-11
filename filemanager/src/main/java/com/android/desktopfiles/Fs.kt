@@ -60,6 +60,7 @@ object Fs {
 
     fun isImage(f: File) = f.extension.lowercase() in setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif")
     fun isVideo(f: File) = f.extension.lowercase() in setOf("mp4", "mkv", "webm", "3gp", "avi", "mov", "m4v")
+    fun isAudio(f: File) = f.extension.lowercase() in setOf("mp3", "m4a", "aac", "wav", "ogg", "opus", "flac", "wma", "amr", "mid", "midi")
 
     fun uri(f: File): Uri = Uri.Builder().scheme("content").authority(FileProv.AUTH).path(f.absolutePath).build()
 

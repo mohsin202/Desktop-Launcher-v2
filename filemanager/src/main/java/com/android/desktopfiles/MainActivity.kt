@@ -848,6 +848,7 @@ open class MainActivity : Activity(), Host {
         if (!f.canRead() && RootSu.state == 1) { openViaRoot(f); return }
         Store.setList(this, "recentfiles", (listOf(f.absolutePath) + Store.list(this, "recentfiles").filter { it != f.absolutePath }).take(20))
         if (Apks.isBundle(f)) { Apks.install(this, f); return }
+        if (Fs.isVideo(f) || Fs.isAudio(f)) { startActivity(Intent(this, VideoPlayerActivity::class.java).putExtra(VideoPlayerActivity.EXTRA_PATH, f.absolutePath)); return }
         Fs.view(this, f)
     }
 
