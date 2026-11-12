@@ -8,9 +8,9 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.Drawable
 
 /** Thin line icons in the style of Windows 11 for the quick row of the context menu. Drawn on a 24 x 24 grid. */
-class MenuIcon(private val kind: String, private val color: Int, private val sizePx: Int) : Drawable() {
+class MenuIcon(private val kind: String, private val color: Int, private val sizePx: Int, stroke: Float = 1.6f) : Drawable() {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND; strokeWidth = 1.6f; color = this@MenuIcon.color
+        style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND; strokeWidth = stroke; color = this@MenuIcon.color
     }
 
     override fun getIntrinsicWidth() = sizePx
