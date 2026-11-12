@@ -200,14 +200,14 @@ object PlayerEngine {
         } catch (_: Exception) { each { onError("This device cannot change speed") } }
     }
 
-    fun setRepeat(r: Int) { repeat = r; try { mp?.isLooping = r == 1 } catch (_: Exception) {} }
+    fun changeRepeat(r: Int) { repeat = r; try { mp?.isLooping = r == 1 } catch (_: Exception) {} }
 
     fun setDisplay(h: SurfaceHolder?) {
         display = h
         try { mp?.setDisplay(if (audioOnly) null else h) } catch (_: Exception) {}
     }
 
-    fun setAudioOnly(on: Boolean) {
+    fun changeAudioOnly(on: Boolean) {
         audioOnly = on
         try { mp?.setDisplay(if (on) null else display) } catch (_: Exception) {}
     }

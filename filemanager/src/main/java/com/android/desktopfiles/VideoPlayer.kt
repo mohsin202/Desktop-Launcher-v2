@@ -276,7 +276,7 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
         if (Build.VERSION.SDK_INT >= 26) row.addView(btn("pip") { enterPip() })
         fitBtn = btn("fit_best") { cycleFit() }; row.addView(fitBtn)
         headBtn = btn("headset") { toggleAudioOnly() }; row.addView(headBtn)
-        repeatBtn = btn("repeat_off") { e.setRepeat((e.repeat + 1) % 3); refreshAll() }; row.addView(repeatBtn)
+        repeatBtn = btn("repeat_off") { e.changeRepeat((e.repeat + 1) % 3); refreshAll() }; row.addView(repeatBtn)
         shuffleBtn = btn("shuffle") { e.shuffle = !e.shuffle; refreshAll() }; row.addView(shuffleBtn)
         bottom.addView(row, LinearLayout.LayoutParams(MATCH, WRAP))
         controls.addView(bottom, FrameLayout.LayoutParams(MATCH, WRAP).also { it.gravity = Gravity.BOTTOM })
@@ -348,7 +348,7 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
     }
 
     private fun toggleAudioOnly() {
-        e.setAudioOnly(!e.audioOnly)
+        e.changeAudioOnly(!e.audioOnly)
         if (e.audioOnly && Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 712)
         toast(if (e.audioOnly) "Audio only" else "Video on")
