@@ -9,6 +9,7 @@
         tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <uses-permission android:name="android.permission.INTERNET" />
@@ -112,7 +113,6 @@
         <activity
             android:name=".VideoPlayerActivity"
             android:exported="true"
-            android:excludeFromRecents="true"
             android:supportsPictureInPicture="true"
             android:resizeableActivity="true"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
@@ -133,6 +133,12 @@
                 <data android:scheme="file" android:mimeType="audio/*" />
             </intent-filter>
         </activity>
+
+        <!-- Keeps a video playing in "headphone" mode while its window is out of sight. -->
+        <service
+            android:name=".PlayerService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <service
             android:name=".JobsService"
