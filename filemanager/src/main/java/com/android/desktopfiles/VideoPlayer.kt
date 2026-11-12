@@ -73,6 +73,9 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
     private lateinit var shuffleBtn: ImageView
     private lateinit var headBtn: ImageView
     private lateinit var rotBtn: ImageView
+    private lateinit var speedBtn: TextView
+    private var openKind = ""
+    private var openBody: View? = null
     private lateinit var brightBar: VSlider
     private lateinit var volBar: VSlider
     private val padded = ArrayList<View>()
@@ -157,7 +160,9 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
         val path = i.getStringExtra(EXTRA_PATH) ?: i.data?.let { pathOf(it) }
         if (path != null && File(path).isFile) {
             val f = File(path)
-            val sib = f.parentFile?.listFiles()?.filter { it.isFile && (Fs.isVideo(it) || Fs.isAudio(it)) }?.sortedWith { a, b -> natural(a.name, b.name) }?.toMutableList() ?: mutableListOf()
+            // the order the file manager showed (name, date ...); from elsewhere, the folder's files by name
+            val shown = if (System.currentTimeMillis() - PlayerOrder.at < 60_000 && PlayerOrder.paths.contains(f.absolutePath)) PlayerOrder.paths.map { File(it) }.filter { it.isFile } else null
+            val sib = (shown ?: f.parentFile?.listFiles()?.filter { it.isFile && (Fs.isVideo(it) || Fs.isAudio(it)) }?.sortedWith { a, b -> natural(a.name, b.name) } ?: emptyList()).toMutableList()
             if (sib.none { it.absolutePath == f.absolutePath }) sib.add(f)
             val start = sib.indexOfFirst { it.absolutePath == f.absolutePath }
             if (e.active && e.current?.key == f.absolutePath) return true      // the same file is already playing: just show it again
@@ -176,7 +181,7 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
 
     private fun btn(kind: String, box: Int = 46, size: Int = 24, click: () -> Unit): ImageView {
         val v = ImageView(this); v.setImageDrawable(icon(kind, size)); v.scaleType = ImageView.ScaleType.CENTER; v.isClickable = true
-        v.background = Ui.ripple(this, p, null, dpf(box / 2f))
+        v.background = hoverBg(this, 0f, true)
         v.layoutParams = LinearLayout.LayoutParams(dp(box), dp(box)); v.setOnClickListener { click(); poke() }
         return v
     }
@@ -218,7 +223,7 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
         flash = Ui.text(this, "", 22f, Color.WHITE, true, false); flash.setShadowLayer(6f, 0f, 0f, Color.BLACK); flash.visibility = View.GONE
         root.addView(flash, FrameLayout.LayoutParams(WRAP, WRAP).also { it.gravity = Gravity.CENTER })
 
-        panel = PlayerPanel(this, root)
+        panel = PlayerPanel(this, root, p)
         panel.onClose = { poke() }
 
         root.setOnApplyWindowInsetsListener { _, ins -> applyInsets(ins); ins }
@@ -240,9 +245,13 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
         top.addView(back)
         titleView = Ui.text(this, "", 15f, Color.WHITE, false, false); titleView.maxLines = 2; titleView.ellipsize = android.text.TextUtils.TruncateAt.END
         top.addView(titleView, LinearLayout.LayoutParams(0, WRAP, 1f).also { it.setMargins(dp(6), 0, dp(6), 0) })
-        top.addView(btn("playlist") { openPanel("Now playing") { m -> PlayerMenus.playlist(m) } })
-        top.addView(btn("speed") { openPanel("Select playback speed") { m -> PlayerMenus.speed(m) } })
-        top.addView(btn("note") { openPanel("Select audio track") { m -> PlayerMenus.audio(m) } })
+        top.addView(btn("playlist") { openPanel("playlist", "Now playing") { m -> PlayerMenus.playlist(m) } })
+        // the speed is shown as text: 1x, 1.5x ...
+        speedBtn = Ui.text(this, "1x", 15f, Color.WHITE, true, false); speedBtn.gravity = Gravity.CENTER; speedBtn.textAlignment = View.TEXT_ALIGNMENT_CENTER
+        speedBtn.isClickable = true; speedBtn.background = hoverBg(this, dpf(23f), false)
+        speedBtn.setOnClickListener { openPanel("speed", "Select playback speed") { m -> PlayerMenus.speed(m) } }
+        top.addView(speedBtn, LinearLayout.LayoutParams(dp(54), dp(46)))
+        top.addView(btn("note") { openPanel("audio", "Select audio track") { m -> PlayerMenus.audio(m) } })
         top.addView(btn("subtitle") { openSubtitle() })
         controls.addView(top, FrameLayout.LayoutParams(MATCH, WRAP).also { it.gravity = Gravity.TOP })
 
@@ -251,7 +260,7 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
         mid.addView(btn("rew10", 56, 32) { e.skip(-10) })
         mid.addView(btn("prev", 56, 28) { if (e.items.size > 1) e.prev() else e.seekTo(0) })
         playBtn = ImageView(this); playBtn.scaleType = ImageView.ScaleType.CENTER; playBtn.isClickable = true
-        playBtn.background = Ui.rounded(0xFFEDEDED.toInt(), dpf(40f)); playBtn.setOnClickListener { e.toggle(); poke() }
+        playBtn.background = Ui.rounded(0xFFEDEDED.toInt(), dpf(40f)); playBtn.foreground = hoverBg(this, 0f, true); playBtn.setOnClickListener { e.toggle(); poke() }
         mid.addView(playBtn, LinearLayout.LayoutParams(dp(68), dp(68)).also { it.setMargins(dp(8), 0, dp(8), 0) })
         mid.addView(btn("next", 56, 28) { if (e.items.size > 1) e.next() })
         mid.addView(btn("fwd10", 56, 32) { e.skip(10) })
@@ -263,7 +272,7 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
         info.setPadding(dp(8), 0, dp(12), 0)
         timeView = Ui.text(this, "00:00 / 00:00", 14f, Color.WHITE, false, false)
         info.addView(timeView, LinearLayout.LayoutParams(0, WRAP, 1f))
-        rotBtn = btn("rotate") { rotate() }; info.addView(rotBtn)
+        rotBtn = btn("rot", 46, 26) { rotate() }; info.addView(rotBtn)
         bottom.addView(info, LinearLayout.LayoutParams(MATCH, WRAP))
         seek = ThinSeek(this, p.accent)
         seek.onStart = { handler.removeCallbacks(autoHide) }
@@ -314,12 +323,16 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
 
     private fun menuCtx() = MenuCtx(this, p, rtl, { panel.hide() }, { pickSubtitle() })
 
-    private fun openPanel(title: String, body: (MenuCtx) -> View) {
+    private fun openPanel(kind: String, title: String, body: (MenuCtx) -> View) {
         handler.removeCallbacks(autoHide)
-        panel.show(T.t(title), body(menuCtx()), inset, rtl)
+        val v = body(menuCtx())
+        panel.show(T.t(title), v, inset, rtl)
+        openKind = kind; openBody = v
     }
 
-    private fun openSubtitle() = openPanel("Select subtitle track") { m -> PlayerMenus.subtitle(m) }
+    private fun speedLabel(): String { val x = e.speed; val t = if (x == Math.rint(x.toDouble()).toFloat()) x.toInt().toString() else String.format(java.util.Locale.US, "%.2f", x).trimEnd('0').trimEnd('.'); return t + "x" }
+
+    private fun openSubtitle() = openPanel("subtitle", "Select subtitle track") { m -> PlayerMenus.subtitle(m) }
 
     private fun pickSubtitle() {
         try { startActivityForResult(Intent(Intent.ACTION_GET_CONTENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE), 711) }
@@ -355,10 +368,19 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
         refreshAll()
     }
 
+    /**
+     * Turn the video upright / sideways whatever the phone's own rotation lock says. If the system keeps the screen locked (say upright) and this
+     * button forced it sideways, the icon carries a lock; pressing again gives the screen back to the system. If the phone may rotate freely, the
+     * button just turns it the other way and the icon has no lock, as the phone itself was free to do so.
+     */
     private fun rotate() {
-        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        forcedOrientation = true; physFamily = if (lastDeg >= 0) family(lastDeg) else -1
-        requestedOrientation = if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        if (forcedOrientation && !autoRotateOn()) { forcedOrientation = false; requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
+        else {
+            val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            forcedOrientation = true; physFamily = if (lastDeg >= 0) family(lastDeg) else -1
+            requestedOrientation = if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+        refreshAll()
     }
 
     private fun setLocked(v: Boolean) {
@@ -391,11 +413,16 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
         shuffleBtn.setImageDrawable(PlayerIcon("shuffle", if (e.shuffle) on else Color.WHITE, dp(24)))
         headBtn.setImageDrawable(PlayerIcon("headset", if (e.audioOnly) on else Color.WHITE, dp(24)))
         lockBtn.setImageDrawable(icon("unlock"))
+        rotBtn.setImageDrawable(icon(if (forcedOrientation && !autoRotateOn()) "rot_lock" else "rot", 26))
+        speedBtn.text = speedLabel()
         cover.visibility = if (e.audioOnly || (e.prepared && e.videoW == 0)) View.VISIBLE else View.GONE
         if (e.playing && !e.audioOnly) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
-    override fun onTrack() { aspect.setVideoSize(0, 0); seek.progress = 0; seek.max = 1; timeView.text = "00:00 / 00:00"; subView.text = ""; refreshAll() }
+    override fun onTrack() {
+        aspect.setVideoSize(0, 0); seek.progress = 0; seek.max = 1; timeView.text = "00:00 / 00:00"; subView.text = ""; refreshAll()
+        if (panel.isOpen && openKind == "playlist") (openBody?.tag as? Runnable)?.run()
+    }
     override fun onPrepared() { seek.max = e.duration; refreshAll() }
     override fun onState() { if (e.items.isEmpty()) { finish(); return }; refreshAll() }
     override fun onVideoSize(w: Int, h: Int) { aspect.setVideoSize(w, h); refreshAll() }
@@ -407,6 +434,7 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
         tickRunning = true
         handler.post(object : Runnable {
             override fun run() {
+                speedBtn.text = speedLabel()
                 if (e.prepared) {
                     val pos = e.position; val dur = e.duration
                     seek.max = dur; seek.progress = pos
@@ -536,10 +564,20 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
         return super.onGenericMotionEvent(ev)
     }
 
+    @Suppress("UNCHECKED_CAST")
     override fun dispatchKeyEvent(ev: KeyEvent): Boolean {
-        if (ev.action == KeyEvent.ACTION_DOWN && !locked && !panel.isOpen) {
+        if (ev.action == KeyEvent.ACTION_DOWN && !locked) {
             val am = getSystemService(AUDIO_SERVICE) as AudioManager
-            when (ev.keyCode) {
+            if (panel.isOpen) {
+                // with a menu open the arrows belong to it: speed menu -> slower / faster, play list -> previous / next video
+                when {
+                    openKind == "speed" && (ev.keyCode == KeyEvent.KEYCODE_DPAD_LEFT || ev.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) -> {
+                        (openBody?.tag as? (Int) -> Unit)?.invoke(if (ev.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1); return true
+                    }
+                    openKind == "playlist" && ev.keyCode == KeyEvent.KEYCODE_DPAD_UP -> { if (e.index > 0) e.play(e.index - 1); return true }
+                    openKind == "playlist" && ev.keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> { if (e.index < e.items.size - 1) e.play(e.index + 1); return true }
+                }
+            } else when (ev.keyCode) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> { e.skip(-10); showFlash("−10s"); return true }
                 KeyEvent.KEYCODE_DPAD_RIGHT -> { e.skip(10); showFlash("+10s"); return true }
                 KeyEvent.KEYCODE_DPAD_UP -> { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, 0); showSlider(true); return true }
@@ -568,7 +606,7 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        panel.hide(); hideSystemBars(); root.requestApplyInsets()
+        panel.hide(); hideSystemBars(); root.requestApplyInsets(); refreshAll()
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {

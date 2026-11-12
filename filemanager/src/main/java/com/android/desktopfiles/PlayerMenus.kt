@@ -41,7 +41,7 @@ object PlayerMenus {
 
     private fun circleBtn(m: MenuCtx, icon: String, click: () -> Unit): View {
         val v = ImageView(m.act); v.setImageDrawable(PlayerIcon(icon, Color.WHITE, m.act.dp(20))); v.scaleType = ImageView.ScaleType.CENTER
-        v.background = Ui.rounded(0xFF2A363E.toInt(), m.act.dpf(24f)); v.isClickable = true; v.setOnClickListener { click() }
+        v.background = Ui.rounded(0xFF2A363E.toInt(), m.act.dpf(24f)); v.foreground = hoverBg(m.act, 0f, true); v.isClickable = true; v.setOnClickListener { click() }
         v.layoutParams = LinearLayout.LayoutParams(m.act.dp(44), m.act.dp(44))
         return v
     }
@@ -65,8 +65,8 @@ object PlayerMenus {
         val c = m.act; val col = LinearLayout(c); col.orientation = LinearLayout.VERTICAL
         col.setPaddingRelative(c.dp(18), c.dp(4), c.dp(18), c.dp(18))
         var updating = false
-        val ed = field(m, fmt(PlayerEngine.speed.toDouble()), false); ed.gravity = Gravity.CENTER
-        val slider = DotSlider(c, m.p.accent, 0.2f, 4f); slider.value = PlayerEngine.speed
+        val ed = field(m, fmt(PlayerEngine.speed.toDouble()), false); ed.gravity = Gravity.CENTER; ed.textAlignment = View.TEXT_ALIGNMENT_CENTER
+        val slider = DotSlider(c, m.p.accent, 0.2f, 4f, m.rtl); slider.value = PlayerEngine.speed
         val chips = ArrayList<Pair<Float, TextView>>()
         fun paintChips() { for ((v, t) in chips) { val on = Math.abs(v - PlayerEngine.speed) < 0.001f; t.background = box(m, if (on) accent(m) else Color.TRANSPARENT, accent(m), 20f); t.setTextColor(if (on) 0xFF10202A.toInt() else accent(m)) } }
         fun set(v: Float, fromField: Boolean = false) {
@@ -82,33 +82,37 @@ object PlayerMenus {
         })
         slider.onChange = { set(it) }
 
-        val top = LinearLayout(c); top.orientation = LinearLayout.HORIZONTAL; top.gravity = Gravity.CENTER_VERTICAL; top.layoutDirection = View.LAYOUT_DIRECTION_LTR
-        top.addView(circleBtn(m, "plus") { set(PlayerEngine.speed + 0.05f) })
-        ed.background = box(m, Color.TRANSPARENT, 0xFFB8C4CC.toInt())
-        top.addView(ed, LinearLayout.LayoutParams(0, c.dp(48), 1f).also { it.setMargins(c.dp(40), 0, c.dp(40), 0) })
+        // the whole menu follows the language's direction, like the rest of the player's menus: - on the start side, + on the end side
+        val top = LinearLayout(c); top.orientation = LinearLayout.HORIZONTAL; top.gravity = Gravity.CENTER_VERTICAL
         top.addView(circleBtn(m, "minus") { set(PlayerEngine.speed - 0.05f) })
+        ed.background = box(m, Color.TRANSPARENT, accent(m))
+        top.addView(ed, LinearLayout.LayoutParams(0, c.dp(48), 1f).also { it.setMargins(c.dp(40), 0, c.dp(40), 0) })
+        top.addView(circleBtn(m, "plus") { set(PlayerEngine.speed + 0.05f) })
         col.addView(top, LinearLayout.LayoutParams(MATCH, WRAP))
 
-        val sl = LinearLayout(c); sl.orientation = LinearLayout.HORIZONTAL; sl.gravity = Gravity.CENTER_VERTICAL; sl.layoutDirection = View.LAYOUT_DIRECTION_LTR
-        val reset = ImageView(c); reset.setImageDrawable(PlayerIcon("reset", SUB, c.dp(22))); reset.scaleType = ImageView.ScaleType.CENTER; reset.isClickable = true
-        reset.setOnClickListener { set(1f) }
-        sl.addView(reset, LinearLayout.LayoutParams(c.dp(40), c.dp(40)))
+        val sl = LinearLayout(c); sl.orientation = LinearLayout.HORIZONTAL; sl.gravity = Gravity.CENTER_VERTICAL
         sl.addView(slider, LinearLayout.LayoutParams(0, c.dp(40), 1f))
+        val reset = ImageView(c); reset.setImageDrawable(PlayerIcon("reset", SUB, c.dp(22))); reset.scaleType = ImageView.ScaleType.CENTER; reset.isClickable = true
+        reset.foreground = hoverBg(c, 0f, true); reset.setOnClickListener { set(1f) }
+        sl.addView(reset, LinearLayout.LayoutParams(c.dp(40), c.dp(40)))
         col.addView(sl, LinearLayout.LayoutParams(MATCH, WRAP).also { it.topMargin = c.dp(10) })
 
         fun chipRow(vals: List<Float>) {
-            val row = LinearLayout(c); row.orientation = LinearLayout.HORIZONTAL; row.layoutDirection = View.LAYOUT_DIRECTION_LTR
+            val row = LinearLayout(c); row.orientation = LinearLayout.HORIZONTAL
             for (v in vals) {
-                val t = Ui.text(c, fmt(v.toDouble()).let { if (it.contains('.')) it else "$it.0" }, 14f, accent(m), false, false); t.gravity = Gravity.CENTER; t.isClickable = true
+                val t = Ui.text(c, fmt(v.toDouble()).let { if (it.contains('.')) it else "$it.0" }, 14f, accent(m), false, false); t.gravity = Gravity.CENTER; t.textAlignment = View.TEXT_ALIGNMENT_CENTER; t.isClickable = true
+                t.foreground = hoverBg(c, c.dpf(20f), false)
                 t.setOnClickListener { set(v) }
                 chips.add(v to t)
                 row.addView(t, LinearLayout.LayoutParams(0, c.dp(40), 1f).also { it.setMargins(c.dp(3), 0, c.dp(3), 0) })
             }
             col.addView(row, LinearLayout.LayoutParams(MATCH, WRAP).also { it.topMargin = c.dp(10) })
         }
-        chipRow(listOf(1.5f, 1.0f, 0.75f, 0.5f, 0.2f))
-        chipRow(listOf(4.0f, 3.5f, 3.0f, 2.5f, 2.0f))
+        chipRow(listOf(0.2f, 0.5f, 0.75f, 1.0f, 1.5f))
+        chipRow(listOf(2.0f, 2.5f, 3.0f, 3.5f, 4.0f))
         paintChips()
+        // the keyboard's left / right arrows call this: +1 moves the bar one step towards its right end
+        col.tag = { dir: Int -> set(PlayerEngine.speed + dir * 0.05f * (if (m.rtl) -1 else 1)) }
         return col
     }
 
@@ -142,12 +146,14 @@ object PlayerMenus {
                 row.addView(th, LinearLayout.LayoutParams(c.dp(96), c.dp(54)))
                 val hd = ImageView(c); hd.setImageDrawable(PlayerIcon("handle", SUB, c.dp(22))); hd.scaleType = ImageView.ScaleType.CENTER
                 row.addView(hd, LinearLayout.LayoutParams(c.dp(44), rowH))
+                row.foreground = hoverBg(c, c.dpf(14f), false)
                 row.setOnClickListener { e.play(i); m.close() }
                 drag(m, col, row, hd, rowH)
                 col.addView(row, LinearLayout.LayoutParams(MATCH, rowH))
             }
         }
         fill()
+        col.tag = Runnable { fill() }     // the window calls this when the playing item changes (↑ ↓ keys)
         return col
     }
 
@@ -191,7 +197,7 @@ object PlayerMenus {
         val t = Ui.text(c, label, 15f, Color.WHITE, false, translate).atStart()
         row.addView(t, LinearLayout.LayoutParams(0, WRAP, 1f))
         row.addView(RadioDot(c, on, m.p.accent), LinearLayout.LayoutParams(c.dp(32), c.dp(32)))
-        row.isClickable = true; row.setOnClickListener { click() }
+        row.isClickable = true; row.foreground = hoverBg(c, c.dpf(10f), false); row.setOnClickListener { click() }
         row.layoutParams = LinearLayout.LayoutParams(MATCH, c.dp(52))
         return row
     }
@@ -219,7 +225,7 @@ object PlayerMenus {
             col.removeAllViews()
             col.addView(radioRow(m, "Disable", SubState.cues.isEmpty()) { SubState.clear(); fill() })
             if (SubState.cues.isNotEmpty()) col.addView(radioRow(m, SubState.name, true, false) {})
-            val open = Ui.text(c, "Open local subtitle", 14f, Color.WHITE, true); open.gravity = Gravity.CENTER; open.isClickable = true
+            val open = Ui.text(c, "Open local subtitle", 14f, Color.WHITE, true); open.gravity = Gravity.CENTER; open.textAlignment = View.TEXT_ALIGNMENT_CENTER; open.isClickable = true; open.foreground = hoverBg(c, c.dpf(24f), false)
             open.background = Ui.rounded(0xFF3B4D57.toInt(), c.dpf(24f)); open.setOnClickListener { m.pickSubtitle() }
             col.addView(open, LinearLayout.LayoutParams(MATCH, c.dp(44)).also { it.setMargins(c.dp(18), c.dp(8), c.dp(18), c.dp(14)) })
             col.addView(adjust(m, "Delay", "sec", SubState.delayMs / 1000.0, 0.5, true) { SubState.delayMs = (it * 1000).toLong() })
@@ -234,7 +240,7 @@ object PlayerMenus {
         val c = m.act
         val outer = LinearLayout(c); outer.orientation = LinearLayout.VERTICAL; outer.setPaddingRelative(c.dp(18), c.dp(2), c.dp(18), c.dp(8))
         outer.addView(Ui.text(c, label, 12f, SUB).atStart().also { it.setPaddingRelative(c.dp(66), 0, 0, c.dp(3)) })
-        val row = LinearLayout(c); row.orientation = LinearLayout.HORIZONTAL; row.gravity = Gravity.CENTER_VERTICAL; row.layoutDirection = View.LAYOUT_DIRECTION_LTR
+        val row = LinearLayout(c); row.orientation = LinearLayout.HORIZONTAL; row.gravity = Gravity.CENTER_VERTICAL
         val ed = field(m, fmt(init), signed); ed.gravity = Gravity.END or Gravity.CENTER_VERTICAL
         var updating = false
         fun put(v: Double) { updating = true; ed.setText(fmt(v)); updating = false; set(v) }
@@ -243,13 +249,13 @@ object PlayerMenus {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, d: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, d: Int) {}
         })
-        row.addView(circleBtn(m, "plus") { put((ed.text.toString().toDoubleOrNull() ?: init) + step) })
+        row.addView(circleBtn(m, "minus") { put((ed.text.toString().toDoubleOrNull() ?: init) - step) })
         val fb = LinearLayout(c); fb.orientation = LinearLayout.HORIZONTAL; fb.gravity = Gravity.CENTER_VERTICAL; fb.background = box(m, Color.TRANSPARENT, 0xFF6B7A84.toInt(), 6f)
         fb.setPadding(c.dp(12), 0, c.dp(8), 0)
         fb.addView(Ui.text(c, unit, 14f, SUB, false, false))
         fb.addView(ed, LinearLayout.LayoutParams(0, c.dp(46), 1f))
         row.addView(fb, LinearLayout.LayoutParams(0, c.dp(50), 1f).also { it.setMargins(c.dp(10), 0, c.dp(10), 0) })
-        row.addView(circleBtn(m, "minus") { put((ed.text.toString().toDoubleOrNull() ?: init) - step) })
+        row.addView(circleBtn(m, "plus") { put((ed.text.toString().toDoubleOrNull() ?: init) + step) })
         outer.addView(row, LinearLayout.LayoutParams(MATCH, WRAP))
         return outer
     }

@@ -540,7 +540,14 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         when {
             f.extension == "desktoplink" && !real.exists() -> c.toast("The shortcut's target no longer exists")
             real.isDirectory -> host.go(Loc.Dir(real.absolutePath))
-            else -> host.openFile(real)
+            else -> {
+                if (Fs.isVideo(real) || Fs.isAudio(real)) {
+                    // the player's play list follows the order shown here
+                    PlayerOrder.paths = items.mapNotNull { x -> (Fs.target(x) ?: x).let { r -> if (r.isFile && (Fs.isVideo(r) || Fs.isAudio(r))) r.absolutePath else null } }
+                    PlayerOrder.at = System.currentTimeMillis()
+                }
+                host.openFile(real)
+            }
         }
     }
 

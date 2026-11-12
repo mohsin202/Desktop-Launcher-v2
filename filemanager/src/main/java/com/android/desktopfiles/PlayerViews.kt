@@ -55,7 +55,7 @@ class PlayerIcon(private val kind: String, private val color: Int, private val s
     override fun draw(c: Canvas) {
         val own = when (kind) {
             "shuffle", "repeat_all", "repeat_off", "repeat_one", "rew10", "fwd10", "fit_best", "fit_stretch", "fit_crop", "fit_100",
-            "playlist", "note", "handle", "plus", "minus", "bright", "volume", "check", "pause_f", "play_f", "reset" -> true
+            "playlist", "note", "handle", "plus", "minus", "bright", "volume", "check", "pause_f", "play_f", "reset", "rot", "rot_lock" -> true
             else -> false
         }
         if (!own) { inner.draw(c); return }
@@ -104,6 +104,21 @@ class PlayerIcon(private val kind: String, private val color: Int, private val s
                 val s = Path(); s.moveTo(4f, 9.5f); s.lineTo(8f, 9.5f); s.lineTo(12.5f, 5.5f); s.lineTo(12.5f, 18.5f); s.lineTo(8f, 14.5f); s.lineTo(4f, 14.5f); s.close(); c.drawPath(s, fillP)
                 c.drawArc(RectF(11f, 8f, 17f, 16f), -50f, 100f, false, stroke); c.drawArc(RectF(10f, 4.5f, 21f, 19.5f), -50f, 100f, false, stroke)
             }
+            "rot", "rot_lock" -> {
+                // a tilted phone between two curved arrows; with the lock, the phone is held in place by the system's rotation lock
+                c.save(); c.rotate(38f, 12f, 12f)
+                c.drawRoundRect(8.3f, 6f, 15.7f, 18f, 1.8f, 1.8f, stroke); c.drawCircle(10.4f, 8.2f, 0.7f, fillP)
+                c.restore()
+                c.drawArc(RectF(2.5f, 2.5f, 21.5f, 21.5f), 180f, -85f, false, stroke)
+                val a1 = Math.toRadians(95.0); arrow(c, (12 + 9.5 * Math.cos(a1)).toFloat(), (12 + 9.5 * Math.sin(a1)).toFloat(), 1f, 0.1f)
+                if (kind == "rot") {
+                    c.drawArc(RectF(2.5f, 2.5f, 21.5f, 21.5f), 0f, -85f, false, stroke)
+                    val a2 = Math.toRadians(275.0); arrow(c, (12 + 9.5 * Math.cos(a2)).toFloat(), (12 + 9.5 * Math.sin(a2)).toFloat(), -1f, -0.1f)
+                } else {
+                    c.drawRoundRect(15.6f, 3.6f, 21.2f, 8.4f, 1f, 1f, fillP)
+                    val sh = Path(); sh.moveTo(16.9f, 3.8f); sh.lineTo(16.9f, 2.6f); sh.quadTo(16.9f, 1.2f, 18.4f, 1.2f); sh.quadTo(19.9f, 1.2f, 19.9f, 2.6f); sh.lineTo(19.9f, 3.8f); c.drawPath(sh, stroke)
+                }
+            }
             "reset" -> {
                 c.drawArc(RectF(4.5f, 4.5f, 19.5f, 19.5f), 160f, 280f, false, stroke)
                 line(c, 3.8f, 8f, 4.4f, 12.6f); line(c, 3.8f, 8f, 8.4f, 8.8f)
@@ -147,6 +162,15 @@ class AspectBox(c: Context) : FrameLayout(c) {
         val x = (r - l - w) / 2; val y = (b - t - h) / 2
         kid.layout(x, y, x + w, y + h)
     }
+}
+
+/** A background / foreground that lightens under the mouse pointer and ripples when pressed. */
+internal fun hoverBg(c: Context, radius: Float, oval: Boolean): Drawable {
+    fun shape(col: Int): GradientDrawable { val g = GradientDrawable(); if (oval) g.shape = GradientDrawable.OVAL else g.cornerRadius = radius; g.setColor(col); return g }
+    val hov = android.graphics.drawable.StateListDrawable()
+    hov.addState(intArrayOf(android.R.attr.state_hovered), shape(0x33FFFFFF))
+    hov.addState(intArrayOf(), android.graphics.drawable.ColorDrawable(0))
+    return android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x44FFFFFF), hov, shape(Color.BLACK))
 }
 
 internal fun lighten(c: Int, f: Float): Int = Color.rgb(
@@ -215,7 +239,7 @@ class ThinSeek(c: Context, accent: Int) : View(c) {
 }
 
 /** The speed bar: a row of dots with a thumb line, from [lo] to [hi]. */
-class DotSlider(c: Context, private val accent: Int, private val lo: Float, private val hi: Float) : View(c) {
+class DotSlider(c: Context, private val accent: Int, private val lo: Float, private val hi: Float, private val rtl: Boolean) : View(c) {
     var value = 1f
         set(v) { field = v.coerceIn(lo, hi); invalidate() }
     var onChange: (Float) -> Unit = {}
@@ -223,12 +247,18 @@ class DotSlider(c: Context, private val accent: Int, private val lo: Float, priv
     private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = lighten(accent, 0.5f); strokeWidth = c.dpf(3f); strokeCap = Paint.Cap.ROUND }
     private val pad = c.dpf(8f)
 
+    /** In Urdu the bar is mirrored like the rest of the menu: the lowest speed is at the right. */
+    private fun frac(v: Float): Float { val f = (v - lo) / (hi - lo); return if (rtl) 1 - f else f }
+
     override fun onDraw(cv: Canvas) {
         val cy = height / 2f; val n = 38
-        val tx = pad + (width - 2 * pad) * (value - lo) / (hi - lo)
+        val tf = frac(value)
+        val tx = pad + (width - 2 * pad) * tf
         for (i in 0..n) {
-            val x = pad + (width - 2 * pad) * i / n
-            dot.color = if (x <= tx) lighten(accent, 0.5f) else 0xFF5B6770.toInt()
+            val f = i.toFloat() / n
+            val x = pad + (width - 2 * pad) * f
+            val filled = if (rtl) f >= tf - 0.0001f else f <= tf + 0.0001f
+            dot.color = if (filled) lighten(accent, 0.5f) else 0xFF5B6770.toInt()
             cv.drawCircle(x, cy, context.dpf(2.2f), dot)
         }
         cv.drawLine(tx, cy - context.dpf(11f), tx, cy + context.dpf(11f), line)
@@ -237,7 +267,8 @@ class DotSlider(c: Context, private val accent: Int, private val lo: Float, priv
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (e.actionMasked == MotionEvent.ACTION_DOWN) parent?.requestDisallowInterceptTouchEvent(true)
         if (e.actionMasked == MotionEvent.ACTION_DOWN || e.actionMasked == MotionEvent.ACTION_MOVE || e.actionMasked == MotionEvent.ACTION_UP) {
-            val f = ((e.x - pad) / max(1f, width - 2 * pad)).coerceIn(0f, 1f)
+            var f = ((e.x - pad) / max(1f, width - 2 * pad)).coerceIn(0f, 1f)
+            if (rtl) f = 1 - f
             val v = Math.round((lo + (hi - lo) * f) * 20f) / 20f      // steps of 0.05
             value = v; onChange(v)
         }
@@ -246,7 +277,7 @@ class DotSlider(c: Context, private val accent: Int, private val lo: Float, priv
 }
 
 /** The menu that slides over the video: from the side in landscape (the right in Urdu, the left otherwise), up from the bottom to half the screen in portrait. */
-class PlayerPanel(private val c: Context, private val host: FrameLayout) {
+class PlayerPanel(private val c: Context, private val host: FrameLayout, private val p: Pal) {
     private var overlay: FrameLayout? = null
     var onClose: () -> Unit = {}
     val isOpen: Boolean get() = overlay != null
@@ -273,9 +304,9 @@ class PlayerPanel(private val c: Context, private val host: FrameLayout) {
         val t = Ui.text(c, title, 20f, Color.WHITE, false).atStart()
         t.setPaddingRelative(c.dp(22), c.dp(18), c.dp(22), c.dp(10))
         box.addView(t, LinearLayout.LayoutParams(MATCH, WRAP))
-        val sv = ScrollView(c); sv.isVerticalScrollBarEnabled = true
+        val sv = ScrollView(c)
         sv.addView(body, FrameLayout.LayoutParams(MATCH, WRAP))
-        box.addView(sv, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        box.addView(DeskScroll.wrap(sv, p, false), LinearLayout.LayoutParams(MATCH, 0, 1f))
         val lp = if (land) FrameLayout.LayoutParams(min(c.dp(380), host.width * 55 / 100), MATCH).also { it.gravity = if (rtl) Gravity.RIGHT else Gravity.LEFT }
                  else FrameLayout.LayoutParams(MATCH, host.height / 2).also { it.gravity = Gravity.BOTTOM }
         if (land) { box.setPadding(if (rtl) 0 else inset[0], inset[1], if (rtl) inset[2] else 0, inset[3]) } else box.setPadding(inset[0], 0, inset[2], inset[3])

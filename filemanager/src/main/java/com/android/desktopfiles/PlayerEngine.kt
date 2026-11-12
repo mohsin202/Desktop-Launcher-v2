@@ -22,6 +22,12 @@ class PlayItem(val path: String?, val uri: Uri, val title: String) {
     val key: String get() = path ?: uri.toString()
 }
 
+/** The videos / songs the file manager was showing, in the order it showed them (by name, date ...), so the player's play list is in the same order. */
+object PlayerOrder {
+    var paths: List<String> = emptyList()
+    var at = 0L
+}
+
 /** A subtitle line read from a .srt file. */
 class SrtCue(val startMs: Long, val endMs: Long, val text: String)
 
