@@ -109,6 +109,34 @@
             </intent-filter>
         </activity>
 
+        <!-- The Text Editor: its own icon (the Documents look), opens text, scripts, config and source files; every launch is a new window. -->
+        <activity
+            android:name=".TextEditorActivity"
+            android:exported="true"
+            android:icon="@mipmap/ic_editor"
+            android:label="@string/editor_name"
+            android:documentLaunchMode="always"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|uiMode|keyboard|keyboardHidden|navigation"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/xml" />
+                <data android:mimeType="application/x-sh" />
+                <data android:mimeType="application/x-yaml" />
+            </intent-filter>
+        </activity>
+
         <!-- Plays video and audio files, either from this app or opened "with Desktop Files" from any other app. -->
         <activity
             android:name=".VideoPlayerActivity"
