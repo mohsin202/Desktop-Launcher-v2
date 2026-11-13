@@ -84,13 +84,17 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     private fun sortKey() = Store.str(c, "sortKey", "name")
     private fun asc() = Store.bool(c, "sortAsc", true)
     private fun isGrid() = Store.str(c, "view", "details") == "grid"
+    /** "List": big icon, the name (two lines at most) and "9 hours ago • 125 MB" under it; no column titles. */
+    private fun isList() = Store.str(c, "view", "details") == "list"
+    private fun noHeader() = isGrid() || isList()
 
     /** A line of the list: a group header (header != null) or the item number idx. */
     private class Row(val header: String?, val idx: Int, val count: Int = 0)
     private var rows: List<Row> = emptyList()
     private val closedGroups = HashSet<String>()
 
-    private fun groupMode() = Store.str(c, "group", "none")
+    /** In the List view the files are grouped by day (Today, Yesterday…) when they are sorted by date, and not at all otherwise. */
+    private fun groupMode() = if (isList()) (if (sortKey() == "date") "date" else "none") else Store.str(c, "group", "none")
     private fun grouping() = groupMode() != "none" && !isGrid()
 
     /** Order number and title of the group a file belongs to (folders always form the first group). */
@@ -133,13 +137,29 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         override fun getView(i: Int, cv: View?, parent: ViewGroup?): View {
             val r = rows[i]
             if (r.header != null) return groupHeader(r)
-            val h = (cv?.tag as? RowH)?.takeIf { it.grid == isGrid() } ?: (if (isGrid()) gridCell() else detailsRow())
+            val h = (cv?.tag as? RowH)?.takeIf { it.grid == isGrid() && it.big == isList() } ?: (if (isGrid()) gridCell() else if (isList()) listRow() else detailsRow())
             bindRow(h, r.idx)
             return h.root
         }
     }
 
+    /** A day heading of the List view, with a round tick that selects (or clears) everything under it. */
+    private fun listHeader(r: Row): View {
+        val row = LinearLayout(c); row.gravity = Gravity.CENTER_VERTICAL
+        row.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(46)); row.setPaddingRelative(c.dp(16), c.dp(6), c.dp(14), 0)
+        row.addView(Ui.text(c, r.header!!, 14f, p.sub, true).atStart(), LinearLayout.LayoutParams(0, WRAP, 1f))
+        val members = items.filter { gKey(it).second == r.header }
+        val all = members.isNotEmpty() && members.all { it.absolutePath in sel }
+        val ck = Ui.text(c, "✓", 13f, if (all) 0xFFFFFFFF.toInt() else p.sub, true, false); ck.gravity = Gravity.CENTER
+        ck.background = if (all) Ui.rounded(p.accent, c.dpf(12f)) else Ui.rounded(0, c.dpf(12f), p.sub, c.dp(1))
+        ck.isClickable = true
+        ck.setOnClickListener { for (f in members) if (all) sel.remove(f.absolutePath) else sel.add(f.absolutePath); changed() }
+        row.addView(ck, LinearLayout.LayoutParams(c.dp(24), c.dp(24)))
+        return row
+    }
+
     private fun groupHeader(r: Row): View {
+        if (isList()) return listHeader(r)
         val open = r.header !in closedGroups
         val t = Ui.text(c, (if (open) "▾  " else "▸  ") + T.t(r.header!!) + "  (" + r.count + ")", 13f, p.accent, true, false)
         t.gravity = Gravity.CENTER_VERTICAL; t.setPaddingRelative(c.dp(14), 0, c.dp(8), 0)
@@ -149,7 +169,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     }
 
     class RowH(val root: View, val grid: Boolean, val check: TextView?, val icon: ImageView, val name: TextView,
-               val sub: TextView?, val date: TextView?, val type: TextView?, val size: TextView?, val nameBox: View? = null)
+               val sub: TextView?, val date: TextView?, val type: TextView?, val size: TextView?, val nameBox: View? = null, val big: Boolean = false)
 
     init {
         root.orientation = LinearLayout.VERTICAL
@@ -309,7 +329,8 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     private fun applyView() {
         list.visibility = if (isGrid()) View.GONE else View.VISIBLE
         grid.visibility = if (isGrid()) View.VISIBLE else View.GONE
-        headerBox.visibility = if (isGrid()) View.GONE else View.VISIBLE
+        headerBox.visibility = if (noHeader()) View.GONE else View.VISIBLE
+        if (isList()) closedGroups.clear()
         items = sortList(items)
         relayoutColumns()
         adapter.notifyDataSetChanged()
@@ -341,7 +362,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     }
 
     private fun applyRow(h: RowH) {
-        if (h.grid) return
+        if (h.grid || h.big) return
         setLpW(h.nameBox, nameW()); setLpW(h.date, dateW()); setLpW(h.type, typeW()); setLpW(h.size, sizeW())
     }
 
@@ -352,11 +373,11 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         val lp = content.layoutParams
         if (lp != null) {
             val sum = c.dp(8 + 66 + 24 + nameW() + dateW() + typeW() + sizeW())
-            val w = if (vp <= 0) MATCH else if (isGrid()) vp else maxOf(vp, sum)
+            val w = if (vp <= 0) MATCH else if (noHeader()) vp else maxOf(vp, sum)
             if (lp.width != w) { lp.width = w; content.layoutParams = lp }
         }
         (vbar.layoutParams as? FrameLayout.LayoutParams)?.let { v ->
-            val top = if (isGrid()) 0 else c.dp(33)
+            val top = if (noHeader()) 0 else c.dp(33)
             if (v.topMargin != top) { v.topMargin = top; vbar.layoutParams = v }
         }
         for (i in 0 until list.childCount) (list.getChildAt(i).tag as? RowH)?.let { applyRow(it) }
@@ -509,7 +530,8 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     }
 
     private fun viewItems(): List<MenuItem?> = listOf(
-        MenuItem("Details", checked = !isGrid()) { Store.setStr(c, "view", "details"); applyView() },
+        MenuItem("Details", checked = !isGrid() && !isList()) { Store.setStr(c, "view", "details"); applyView() },
+        MenuItem("List", checked = isList()) { Store.setStr(c, "view", "list"); applyView() },
         MenuItem("Grid", checked = isGrid()) { Store.setStr(c, "view", "grid"); applyView() },
         MenuItem("Columns", checked = false) { Store.setStr(c, "view", "columns"); host.relayout() },
         null,
@@ -549,6 +571,48 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         return h
     }
 
+    /** "9 hours ago", "2 minutes ago", "30 days ago" (Urdu: 9 گھنٹے پہلے). */
+    private fun ago(ms: Long): String {
+        val s = maxOf(0L, (System.currentTimeMillis() - ms) / 1000)
+        val m = s / 60; val h = m / 60; val d = h / 24; val mo = d / 30; val y = d / 365
+        return if (T.ur) when {
+            s < 60 -> "ابھی ابھی"
+            m < 60 -> "$m منٹ پہلے"
+            h < 24 -> if (h == 1L) "1 گھنٹہ پہلے" else "$h گھنٹے پہلے"
+            d < 30 -> "$d دن پہلے"
+            d < 365 -> if (mo == 1L) "1 مہینہ پہلے" else "$mo مہینے پہلے"
+            else -> "$y سال پہلے"
+        } else when {
+            s < 60 -> "Just now"
+            m < 60 -> "$m minute${if (m != 1L) "s" else ""} ago"
+            h < 24 -> "$h hour${if (h != 1L) "s" else ""} ago"
+            d < 30 -> "$d day${if (d != 1L) "s" else ""} ago"
+            d < 365 -> "$mo month${if (mo != 1L) "s" else ""} ago"
+            else -> "$y year${if (y != 1L) "s" else ""} ago"
+        }
+    }
+
+    private fun listRow(): RowH {
+        val r = LinearLayout(c); r.gravity = Gravity.CENTER_VERTICAL
+        r.layoutParams = AbsListView.LayoutParams(MATCH, WRAP); r.minimumHeight = c.dp(76)
+        r.setPaddingRelative(c.dp(12), c.dp(8), c.dp(14), c.dp(8))
+        val ck = checkView(); ck.visibility = View.GONE
+        r.addView(ck, LinearLayout.LayoutParams(c.dp(24), c.dp(24)).also { it.marginEnd = c.dp(10) })
+        val iv = ImageView(c)
+        iv.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, c.dpf(12f)) }
+        }
+        iv.clipToOutline = true
+        r.addView(iv, LinearLayout.LayoutParams(c.dp(56), c.dp(56)).also { it.marginEnd = c.dp(14) })
+        val box = LinearLayout(c); box.orientation = LinearLayout.VERTICAL
+        val nm = Ui.text(c, "", 15f, p.text).atStart(); nm.maxLines = 2; nm.ellipsize = android.text.TextUtils.TruncateAt.END
+        val sub = Ui.text(c, "", 13f, p.sub).atStart(); sub.maxLines = 1; sub.ellipsize = android.text.TextUtils.TruncateAt.END
+        box.addView(nm); box.addView(sub, LinearLayout.LayoutParams(MATCH, WRAP).also { it.topMargin = c.dp(4) })
+        r.addView(box, LinearLayout.LayoutParams(0, WRAP, 1f))
+        val h = RowH(r, false, ck, iv, nm, sub, null, null, null, null, true); r.tag = h
+        return h
+    }
+
     private fun gridCell(): RowH {
         val r = LinearLayout(c); r.orientation = LinearLayout.VERTICAL; r.gravity = Gravity.CENTER_HORIZONTAL
         r.layoutParams = AbsListView.LayoutParams(MATCH, c.dp(112)); r.setPaddingRelative(c.dp(4), c.dp(8), c.dp(4), c.dp(4))
@@ -566,9 +630,10 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         applyRow(h)
         val on = f.absolutePath in sel
         h.name.text = Tags.decorate(Fs.shown(f), f.absolutePath)
-        Thumbs.bind(h.icon, f, c.dp(if (h.grid) 120 else 60))
+        Thumbs.bind(h.icon, f, c.dp(if (h.grid) 120 else if (h.big) 112 else 60))
         h.root.background = Ui.ripple(c, p, if (on) Ui.rounded(p.sel, c.dpf(8f)) else null, c.dpf(8f))
         h.sub?.let { it.text = if (loc is Loc.Search) (f.parent ?: "") else ""; it.visibility = if (loc is Loc.Search) View.VISIBLE else View.GONE }
+        if (h.big) h.sub?.let { it.visibility = View.VISIBLE; it.text = ago(f.lastModified()) + (if (f.isDirectory) "" else "  •  " + Fs.size(c, f.length())) }
         h.date?.text = Fs.date(f.lastModified())
         h.type?.text = T.t(Fs.typeName(f))
         h.size?.text = if (f.isDirectory) "" else Fs.size(c, f.length())
@@ -576,6 +641,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
             it.text = if (on) "✓" else ""
             it.background = if (on) Ui.rounded(p.accent, c.dpf(11f)) else Ui.rounded(0, c.dpf(11f), p.sub, c.dp(1))
             it.setOnClickListener { toggle(i) }
+            if (h.big) it.visibility = if (sel.isNotEmpty()) View.VISIBLE else View.GONE
         }
         h.root.isClickable = true
         h.root.setOnTouchListener { v, e ->
