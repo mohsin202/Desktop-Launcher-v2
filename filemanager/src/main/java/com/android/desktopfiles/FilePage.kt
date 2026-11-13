@@ -63,6 +63,13 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     private val emptyView = Ui.text(c, "", 14f, p.sub)
     private val list = ListView(c)
     private val grid = GridView(c)
+    private val hsv = HorizontalScrollView(c)
+    private val content = LinearLayout(c)
+    private val outer = FrameLayout(c)
+    private val hdrCells = HashMap<String, View>()
+    private val cwMem = HashMap<String, Int>()
+    private var gripUp = 0L; private var gripKey = ""
+    private lateinit var vbar: DeskScroll
 
     private val root = object : LinearLayout(c) {
         override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
@@ -142,7 +149,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
     }
 
     class RowH(val root: View, val grid: Boolean, val check: TextView?, val icon: ImageView, val name: TextView,
-               val sub: TextView?, val date: TextView?, val type: TextView?, val size: TextView?)
+               val sub: TextView?, val date: TextView?, val type: TextView?, val size: TextView?, val nameBox: View? = null)
 
     init {
         root.orientation = LinearLayout.VERTICAL
@@ -150,7 +157,6 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         cmd.gravity = Gravity.CENTER_VERTICAL; cmd.setPaddingRelative(c.dp(6), 0, c.dp(6), 0)
         sv.addView(cmd)
         root.addView(sv, LinearLayout.LayoutParams(MATCH, c.dp(46)))
-        root.addView(headerBox, LinearLayout.LayoutParams(MATCH, WRAP))
         list.divider = null; list.adapter = adapter; list.selector = android.graphics.drawable.ColorDrawable(0)
         grid.adapter = adapter; grid.numColumns = GridView.AUTO_FIT; grid.columnWidth = c.dp(104)
         grid.stretchMode = GridView.STRETCH_COLUMN_WIDTH; grid.selector = android.graphics.drawable.ColorDrawable(0)
@@ -159,7 +165,14 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         frame.addView(list, FrameLayout.LayoutParams(MATCH, MATCH))
         frame.addView(grid, FrameLayout.LayoutParams(MATCH, MATCH))
         frame.addView(emptyView, FrameLayout.LayoutParams(MATCH, MATCH))
-        DeskScroll.attach(frame, p, list, grid)
+        content.orientation = LinearLayout.VERTICAL
+        content.addView(headerBox, LinearLayout.LayoutParams(MATCH, WRAP))
+        content.addView(frame, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        hsv.isFillViewport = true; hsv.isHorizontalScrollBarEnabled = false; hsv.overScrollMode = View.OVER_SCROLL_NEVER
+        hsv.addView(content, FrameLayout.LayoutParams(MATCH, MATCH))
+        outer.addView(hsv, FrameLayout.LayoutParams(MATCH, MATCH))
+        vbar = DeskScroll.attach(outer, p, list, grid)
+        hsv.addOnLayoutChangeListener { _, l, _, r, _, ol, _, orr, _ -> if (r - l != orr - ol) { relayoutColumns(); buildHeader() } }
         for (v in listOf<View>(list, grid)) {
             if (dir != null) DnD.attach(host, v) { dir }
             v.setOnContextClickListener { ctxMenu(null, lastX, lastY); true }
@@ -176,7 +189,10 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
                 false
             }
         }
-        root.addView(frame, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        root.addView(outer, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        val hbar = DeskHScroll(c, p, hsv); hbar.visibility = View.GONE
+        hsv.setOnScrollChangeListener { _, _, _, _, _ -> hbar.update() }
+        root.addView(hbar, LinearLayout.LayoutParams(MATCH, c.dp(14)))
         status.setPaddingRelative(c.dp(14), c.dp(6), c.dp(14), c.dp(6))
         root.addView(status, LinearLayout.LayoutParams(MATCH, WRAP))
         buildHeader(); buildBar(); applyView()
@@ -295,34 +311,141 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         grid.visibility = if (isGrid()) View.VISIBLE else View.GONE
         headerBox.visibility = if (isGrid()) View.GONE else View.VISIBLE
         items = sortList(items)
+        relayoutColumns()
         adapter.notifyDataSetChanged()
     }
 
     // ---------- header + command bar ----------
+    // ---------- column widths (Details view) ----------
+    private fun cwGet(k: String, def: Int): Int = cwMem.getOrPut(k) { Store.str(c, "cw:$k", "").toIntOrNull() ?: def }
+    private fun dateW() = if (showDate) cwGet("date", 150) else 0
+    private fun typeW() = if (showType) cwGet("type", 110) else 0
+    private fun sizeW() = cwGet("size", 80)
+    private fun viewportDp(): Float { val w = if (hsv.width > 0) hsv.width else root.width; return w / c.resources.displayMetrics.density }
+
+    /** The name column: what the person dragged it to, or (until then) whatever the other columns leave of the width. */
+    private fun nameW(): Int {
+        val u = cwGet("name", 0)
+        if (u > 0) return u
+        return (viewportDp() - (8 + 66 + 24) - dateW() - typeW() - sizeW()).toInt().coerceAtLeast(120)
+    }
+
+    private fun curW(key: String) = when (key) { "name" -> nameW(); "date" -> cwGet("date", 150); "type" -> cwGet("type", 110); else -> cwGet("size", 80) }
+    private fun minW(key: String) = when (key) { "name" -> 80; "date" -> 70; "type" -> 60; else -> 50 }
+
+    private fun setLpW(v: View?, dp: Int, weight: Boolean = false) {
+        if (v == null) return
+        val lp = v.layoutParams as? LinearLayout.LayoutParams ?: return
+        val w = c.dp(dp)
+        if (lp.width != w || lp.weight != 0f) { lp.width = w; lp.weight = 0f; v.layoutParams = lp }
+    }
+
+    private fun applyRow(h: RowH) {
+        if (h.grid) return
+        setLpW(h.nameBox, nameW()); setLpW(h.date, dateW()); setLpW(h.type, typeW()); setLpW(h.size, sizeW())
+    }
+
+    /** Pushes the current widths onto the header, the content width and the rows that are on screen. */
+    private fun relayoutColumns() {
+        setLpW(hdrCells["name"], nameW()); setLpW(hdrCells["date"], dateW()); setLpW(hdrCells["type"], typeW()); setLpW(hdrCells["size"], sizeW())
+        val vp = hsv.width
+        val lp = content.layoutParams
+        if (lp != null) {
+            val sum = c.dp(8 + 66 + 24 + nameW() + dateW() + typeW() + sizeW())
+            val w = if (vp <= 0) MATCH else if (isGrid()) vp else maxOf(vp, sum)
+            if (lp.width != w) { lp.width = w; content.layoutParams = lp }
+        }
+        (vbar.layoutParams as? FrameLayout.LayoutParams)?.let { v ->
+            val top = if (isGrid()) 0 else c.dp(33)
+            if (v.topMargin != top) { v.topMargin = top; vbar.layoutParams = v }
+        }
+        for (i in 0 until list.childCount) (list.getChildAt(i).tag as? RowH)?.let { applyRow(it) }
+    }
+
+    private fun gripTouch(v: View, key: String) {
+        var downX = 0f; var startW = 0; var moved = false
+        v.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { downX = e.rawX; startW = curW(key); moved = false; v.parent?.requestDisallowInterceptTouchEvent(true) }
+                MotionEvent.ACTION_MOVE -> {
+                    if (Math.abs(e.rawX - downX) > c.dp(3)) moved = true
+                    if (moved) {
+                        val dir = if (v.layoutDirection == View.LAYOUT_DIRECTION_RTL) -1 else 1
+                        val d = ((e.rawX - downX) * dir / c.resources.displayMetrics.density).toInt()
+                        cwMem[key] = (startW + d).coerceIn(minW(key), 1500); relayoutColumns()
+                    }
+                }
+                MotionEvent.ACTION_UP -> {
+                    val now = android.os.SystemClock.uptimeMillis()
+                    if (moved) { Store.setStr(c, "cw:$key", curW(key).toString()); gripUp = 0 }
+                    else if (gripKey == key && now - gripUp < 350) { gripUp = 0; fitColumn(key) }
+                    else { gripKey = key; gripUp = now }
+                }
+            }
+            true
+        }
+    }
+
+    /** Double tap on a grip: the column becomes just wide enough for its longest entry (the others keep their width). */
+    private fun fitColumn(key: String) {
+        val dm = c.resources.displayMetrics
+        val tp = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        fun w(s: CharSequence, sp: Float): Float { tp.textSize = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, sp, dm); return tp.measureText(s, 0, s.length) }
+        var best = 0f
+        when (key) {
+            "name" -> for (f in items) {
+                best = maxOf(best, w(Tags.decorate(Fs.shown(f), f.absolutePath), 14f))
+                if (loc is Loc.Search) best = maxOf(best, w(f.parent ?: "", 10f))
+            }
+            "date" -> for (f in items) best = maxOf(best, w(Fs.date(f.lastModified()), 12f))
+            "type" -> for (f in items) best = maxOf(best, w(T.t(Fs.typeName(f)), 12f))
+            else -> for (f in items) if (!f.isDirectory) best = maxOf(best, w(Fs.size(c, f.length()), 12f))
+        }
+        val label = when (key) { "name" -> "Name"; "date" -> "Date modified"; "type" -> "Type"; else -> "Size" }
+        val head = w(T.t(label), 12f) + c.dp(26)
+        val dp = (maxOf(best, head) / dm.density).toInt() + 10
+        cwMem[key] = dp.coerceIn(minW(key), 1500)
+        Store.setStr(c, "cw:$key", cwMem[key].toString())
+        relayoutColumns()
+        // keep the title row in step (it was resized in place)
+        if (key == "name") hsv.post { hsv.fullScroll(if (hsv.layoutDirection == View.LAYOUT_DIRECTION_RTL) View.FOCUS_RIGHT else View.FOCUS_LEFT) }
+    }
+
+    // ---------- header + command bar ----------
     private fun buildHeader() {
-        headerBox.removeAllViews()
+        headerBox.removeAllViews(); hdrCells.clear()
         val row = LinearLayout(c); row.gravity = Gravity.CENTER_VERTICAL
-        row.setPaddingRelative(c.dp(8), 0, c.dp(8), 0)
-        fun col(label: String, key: String, w: Int): TextView {
+        row.setPaddingRelative(c.dp(8), 0, c.dp(8 + 16), 0)
+        fun col(label: String, key: String, w: Int, grip: Boolean): View {
             val arrow = if (sortKey() == key) (if (asc()) " ▲" else " ▼") else ""
             val t = Ui.text(c, T.t(label) + arrow, 12f, p.sub, sortKey() == key, false)
-            t.gravity = Gravity.CENTER_VERTICAL; t.isClickable = true
+            t.gravity = Gravity.CENTER_VERTICAL; t.isClickable = true; t.maxLines = 1
+            t.setPaddingRelative(0, 0, if (grip) c.dp(14) else 0, 0)
             t.background = Ui.ripple(c, p, null, c.dpf(6f))
             t.setOnClickListener {
                 if (sortKey() == key) Store.setBool(c, "sortAsc", !asc()) else { Store.setStr(c, "sortKey", key); Store.setBool(c, "sortAsc", true) }
                 resort()
             }
-            row.addView(t, LinearLayout.LayoutParams(if (w == 0) 0 else c.dp(w), c.dp(32), if (w == 0) 1f else 0f))
-            return t
+            val fl = FrameLayout(c)
+            fl.addView(t, FrameLayout.LayoutParams(MATCH, MATCH))
+            if (grip) {
+                val g = ColGrip(c, p.sub); gripTouch(g, key)
+                fl.addView(g, FrameLayout.LayoutParams(c.dp(16), MATCH, Gravity.END))
+            }
+            row.addView(fl, LinearLayout.LayoutParams(c.dp(w), c.dp(32)))
+            hdrCells[key] = fl
+            return fl
         }
         row.addView(View(c), LinearLayout.LayoutParams(c.dp(66), 1))
-        col("Name", "name", 0)
-        if (showDate) col("Date modified", "date", 150)
-        if (showType) col("Type", "type", 110)
-        col("Size", "size", 80)
+        col("Name", "name", nameW(), true)
+        if (showDate) col("Date modified", "date", dateW(), true)
+        if (showType) col("Type", "type", typeW(), true)
+        col("Size", "size", sizeW(), false)
+        row.addView(View(c), LinearLayout.LayoutParams(0, 1, 1f))
         headerBox.addView(row)
         val line = View(c); line.setBackgroundColor(p.line)
         headerBox.addView(line, FrameLayout.LayoutParams(MATCH, 1, Gravity.BOTTOM))
+        relayoutColumns()
     }
 
     private fun resort() {
@@ -416,12 +539,13 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
         val nm = Ui.text(c, "", 14f, p.text).atStart(); nm.maxLines = 1; nm.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
         val sub = Ui.text(c, "", 10f, p.sub).atStart(); sub.maxLines = 1; sub.ellipsize = android.text.TextUtils.TruncateAt.START
         nameBox.addView(nm); nameBox.addView(sub)
-        r.addView(nameBox, LinearLayout.LayoutParams(0, WRAP, 1f))
+        r.addView(nameBox, LinearLayout.LayoutParams(c.dp(nameW()), WRAP))
         fun cell(w: Int): TextView { val t = Ui.text(c, "", 12f, p.sub).atStart(); t.maxLines = 1; r.addView(t, LinearLayout.LayoutParams(c.dp(w), WRAP)); return t }
-        val d = if (showDate) cell(150) else null
-        val ty = if (showType) cell(110) else null
-        val sz = cell(80)
-        val h = RowH(r, false, ck, iv, nm, sub, d, ty, sz); r.tag = h
+        val d = if (showDate) cell(dateW()) else null
+        val ty = if (showType) cell(typeW()) else null
+        val sz = cell(sizeW())
+        r.addView(View(c), LinearLayout.LayoutParams(0, 1, 1f))
+        val h = RowH(r, false, ck, iv, nm, sub, d, ty, sz, nameBox); r.tag = h
         return h
     }
 
@@ -439,6 +563,7 @@ class FilePage(private val host: Host, private val loc: Loc, private val pane: I
 
     private fun bindRow(h: RowH, i: Int) {
         val f = items[i]
+        applyRow(h)
         val on = f.absolutePath in sel
         h.name.text = Tags.decorate(Fs.shown(f), f.absolutePath)
         Thumbs.bind(h.icon, f, c.dp(if (h.grid) 120 else 60))

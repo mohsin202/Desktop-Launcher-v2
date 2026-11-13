@@ -86,6 +86,11 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
     private var resumeOnShow = false
     private var brightness = -1f
     private var dragAxis = 0
+    private var pageX = 0f
+    private var pageDrag = false
+    private var pageBusy = false
+    private var pageAnim: android.animation.ValueAnimator? = null
+    private lateinit var spin: android.widget.ProgressBar
     private var volAcc = 0f
     private var lastSave = 0L
     private var tickRunning = false
@@ -214,6 +219,10 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
         root.addView(subView, FrameLayout.LayoutParams(MATCH, WRAP).also { it.gravity = Gravity.BOTTOM })
         padded.add(subView)
 
+        spin = android.widget.ProgressBar(this); spin.isIndeterminate = true; spin.visibility = View.GONE
+        spin.indeterminateTintList = android.content.res.ColorStateList.valueOf(0xFFDDDDDD.toInt())
+        root.addView(spin, FrameLayout.LayoutParams(dp(40), dp(40)).also { it.gravity = Gravity.CENTER })
+
         catcher = View(this); root.addView(catcher, FrameLayout.LayoutParams(MATCH, MATCH)); setupGestures()
 
         buildControls()
@@ -258,11 +267,11 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
         // centre: ten seconds back, previous, play / pause, next, ten seconds on
         val mid = LinearLayout(this); mid.orientation = LinearLayout.HORIZONTAL; mid.gravity = Gravity.CENTER; mid.layoutDirection = View.LAYOUT_DIRECTION_LTR
         mid.addView(btn("rew10", 56, 32) { e.skip(-10) })
-        mid.addView(btn("prev", 56, 28) { if (e.items.size > 1) e.prev() else e.seekTo(0) })
+        mid.addView(btn("prev", 56, 28) { if (e.items.size > 1) { if (e.position > 3000) e.prev() else pageSwitch(-nextDir()) } else e.seekTo(0) })
         playBtn = ImageView(this); playBtn.scaleType = ImageView.ScaleType.CENTER; playBtn.isClickable = true
         playBtn.background = Ui.rounded(0xFFEDEDED.toInt(), dpf(40f)); playBtn.foreground = hoverBg(this, 0f, true); playBtn.setOnClickListener { e.toggle(); poke() }
         mid.addView(playBtn, LinearLayout.LayoutParams(dp(68), dp(68)).also { it.setMargins(dp(8), 0, dp(8), 0) })
-        mid.addView(btn("next", 56, 28) { if (e.items.size > 1) e.next() })
+        mid.addView(btn("next", 56, 28) { if (e.items.size > 1) pageSwitch(nextDir()) })
         mid.addView(btn("fwd10", 56, 32) { e.skip(10) })
         controls.addView(mid, FrameLayout.LayoutParams(WRAP, WRAP).also { it.gravity = Gravity.CENTER })
 
@@ -415,12 +424,14 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
         lockBtn.setImageDrawable(icon("unlock"))
         rotBtn.setImageDrawable(icon(if (forcedOrientation && !autoRotateOn()) "rot_lock" else "rot", 26))
         speedBtn.text = speedLabel()
+        aspect.visibility = if (e.prepared) View.VISIBLE else View.INVISIBLE
+        spin.visibility = if (!e.prepared && e.items.isNotEmpty() && !e.audioOnly) View.VISIBLE else View.GONE
         cover.visibility = if (e.audioOnly || (e.prepared && e.videoW == 0)) View.VISIBLE else View.GONE
         if (e.playing && !e.audioOnly) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     override fun onTrack() {
-        aspect.setVideoSize(0, 0); seek.progress = 0; seek.max = 1; timeView.text = "00:00 / 00:00"; subView.text = ""; refreshAll()
+        aspect.setVideoSize(0, 0); aspect.visibility = View.INVISIBLE; seek.progress = 0; seek.max = 1; timeView.text = "00:00 / 00:00"; subView.text = ""; refreshAll()
         if (panel.isOpen && openKind == "playlist") (openBody?.tag as? Runnable)?.run()
     }
     override fun onPrepared() { seek.max = e.duration; refreshAll() }
@@ -471,12 +482,19 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
             override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
                 if (locked || e1 == null || inPip) return false
                 if (dragAxis == 0) {
-                    if (abs(dy) < abs(dx) || abs(dy) < dp(6)) { if (abs(dx) > dp(10)) dragAxis = 2; return false }
-                    dragAxis = if (e1.x < root.width / 2f) -1 else 1
-                    if (dragAxis == -1 && brightness < 0) brightness = currentBrightness()
-                    volAcc = am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()
+                    if (abs(dy) < abs(dx) || abs(dy) < dp(6)) { if (abs(dx) > dp(10)) dragAxis = 2 else return false }
+                    else {
+                        dragAxis = if (e1.x < root.width / 2f) -1 else 1
+                        if (dragAxis == -1 && brightness < 0) brightness = currentBrightness()
+                        volAcc = am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()
+                    }
                 }
-                if (dragAxis == 2) return false
+                if (dragAxis == 2) {
+                    if (e.items.size < 2 || pageBusy) return false
+                    if (!pageDrag) { pageDrag = true; pageAnim?.removeAllListeners(); pageAnim?.cancel(); poke() }
+                    setPageX(e2.x - e1.x)
+                    return true
+                }
                 val frac = dy / root.height.toFloat() * 1.3f
                 if (dragAxis == -1) {
                     brightness = (brightness + frac).coerceIn(0.02f, 1f)
@@ -492,15 +510,58 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
             }
 
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
-                if (locked || e1 == null || dragAxis == -1 || dragAxis == 1 || e.items.size < 2) return false
-                if (abs(vx) > 1400 && abs(vx) > 2.5f * abs(vy) && abs(e2.x - e1.x) > root.width * 0.25f) {
-                    if (e2.x < e1.x) e.next() else e.prev()
+                if (locked || e1 == null || dragAxis != 2 || !pageDrag || pageBusy || e.items.size < 2) return false
+                if (abs(vx) > 900 && abs(vx) > 1.5f * abs(vy) && abs(e2.x - e1.x) > dp(40)) {
+                    pageSwitch(if (vx < 0) -1 else 1)
                     return true
                 }
                 return false
             }
         })
-        catcher.setOnTouchListener { _, ev -> gd.onTouchEvent(ev); true }
+        catcher.setOnTouchListener { _, ev ->
+            gd.onTouchEvent(ev)
+            if ((ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) && pageDrag) {
+                pageDrag = false
+                if (!pageBusy) {
+                    if (abs(pageX) > root.width * 0.3f) pageSwitch(if (pageX < 0) -1 else 1)
+                    else animPage(0f, 180) {}
+                }
+            }
+            true
+        }
+    }
+
+    // ---- page swipe: the whole picture (video, subtitles, controls) follows the finger, the next one slides in from the other side
+
+    private fun setPageX(x: Float) {
+        pageX = x
+        aspect.translationX = x; cover.translationX = x; subView.translationX = x; controlsLayer.translationX = x
+    }
+
+    private fun animPage(to: Float, ms: Long, end: () -> Unit) {
+        pageAnim?.removeAllListeners(); pageAnim?.cancel()
+        val a = android.animation.ValueAnimator.ofFloat(pageX, to)
+        a.duration = ms
+        a.addUpdateListener { setPageX(it.animatedValue as Float) }
+        a.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) { end() }
+        })
+        pageAnim = a; a.start()
+    }
+
+    /** Where the old page leaves to for "next": left in English, right in Urdu (right-to-left reading). */
+    private fun nextDir() = if (T.rtl) 1 else -1
+
+    /** dir = -1: the old page leaves to the left; dir = 1: it leaves to the right. Which video follows depends on the language. */
+    private fun pageSwitch(dir: Int) {
+        if (pageBusy || e.items.size < 2) return
+        pageBusy = true
+        val w = root.width.toFloat()
+        animPage(dir * w, 170) {
+            if (dir == nextDir()) e.next() else e.prev(true)
+            setPageX(-dir * w)
+            animPage(0f, 230) { pageBusy = false }
+        }
     }
 
     private fun seekTap(side: Int, now: Long) {
@@ -558,7 +619,7 @@ class VideoPlayerActivity : Activity(), SurfaceHolder.Callback, PlayerEngine.Lis
         if (ev.actionMasked == MotionEvent.ACTION_SCROLL && !locked && e.items.size > 1) {
             hscroll += ev.getAxisValue(MotionEvent.AXIS_HSCROLL)
             val now = System.currentTimeMillis()
-            if (abs(hscroll) >= 2f && now - scrollCool > 700) { scrollCool = now; if (hscroll < 0) e.next() else e.prev(); hscroll = 0f; return true }
+            if (abs(hscroll) >= 2f && now - scrollCool > 700) { scrollCool = now; if (hscroll < 0) pageSwitch(-1) else pageSwitch(1); hscroll = 0f; return true }
             if (now - scrollCool > 700 && abs(hscroll) < 2f && ev.getAxisValue(MotionEvent.AXIS_HSCROLL) == 0f) hscroll = 0f
         }
         return super.onGenericMotionEvent(ev)

@@ -176,9 +176,9 @@ object PlayerEngine {
         play(n)
     }
 
-    fun prev() {
+    fun prev(force: Boolean = false) {
         if (items.isEmpty()) return
-        if (position > 3000) { seekTo(0); return }
+        if (!force && position > 3000) { seekTo(0); return }
         val n = if (history.isNotEmpty()) history.removeAt(history.size - 1) else if (index > 0) index - 1 else items.size - 1
         play(n)
     }

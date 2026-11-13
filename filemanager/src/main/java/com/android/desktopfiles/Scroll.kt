@@ -207,3 +207,130 @@ class DeskScroll(c: Context, private val p: Pal, private val targets: List<AbsLi
         }
     }
 }
+
+/**
+ * The sideways twin of [DeskScroll], for a HorizontalScrollView (the wide Details list): an arrow at each end, a draggable thumb,
+ * and a click on the track moves a page. It hides itself (GONE) while everything fits, so it takes no room then.
+ */
+class DeskHScroll(c: Context, private val p: Pal, private val sv: android.widget.HorizontalScrollView) : View(c) {
+    private val h = Handler(Looper.getMainLooper())
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val arrow = c.dp(16)
+    private var thumbLeft = 0f; private var thumbLen = 0f
+    private var mode = 0            // 0 none, 1 left arrow, 2 right arrow, 3 dragging, 4 track
+    private var grab = 0f
+    private var trackX = 0f
+    private var hover = false
+    private var lastKey = ""
+    private var shown = false
+
+    private fun range(): Int { val ch = sv.getChildAt(0) ?: return 0; return maxOf(0, ch.width - (sv.width - sv.paddingLeft - sv.paddingRight)) }
+
+    fun update() {
+        val r = range()
+        val key = "${sv.scrollX}/$r/${sv.width}/$width"
+        val need = r > 1
+        if (need != shown) { shown = need; post { visibility = if (shown) VISIBLE else GONE } }
+        if (key != lastKey) { lastKey = key; invalidate() }
+    }
+
+    private val pre = android.view.ViewTreeObserver.OnPreDrawListener { update(); true }
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); viewTreeObserver.addOnPreDrawListener(pre); update() }
+    override fun onDetachedFromWindow() { super.onDetachedFromWindow(); h.removeCallbacks(repeat); try { viewTreeObserver.removeOnPreDrawListener(pre) } catch (_: Exception) {} }
+
+    override fun onDraw(cv: Canvas) {
+        val r = range()
+        if (r <= 1) return
+        val w = width.toFloat(); val hh = height.toFloat()
+        val trackLeft = arrow.toFloat(); val trackLen = w - 2 * arrow
+        if (trackLen <= 0) return
+        val total = r + sv.width.toFloat()
+        paint.style = Paint.Style.FILL
+        paint.color = (p.sub and 0xFFFFFF) or 0x1E000000
+        cv.drawRoundRect(trackLeft, hh * 0.3f, trackLeft + trackLen, hh * 0.7f, hh * 0.2f, hh * 0.2f, paint)
+        thumbLen = maxOf(context.dp(32).toFloat(), trackLen * (sv.width / total)).coerceAtMost(trackLen)
+        val frac = (sv.scrollX.toFloat() / r).coerceIn(0f, 1f)
+        thumbLeft = trackLeft + (trackLen - thumbLen) * frac
+        val active = mode == 3 || hover
+        paint.color = (if (active) p.accent and 0xFFFFFF or 0xFF000000.toInt() else (p.sub and 0xFFFFFF) or 0x99000000.toInt())
+        cv.drawRoundRect(thumbLeft, hh * 0.2f, thumbLeft + thumbLen, hh * 0.8f, hh * 0.3f, hh * 0.3f, paint)
+        paint.style = Paint.Style.STROKE; paint.strokeWidth = context.dpf(1.8f); paint.strokeCap = Paint.Cap.ROUND; paint.strokeJoin = Paint.Join.ROUND
+        paint.color = (p.text and 0xFFFFFF) or 0xCC000000.toInt()
+        val cy = hh / 2; val a = arrow / 4f
+        val l = Path(); l.moveTo(arrow * 0.62f, cy - a); l.lineTo(arrow * 0.62f - a, cy); l.lineTo(arrow * 0.62f, cy + a); cv.drawPath(l, paint)
+        val rr = Path(); rr.moveTo(w - arrow * 0.62f, cy - a); rr.lineTo(w - arrow * 0.62f + a, cy); rr.lineTo(w - arrow * 0.62f, cy + a); cv.drawPath(rr, paint)
+    }
+
+    private fun scrollBy(px: Int) { sv.scrollBy(px, 0); update() }
+
+    private val repeat = object : Runnable {
+        override fun run() {
+            when (mode) {
+                1 -> scrollBy(-context.dp(7))
+                2 -> scrollBy(context.dp(7))
+                4 -> {
+                    val before = thumbLeft; val after = thumbLeft + thumbLen
+                    if (trackX < before) scrollBy(-(sv.width * 0.9f).toInt()) else if (trackX > after) scrollBy((sv.width * 0.9f).toInt()) else { mode = 0; return }
+                }
+                else -> return
+            }
+            h.postDelayed(this, if (mode == 4) 140 else 16)
+        }
+    }
+
+    private fun dragTo(x: Float) {
+        val r = range()
+        val room = (width - 2f * arrow) - thumbLen
+        if (room <= 0 || r <= 0) return
+        val frac = ((x - grab - arrow) / room).coerceIn(0f, 1f)
+        sv.scrollTo((frac * r).toInt(), 0); update()
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (range() <= 1 && mode == 0) return false
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                val x = e.x
+                when {
+                    x < arrow -> { mode = 1; scrollBy(-context.dp(40)); h.postDelayed(repeat, 350) }
+                    x > width - arrow -> { mode = 2; scrollBy(context.dp(40)); h.postDelayed(repeat, 350) }
+                    x in thumbLeft..(thumbLeft + thumbLen) -> { mode = 3; grab = x - thumbLeft }
+                    else -> { mode = 4; trackX = x; repeat.run() }
+                }
+                invalidate()
+            }
+            MotionEvent.ACTION_MOVE -> if (mode == 3) dragTo(e.x) else if (mode == 4) trackX = e.x
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { mode = 0; h.removeCallbacks(repeat); invalidate() }
+        }
+        return true
+    }
+
+    override fun onHoverEvent(e: MotionEvent): Boolean {
+        if (range() <= 1) return false
+        when (e.actionMasked) {
+            MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> { val o = e.x in thumbLeft..(thumbLeft + thumbLen); if (o != hover) { hover = o; invalidate() } }
+            MotionEvent.ACTION_HOVER_EXIT -> { hover = false; invalidate() }
+        }
+        return true
+    }
+}
+
+/** The two thin vertical lines at the end of a column title: take hold of them and drag to make the column wider or narrower. */
+class ColGrip(c: Context, private val color: Int) : View(c) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    override fun onDraw(cv: Canvas) {
+        paint.color = color; paint.strokeWidth = context.dpf(1.6f); paint.strokeCap = Paint.Cap.ROUND
+        val cx = width / 2f; val gap = context.dpf(2.2f)
+        val top = height * 0.18f; val bot = height * 0.82f
+        cv.drawLine(cx - gap, top, cx - gap, bot, paint); cv.drawLine(cx + gap, top, cx + gap, bot, paint)
+    }
+    override fun onHoverEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_HOVER_ENTER -> alpha = 1f
+            MotionEvent.ACTION_HOVER_EXIT -> alpha = 0.75f
+        }
+        return super.onHoverEvent(e)
+    }
+    init { alpha = 0.75f }
+}
