@@ -101,6 +101,10 @@ class MenuIcon(private val kind: String, private val color: Int, private val siz
                 c.drawLine(12.5f, 7.5f, 12.5f, 12f, paint); c.drawLine(12.5f, 12f, 15.7f, 14f, paint)
                 c.drawLine(1.8f, 9.5f, 4.3f, 12.3f, paint); c.drawLine(4.3f, 12.3f, 7f, 9.8f, paint)
             }
+            "print" -> {        // a printer
+                rrect(c, 7f, 3.5f, 17f, 9f, 1f); rrect(c, 3.5f, 9f, 20.5f, 17f, 2f); rrect(c, 7f, 14f, 17f, 20.5f, 1f)
+                c.drawLine(6f, 12f, 8f, 12f, paint)
+            }
             "menu" -> {
                 c.drawLine(4f, 7f, 20f, 7f, paint); c.drawLine(4f, 12f, 20f, 12f, paint); c.drawLine(4f, 17f, 20f, 17f, paint)
             }
